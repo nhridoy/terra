@@ -1,0 +1,24 @@
+[package]
+name = "termvault"
+version = "1.0.0"
+description = "TermVault - Self-hosted SSH client"
+authors = ["TermVault Contributors"]
+license = "MIT"
+repository = ""
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.6", features = ["shell-open", "fs-all", "path-all", "http-all"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+ssh2 = "0.9"
+reqwest = { version = "0.11", features = ["json"] }
+anyhow = "1.0"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,103 @@
+name: App Store Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to release'
+        required: true
+        type: choice
+        options:
+          - ios
+          - android
+          - all
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  release-ios:
+    name: Release to App Store
+    if: inputs.platform == 'ios' || inputs.platform == 'all'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          
+      - name: Install Fastlane
+        run: gem install fastlane
+        
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./mobile
+        
+      - name: Build iOS app
+        run: |
+          cd ios
+          pod install
+          cd ..
+          npx expo build:ios
+        env:
+          EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
+          EXPO_ASC_API_KEY_ID: ${{ secrets.EXPO_ASC_API_KEY_ID }}
+          EXPO_ASC_API_ISSUER_ID: ${{ secrets.EXPO_ASC_API_ISSUER_ID }}
+          EXPO_APPLE_PRIVATE_KEY: ${{ secrets.EXPO_APPLE_PRIVATE_KEY }}
+          
+      - name: Submit to TestFlight
+        run: |
+          cd mobile
+          fastlane ios beta
+        env:
+          FASTLANE_APPLE_ID: ${{ secrets.FASTLANE_APPLE_ID }}
+          FASTLANE_APPLE_TEAM_ID: ${{ secrets.FASTLANE_APPLE_TEAM_ID }}
+          FASTLANE_MATCH_PASSWORD: ${{ secrets.FASTLANE_MATCH_PASSWORD }}
+
+  release-android:
+    name: Release to Play Store
+    if: inputs.platform == 'android' || inputs.platform == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./mobile
+        
+      - name: Build Android app
+        run: |
+          cd android
+          ./gradlew assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          
+      - name: Submit to Play Store
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT }}
+          packageName: com.termvault.mobile
+          releaseFiles: android/app/build/outputs/apk/release/app-release.apk
+          track: beta
+          status: completed

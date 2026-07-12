@@ -1,0 +1,63 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build and submit to Play Store beta"
+  lane :beta do
+    # Build
+    gradle(
+      task: "assemble",
+      build_type: "Release",
+      project_dir: "./android"
+    )
+
+    # Upload to Play Store
+    upload_to_play_store(
+      track: "beta",
+      aab: "android/app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+
+    # Notify
+    slack(
+      message: "New Android build uploaded to Play Store beta!",
+      success: true
+    )
+  end
+
+  desc "Build and submit to Play Store production"
+  lane :release do
+    # Build
+    gradle(
+      task: "bundle",
+      build_type: "Release",
+      project_dir: "./android"
+    )
+
+    # Upload to Play Store
+    upload_to_play_store(
+      track: "production",
+      aab: "android/app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+
+    # Notify
+    slack(
+      message: "New Android version released to Play Store!",
+      success: true
+    )
+  end
+
+  error do |lane, exception|
+    slack(
+      message: "Error in lane: #{lane}",
+      success: false,
+      payload: {
+        "Error" => exception.message
+      }
+    )
+  end
+end
