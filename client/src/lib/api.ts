@@ -218,8 +218,9 @@ class ApiClient {
   }
 
   // Workspaces
-  async listWorkspaces() {
-    return this.request<{ workspaces: any[] }>('/workspaces')
+  async listWorkspaces(vaultId?: string) {
+    const query = vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : ''
+    return this.request<{ workspaces: any[] }>(`/workspaces${query}`)
   }
 
   async createWorkspace(workspace: any) {

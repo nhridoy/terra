@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import api from '../lib/api'
+import { useWorkspaceStore } from './workspaceStore'
 
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
@@ -26,6 +28,14 @@ export interface SplitNode {
 
 export type PaneNode = LeafNode | SplitNode
 
+// Serialized representation of all open tabs, used to save/restore a workspace.
+export interface WorkspaceLayout {
+  tabs: Array<{
+    title: string
+    root: PaneNode
+  }>
+}
+
 export interface TerminalTab {
   id: string
   root: PaneNode
@@ -43,6 +53,14 @@ interface ConnectOptions {
 interface TerminalState {
   tabs: TerminalTab[]
   activeTabId: string | null
+
+  // Workspace tracking: which saved workspace the current tabs were launched
+  // from, its display name, whether the live tabs differ from the saved
+  // snapshot, and a serialized snapshot used to detect changes.
+  activeWorkspaceId: string | null
+  activeWorkspaceName: string | null
+  isDirty: boolean
+  savedSnapshot: string
 
   addTab: (hostId: string, hostName: string, options?: ConnectOptions) => void
   addEmptyTab: () => string
@@ -82,6 +100,12 @@ interface TerminalState {
     targetPaneId: string,
     side: 'left' | 'right' | 'top' | 'bottom',
   ) => void
+  // Restore a saved workspace: rebuild every tab and reconnect to its hosts.
+  launchWorkspace: (layout: WorkspaceLayout, workspaceId?: string, workspaceName?: string) => void
+  // Persist the current tabs back onto the active workspace (overwrite).
+  saveCurrentWorkspace: () => Promise<void>
+  // Persist the current tabs as a brand new workspace.
+  saveAsNewWorkspace: (name: string, vaultId?: string) => Promise<void>
 }
 
 // ---- Pure tree helpers ----
@@ -216,11 +240,83 @@ function findParentSplit(node: PaneNode, paneId: string): SplitNode | null {
   return null
 }
 
+// Returns a deep copy of a saved tree with every node id replaced by a fresh
+// id, so restored workspaces never collide with live tabs.
+function regenerateNodeIds(node: PaneNode): PaneNode {
+  if (node.type === 'leaf') {
+    return {
+      ...node,
+      id: `pane_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      connectionStatus: 'disconnected',
+    }
+  }
+  return {
+    ...node,
+    id: `split_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    children: node.children.map(regenerateNodeIds),
+  }
+}
+
+// Strip volatile, runtime-only fields from a tree so two trees that differ
+// only by connection state still serialize identically (used for dirty checks
+// and saved snapshots).
+function stripVolatile(node: PaneNode): PaneNode {
+  if (node.type === 'leaf') {
+    const { connectionStatus: _cs, lastConnected: _lc, ...rest } = node
+    void _cs
+    void _lc
+    return rest as LeafNode
+  }
+  return { ...node, children: node.children.map(stripVolatile) }
+}
+
+export interface WorkspaceSavePayload {
+  tabs: Array<{ title: string; root: PaneNode }>
+  hostIds: string[]
+}
+
+// Build the serializable workspace payload from live tabs. A tab is included
+// only if it has at least one connected leaf (a fully-empty "New Tab" is
+// skipped). Volatile fields are stripped from every node.
+export function serializeWorkspaceLayout(tabs: TerminalTab[]): WorkspaceSavePayload {
+  const out: Array<{ title: string; root: PaneNode }> = []
+  const hostIds: string[] = []
+  tabs.forEach((t) => {
+    const hasConnectedLeaf = (node: PaneNode): boolean => {
+      if (node.type === 'leaf') return !!node.hostId
+      return node.children.some(hasConnectedLeaf)
+    }
+    if (!hasConnectedLeaf(t.root)) return
+    const cleanRoot = stripVolatile(t.root)
+    out.push({ title: t.title, root: cleanRoot })
+    const collect = (node: PaneNode) => {
+      if (node.type === 'leaf') {
+        if (node.hostId && !hostIds.includes(node.hostId)) hostIds.push(node.hostId)
+      } else {
+        node.children.forEach(collect)
+      }
+    }
+    collect(cleanRoot)
+  })
+  return { tabs: out, hostIds }
+}
+
+// A stable snapshot of the live tabs' structure (only connected, volatile
+// stripped). Used to cheaply detect whether the user changed the layout.
+function computeSnapshot(tabs: TerminalTab[]): string {
+  const { tabs: layoutTabs } = serializeWorkspaceLayout(tabs)
+  return JSON.stringify(layoutTabs.map((t) => stripVolatile(t.root)))
+}
+
 // ---- Store ----
 
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   tabs: [],
   activeTabId: null,
+  activeWorkspaceId: null,
+  activeWorkspaceName: null,
+  isDirty: false,
+  savedSnapshot: '',
 
   addTab: (hostId, hostName, options) => {
     const leaf = makeLeaf({
@@ -401,10 +497,25 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     if (activeTabId === id) {
       newActiveTabId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null
     }
-    set({ tabs: newTabs, activeTabId: newActiveTabId })
+    set({
+      tabs: newTabs,
+      activeTabId: newActiveTabId,
+      // Closing the last tab detaches from any loaded workspace.
+      ...(newTabs.length === 0
+        ? { activeWorkspaceId: null, activeWorkspaceName: null, isDirty: false, savedSnapshot: '' }
+        : {}),
+    })
   },
 
-  closeAllTabs: () => set({ tabs: [], activeTabId: null }),
+  closeAllTabs: () =>
+    set({
+      tabs: [],
+      activeTabId: null,
+      activeWorkspaceId: null,
+      activeWorkspaceName: null,
+      isDirty: false,
+      savedSnapshot: '',
+    }),
 
   setTabOrder: (ids) => {
     const byId = new Map(get().tabs.map((t) => [t.id, t]))
@@ -528,4 +639,107 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       return { tabs: newTabs }
     })
   },
+
+  launchWorkspace: (layout, workspaceId, workspaceName) => {
+    // Accept both the wrapped { tabs: [...] } form and a bare array (legacy).
+    const savedTabs = (Array.isArray(layout)
+      ? layout
+      : (layout as WorkspaceLayout).tabs) as Array<{ title: string; root: PaneNode }>
+    const newTabs: TerminalTab[] = savedTabs.map((savedTab) => {
+      const root = regenerateNodeIds(savedTab.root)
+      return {
+        id: `tab_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        root,
+        activePaneId: firstLeafId(root),
+        isActive: false,
+        title: savedTab.title || deriveTitle(root),
+      }
+    })
+
+    set(() => {
+      const tabs = newTabs.map((t, i) => ({ ...t, isActive: i === 0 }))
+      return {
+        tabs,
+        activeTabId: tabs.length > 0 ? tabs[0].id : null,
+        // Track which workspace these tabs came from and seed the snapshot so
+        // the freshly-launched state is not considered dirty.
+        activeWorkspaceId: workspaceId ?? null,
+        activeWorkspaceName: workspaceName ?? null,
+        isDirty: false,
+        savedSnapshot: computeSnapshot(newTabs),
+      }
+    })
+
+    // Collect every leaf that references a host and reconnect it.
+    newTabs.forEach((tab) => {
+      const leaves: LeafNode[] = []
+      const collect = (node: PaneNode) => {
+        if (node.type === 'leaf') {
+          leaves.push(node)
+        } else {
+          node.children.forEach(collect)
+        }
+      }
+      collect(tab.root)
+      leaves.forEach((leaf) => {
+        if (leaf.hostId) {
+          get().connectPane(tab.id, leaf.id, leaf.hostId, leaf.hostName, {
+            hostAddress: leaf.hostAddress,
+            hostPort: leaf.hostPort,
+            hostUsername: leaf.hostUsername,
+          })
+        }
+      })
+    })
+  },
+
+  saveCurrentWorkspace: async () => {
+    const { activeWorkspaceId, tabs } = get()
+    if (!activeWorkspaceId) return
+    const payload = serializeWorkspaceLayout(tabs)
+    if (payload.tabs.length === 0) return
+    try {
+      await api.updateWorkspace(activeWorkspaceId, {
+        layout: JSON.stringify({ tabs: payload.tabs }),
+        hostIds: payload.hostIds,
+      })
+      set({ isDirty: false, savedSnapshot: computeSnapshot(tabs) })
+    } catch (e) {
+      console.error('Failed to save workspace:', e)
+    }
+  },
+
+  saveAsNewWorkspace: async (name, vaultId) => {
+    const { tabs } = get()
+    const payload = serializeWorkspaceLayout(tabs)
+    if (payload.tabs.length === 0) return
+    try {
+      const result = await api.createWorkspace({
+        name,
+        layout: JSON.stringify({ tabs: payload.tabs }),
+        hostIds: payload.hostIds,
+        vaultId,
+      })
+      set({
+        activeWorkspaceId: result.workspace.id,
+        activeWorkspaceName: name,
+        isDirty: false,
+        savedSnapshot: computeSnapshot(tabs),
+      })
+      if (vaultId) useWorkspaceStore.getState().fetchWorkspaces(vaultId)
+    } catch (e) {
+      console.error('Failed to save workspace as new:', e)
+    }
+  },
 }))
+
+// Mark the active workspace dirty whenever the tab layout changes (excluding
+// the launch itself, which seeds savedSnapshot in the same set() call).
+useTerminalStore.subscribe((state, prev) => {
+  if (state.tabs === prev.tabs) return
+  if (!state.activeWorkspaceId) return
+  if (state.isDirty) return
+  if (computeSnapshot(state.tabs) !== state.savedSnapshot) {
+    useTerminalStore.setState({ isDirty: true })
+  }
+})

@@ -4,9 +4,10 @@ import { isSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
 import { PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom'
 import { useHostStore } from '../../stores/hostStore'
-import { useTerminalStore, findLeaf } from '../../stores/terminalStore'
+import { useTerminalStore, findLeaf, serializeWorkspaceLayout } from '../../stores/terminalStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useVaultStore } from '../../stores/vaultStore'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useDragStore, type DropSide } from '../../stores/dragStore'
 import api from '../../lib/api'
 import Modal from '../ui/Modal'
@@ -20,9 +21,12 @@ import TerminalView from '../terminal/TerminalView'
 import VaultSelector from './VaultSelector'
 import SortableTab, { TabPreview } from './SortableTab'
 import PanePreview from '../terminal/PanePreview'
+import WorkspaceList from '../workspace/WorkspaceList'
+import WorkspaceForm from '../workspace/WorkspaceForm'
 
 type SidebarItem =
   | 'hosts'
+  | 'workspaces'
   | 'snippets'
   | 'keys'
   | 'history'
@@ -46,7 +50,7 @@ export default function Layout() {
     deleteHost,
     deleteGroup,
   } = useHostStore()
-  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane, movePane } = useTerminalStore()
+  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane, movePane, activeWorkspaceId, isDirty, activeWorkspaceName } = useTerminalStore()
   const { logout: logoutAuth } = useAuthStore()
   const { currentVaultId } = useVaultStore()
   const setDropPane = useDragStore((s) => s.setDropPane)
@@ -155,6 +159,7 @@ export default function Layout() {
   const [editingSnippet, setEditingSnippet] = useState<any>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [snippets, setSnippets] = useState<any[]>([])
+  const [showWorkspaceForm, setShowWorkspaceForm] = useState(false)
 
   // Handle mobile breakpoint
   useEffect(() => {
@@ -189,6 +194,7 @@ export default function Layout() {
       fetchHosts(currentVaultId || undefined)
       fetchGroups(currentVaultId || undefined)
       fetchSnippets(currentVaultId || undefined)
+      useWorkspaceStore.getState().fetchWorkspaces(currentVaultId || undefined)
     }
   }, [isAuthenticated, currentVaultId, fetchHosts, fetchGroups])
 
@@ -227,7 +233,35 @@ export default function Layout() {
     if (isMobile) setSidebarOpen(false)
   }
 
+  const handleSaveWorkspace = () => {
+    const tabs = useTerminalStore.getState().tabs
+    const payload = serializeWorkspaceLayout(tabs)
+    if (payload.tabs.length === 0) return
+    setShowWorkspaceForm(true)
+  }
+
+  const handleSaveCurrentWorkspace = () => {
+    useTerminalStore.getState().saveCurrentWorkspace()
+  }
+
+  // Returns false if the user chose to keep their unsaved changes.
+  const confirmDiscardUnsaved = (): boolean => {
+    const { isDirty, activeWorkspaceId } = useTerminalStore.getState()
+    if (isDirty && activeWorkspaceId) {
+      return window.confirm('This workspace has unsaved changes. Discard them?')
+    }
+    return true
+  }
+
+  const handleWorkspaceFormSubmit = (name: string) => {
+    // Use saveAsNewWorkspace so terminalStore tracks the new active workspace
+    // (sets activeWorkspaceId, clears dirty state, refreshes the list).
+    useTerminalStore.getState().saveAsNewWorkspace(name, currentVaultId || undefined)
+    setShowWorkspaceForm(false)
+  }
+
   const handleLogout = () => {
+    if (!confirmDiscardUnsaved()) return
     logoutAuth()
     closeAllTabs()
   }
@@ -242,6 +276,18 @@ export default function Layout() {
         </svg>
       ),
     },
+
+    {
+      id: 'workspaces',
+      label: 'Workspaces',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a2 2 0 012-2h8l6 6v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 3v5a1 1 0 001 1h5" />
+        </svg>
+      ),
+    },
+
     {
       id: 'snippets',
       label: 'Snippets',
@@ -283,6 +329,18 @@ export default function Layout() {
 
   const renderSidebarContent = () => {
     switch (activeSidebarItem) {
+      case 'workspaces':
+        return (
+          <WorkspaceList
+            onSaveNew={handleSaveWorkspace}
+            onLaunch={(tabId) => {
+              if (!confirmDiscardUnsaved()) return
+              setActiveTab(tabId)
+              setActiveView(tabId)
+            }}
+          />
+        )
+
       case 'hosts':
         return (
           <div className="flex-1 p-4 space-y-6 overflow-y-auto">
@@ -647,6 +705,62 @@ export default function Layout() {
 
           {/* Right-side actions */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Workspace save group (far right) */}
+            {activeWorkspaceId && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span className="flex items-center gap-1.5 max-w-[140px] px-2 py-0.5 text-xs text-dark-300 bg-dark-800 rounded">
+                  <span className="truncate">{activeWorkspaceName}</span>
+                  {isDirty && (
+                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" title="Unsaved changes" />
+                  )}
+                </span>
+                <button
+                  onClick={handleSaveCurrentWorkspace}
+                  disabled={!isDirty}
+                  title={isDirty ? 'Save workspace (overwrite)' : 'No unsaved changes'}
+                  className={`p-1.5 rounded transition-colors ${
+                    isDirty
+                      ? 'text-primary-400 hover:text-white hover:bg-dark-800'
+                      : 'text-dark-600 cursor-default'
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleSaveWorkspace}
+                  disabled={!!activeWorkspaceId}
+                  title={activeWorkspaceId ? 'Delete the current workspace to create a new one' : 'Save as new workspace'}
+                  className={`p-1.5 rounded transition-colors ${
+                    activeWorkspaceId
+                      ? 'text-dark-600 cursor-default'
+                      : 'text-dark-400 hover:text-white hover:bg-dark-800'
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            {!activeWorkspaceId && tabs.length > 1 && (
+              <button
+                onClick={handleSaveWorkspace}
+                className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0"
+                title="Save workspace"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
+                </svg>
+              </button>
+            )}
+
             <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-xs text-dark-500">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
               <span>Connected</span>
@@ -757,6 +871,14 @@ export default function Layout() {
         <Modal open={showSettings} onClose={() => setShowSettings(false)} title="Settings" maxWidth="max-w-2xl">
           <SettingsPanel onClose={() => setShowSettings(false)} />
         </Modal>
+
+        <WorkspaceForm
+          open={showWorkspaceForm}
+          title="Save Workspace"
+          submitLabel="Save"
+          onSubmit={handleWorkspaceFormSubmit}
+          onClose={() => { setShowWorkspaceForm(false) }}
+        />
 
         <DragOverlay>
           {(source) => {
