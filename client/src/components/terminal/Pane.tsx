@@ -1,4 +1,4 @@
-import { useDroppable } from '@dnd-kit/react'
+import { useDroppable, useDraggable } from '@dnd-kit/react'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { useTerminalStore } from '../../stores/terminalStore'
@@ -88,6 +88,12 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab }: P
   const dropSide: DropSide | null =
     dropPane && dropPane.tabId === tabId && dropPane.paneId === pane.id ? dropPane.side : null
 
+  // Grip handle makes this pane draggable for in-tab reordering.
+  const { ref, isDragging } = useDraggable({
+    id: `pane:${pane.id}`,
+    data: { type: 'pane-source', tabId, paneId: pane.id },
+  })
+
   const handleConnect = (host: any) => {
     connectPane(tabId, pane.id, host.id, host.name, {
       hostAddress: host.address,
@@ -102,7 +108,9 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab }: P
       data-tab-id={tabId}
       className={`flex flex-col h-full min-h-0 min-w-0 bg-dark-950 relative ${
         isActive ? 'ring-1 ring-inset ring-primary-600/60' : 'ring-1 ring-inset ring-dark-800'
-      } ${dropSide ? 'ring-1 ring-inset ring-primary-500' : ''}`}
+      } ${dropSide ? 'ring-1 ring-inset ring-primary-500' : ''} ${
+        isDragging ? 'opacity-40' : ''
+      }`}
       onMouseDown={() => setActivePane(tabId, pane.id)}
     >
       {/* Pane header */}
@@ -112,6 +120,26 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab }: P
         }`}
       >
         <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotClass(pane.connectionStatus)}`} />
+
+        {/* Drag handle (only when there is more than one pane to rearrange) */}
+        {closable && (
+          <button
+            ref={ref}
+            className="p-0.5 text-dark-500 hover:text-white hover:bg-dark-700 rounded cursor-grab active:cursor-grabbing flex-shrink-0"
+            title="Drag to move pane"
+            style={{ touchAction: 'none' }}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <circle cx="7" cy="5" r="1.5" />
+              <circle cx="13" cy="5" r="1.5" />
+              <circle cx="7" cy="10" r="1.5" />
+              <circle cx="13" cy="10" r="1.5" />
+              <circle cx="7" cy="15" r="1.5" />
+              <circle cx="13" cy="15" r="1.5" />
+            </svg>
+          </button>
+        )}
+
         <span className="text-xs text-dark-200 truncate flex-1">
           {pane.hostName || 'Empty pane'}
         </span>

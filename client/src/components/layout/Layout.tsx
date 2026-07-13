@@ -4,7 +4,7 @@ import { isSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
 import { PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom'
 import { useHostStore } from '../../stores/hostStore'
-import { useTerminalStore } from '../../stores/terminalStore'
+import { useTerminalStore, findLeaf } from '../../stores/terminalStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useDragStore, type DropSide } from '../../stores/dragStore'
@@ -19,6 +19,7 @@ import SettingsPanel from '../settings/SettingsPanel'
 import TerminalView from '../terminal/TerminalView'
 import VaultSelector from './VaultSelector'
 import SortableTab, { TabPreview } from './SortableTab'
+import PanePreview from '../terminal/PanePreview'
 
 type SidebarItem =
   | 'hosts'
@@ -45,43 +46,83 @@ export default function Layout() {
     deleteHost,
     deleteGroup,
   } = useHostStore()
-  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane } = useTerminalStore()
+  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane, movePane } = useTerminalStore()
   const { logout: logoutAuth } = useAuthStore()
   const { currentVaultId } = useVaultStore()
   const setDropPane = useDragStore((s) => s.setDropPane)
+  const setSourcePane = useDragStore((s) => s.setSourcePane)
 
   const [activeSidebarItem, setActiveSidebarItem] = useState<SidebarItem>('hosts')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
   const [activeView, setActiveView] = useState<'vault' | 'sftp' | string>('vault')
 
-  const handleDragStart = () => {
+  const handleDragStart = (event: any) => {
+    const { source } = event.operation
+    if (source?.data?.type === 'pane-source') {
+      setSourcePane(String(source.data.paneId), String(source.data.tabId))
+    }
     setDropPane(null)
   }
 
   const handleDragOver = (event: DragOverEvent) => {
     const { source, target } = event.operation
-    if (target?.data?.type === 'pane' && target.data.tabId !== source?.id) {
-      setDropPane({
-        tabId: String(target.data.tabId),
-        paneId: String(target.data.paneId),
-        side: target.data.side as DropSide,
-      })
-    } else {
-      setDropPane(null)
+    const sourceType = source?.data?.type
+    if (target?.data?.type === 'pane') {
+      const isPaneSource = sourceType === 'pane-source'
+      // Tab drag: drop only on a different tab's pane.
+      // Pane drag: drop only onto a pane within the SAME tab (not itself).
+      const sameTab = isPaneSource
+        ? target.data.tabId === source?.data?.tabId
+        : target.data.tabId !== source?.id
+      const isSelf = isPaneSource && target.data.paneId === source?.data?.paneId
+      if (sameTab && !isSelf) {
+        setDropPane({
+          tabId: String(target.data.tabId),
+          paneId: String(target.data.paneId),
+          side: target.data.side as DropSide,
+        })
+        return
+      }
     }
+    setDropPane(null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation
     if (event.canceled) {
       setDropPane(null)
+      setSourcePane(null, null)
       return
     }
     if (!source) {
       setDropPane(null)
+      setSourcePane(null, null)
       return
     }
+
+    // Pane-to-pane reorder within a tab.
+    if (source.data?.type === 'pane-source') {
+      const sTabId = String(source.data.tabId)
+      const sPaneId = String(source.data.paneId)
+      if (
+        target?.data?.type === 'pane' &&
+        target.data.tabId === sTabId &&
+        target.data.paneId !== sPaneId
+      ) {
+        movePane(
+          sTabId,
+          sPaneId,
+          String(target.data.paneId),
+          target.data.side as DropSide,
+        )
+      }
+      setDropPane(null)
+      setSourcePane(null, null)
+      return
+    }
+
+    // Tab-to-pane merge (different tabs).
     if (target?.data?.type === 'pane' && target.data.tabId !== source?.id) {
       mergeTabIntoPane(
         String(source.id),
@@ -91,6 +132,7 @@ export default function Layout() {
       )
       setActiveView(String(target.data.tabId))
       setDropPane(null)
+      setSourcePane(null, null)
     } else if (isSortable(source)) {
       const { initialIndex, index } = source
       if (initialIndex !== index) {
@@ -98,8 +140,10 @@ export default function Layout() {
         setTabOrder(reordered.map((t) => t.id))
       }
       setDropPane(null)
+      setSourcePane(null, null)
     } else {
       setDropPane(null)
+      setSourcePane(null, null)
     }
   }
 
@@ -716,6 +760,14 @@ export default function Layout() {
 
         <DragOverlay>
           {(source) => {
+            if (source.data?.type === 'pane-source') {
+              const tab = tabs.find((t) => t.id === source.data.tabId)
+              if (tab) {
+                const pane = findLeaf(tab.root, source.data.paneId)
+                if (pane) return <PanePreview pane={pane} />
+              }
+              return null
+            }
             const tab = tabs.find((t) => t.id === source.id)
             if (!tab) return null
             return <TabPreview tab={tab} />

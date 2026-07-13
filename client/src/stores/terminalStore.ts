@@ -70,6 +70,12 @@ interface TerminalState {
   closeAllTabs: () => void
   reorderTabs: (draggedId: string, targetId: string, before: boolean) => void
   setTabOrder: (ids: string[]) => void
+  movePane: (
+    tabId: string,
+    sourcePaneId: string,
+    targetPaneId: string,
+    side: 'left' | 'right' | 'top' | 'bottom',
+  ) => void
   mergeTabIntoPane: (
     sourceTabId: string,
     targetTabId: string,
@@ -96,7 +102,7 @@ function makeLeaf(partial: Partial<LeafNode> & { id: string }): LeafNode {
   }
 }
 
-function findLeaf(node: PaneNode, paneId: string): LeafNode | null {
+export function findLeaf(node: PaneNode, paneId: string): LeafNode | null {
   if (node.type === 'leaf') return node.id === paneId ? node : null
   for (const child of node.children) {
     const found = findLeaf(child, paneId)
@@ -193,6 +199,21 @@ function mapSplitChildren(node: PaneNode, splitId: string, children: PaneNode[])
     return { ...node, children: node.children.map((c) => mapSplitChildren(c, splitId, children)) }
   }
   return node
+}
+
+// Returns the direct parent SplitNode that contains the leaf with `paneId`.
+// Returns null if the pane is the root or not found.
+function findParentSplit(node: PaneNode, paneId: string): SplitNode | null {
+  if (node.type === 'leaf') return null
+  const directIdx = node.children.findIndex(
+    (c) => c.type === 'leaf' && c.id === paneId,
+  )
+  if (directIdx !== -1) return node
+  for (const child of node.children) {
+    const found = findParentSplit(child, paneId)
+    if (found) return found
+  }
+  return null
 }
 
 // ---- Store ----
@@ -445,5 +466,66 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     })
 
     set({ tabs: newTabs, activeTabId: newActiveTabId })
+  },
+
+  movePane: (tabId, sourcePaneId, targetPaneId, side) => {
+    if (sourcePaneId === targetPaneId) return
+    const desiredDirection: 'horizontal' | 'vertical' =
+      side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
+    const sourceFirst = side === 'left' || side === 'top'
+
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === tabId)
+      if (!tab) return state
+
+      const source = findLeaf(tab.root, sourcePaneId)
+      if (!source) return state
+
+      // 1. Remove source from the tree (may collapse a parent split).
+      const treeWithoutSource = removeLeaf(tab.root, sourcePaneId)
+
+      // 2. Re-find the target in the new tree (its parent may have changed
+      //    if source and target were siblings in the now-collapsed split).
+      const target = findLeaf(treeWithoutSource, targetPaneId)
+      if (!target) return state
+
+      // 3. Locate the target's direct parent split.
+      const parentSplit = findParentSplit(treeWithoutSource, targetPaneId)
+
+      let newRoot: PaneNode
+
+      if (parentSplit && parentSplit.direction === desiredDirection) {
+        // Same orientation: insert source into the existing split.
+        const targetIndex = parentSplit.children.findIndex((c) => c.id === targetPaneId)
+        const insertIndex = sourceFirst ? targetIndex : targetIndex + 1
+        const newChildren = [...parentSplit.children]
+        newChildren.splice(insertIndex, 0, { ...source, size: 1 })
+        // Normalize to equal sizes for predictable layout.
+        const equalized = newChildren.map((c) => ({ ...c, size: 1 }))
+        newRoot = replaceNode(treeWithoutSource, parentSplit.id, {
+          ...parentSplit,
+          children: equalized,
+        })
+      } else {
+        // Different orientation: wrap source + target in a fresh split.
+        const newSplit: SplitNode = {
+          type: 'split',
+          id: `split_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          direction: desiredDirection,
+          size: 1,
+          children: sourceFirst
+            ? [{ ...source, size: 1 }, { ...target, size: 1 }]
+            : [{ ...target, size: 1 }, { ...source, size: 1 }],
+        }
+        newRoot = replaceNode(treeWithoutSource, targetPaneId, newSplit)
+      }
+
+      const newTabs = state.tabs.map((t) =>
+        t.id === tabId
+          ? { ...t, root: newRoot, activePaneId: sourcePaneId, title: deriveTitle(newRoot) }
+          : t,
+      )
+      return { tabs: newTabs }
+    })
   },
 }))
