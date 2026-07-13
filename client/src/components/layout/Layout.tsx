@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react'
+import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent } from '@dnd-kit/react'
+import { isSortable } from '@dnd-kit/react/sortable'
+import { move } from '@dnd-kit/helpers'
+import { PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom'
 import { useHostStore } from '../../stores/hostStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useVaultStore } from '../../stores/vaultStore'
+import { useDragStore, type DropSide } from '../../stores/dragStore'
 import api from '../../lib/api'
 import Modal from '../ui/Modal'
 import HostForm from '../hosts/HostForm'
@@ -13,12 +18,13 @@ import HistoryView from '../history/HistoryView'
 import SettingsPanel from '../settings/SettingsPanel'
 import TerminalView from '../terminal/TerminalView'
 import VaultSelector from './VaultSelector'
+import SortableTab, { TabPreview } from './SortableTab'
 
-type SidebarItem = 
-  | 'hosts' 
-  | 'snippets' 
-  | 'keys' 
-  | 'history' 
+type SidebarItem =
+  | 'hosts'
+  | 'snippets'
+  | 'keys'
+  | 'history'
   | 'settings'
 
 interface Group {
@@ -31,22 +37,72 @@ interface Group {
 
 export default function Layout() {
   const { isAuthenticated, user } = useAuthStore()
-  const { 
-    hosts, 
-    groups, 
-    fetchHosts, 
-    fetchGroups, 
+  const {
+    hosts,
+    groups,
+    fetchHosts,
+    fetchGroups,
     deleteHost,
     deleteGroup,
   } = useHostStore()
-  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs } = useTerminalStore()
+  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane } = useTerminalStore()
   const { logout: logoutAuth } = useAuthStore()
   const { currentVaultId } = useVaultStore()
+  const setDropPane = useDragStore((s) => s.setDropPane)
 
   const [activeSidebarItem, setActiveSidebarItem] = useState<SidebarItem>('hosts')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
   const [activeView, setActiveView] = useState<'vault' | 'sftp' | string>('vault')
+
+  const handleDragStart = () => {
+    setDropPane(null)
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { source, target } = event.operation
+    if (target?.data?.type === 'pane' && target.data.tabId !== source?.id) {
+      setDropPane({
+        tabId: String(target.data.tabId),
+        paneId: String(target.data.paneId),
+        side: target.data.side as DropSide,
+      })
+    } else {
+      setDropPane(null)
+    }
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { source, target } = event.operation
+    if (event.canceled) {
+      setDropPane(null)
+      return
+    }
+    if (!source) {
+      setDropPane(null)
+      return
+    }
+    if (target?.data?.type === 'pane' && target.data.tabId !== source?.id) {
+      mergeTabIntoPane(
+        String(source.id),
+        String(target.data.tabId),
+        String(target.data.paneId),
+        target.data.side as DropSide,
+      )
+      setActiveView(String(target.data.tabId))
+      setDropPane(null)
+    } else if (isSortable(source)) {
+      const { initialIndex, index } = source
+      if (initialIndex !== index) {
+        const reordered = move(tabs, event)
+        setTabOrder(reordered.map((t) => t.id))
+      }
+      setDropPane(null)
+    } else {
+      setDropPane(null)
+    }
+  }
+
   const [showHostForm, setShowHostForm] = useState(false)
   const [editingHost, setEditingHost] = useState<any>(null)
   const [showGroupForm, setShowGroupForm] = useState(false)
@@ -133,51 +189,51 @@ export default function Layout() {
   }
 
   const sidebarItems: { id: SidebarItem; label: string; icon: React.ReactNode }[] = [
-    { 
-      id: 'hosts', 
-      label: 'Hosts', 
+    {
+      id: 'hosts',
+      label: 'Hosts',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
         </svg>
-      )
+      ),
     },
-    { 
-      id: 'snippets', 
-      label: 'Snippets', 
+    {
+      id: 'snippets',
+      label: 'Snippets',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-      )
+      ),
     },
-    { 
-      id: 'keys', 
-      label: 'Keys', 
+    {
+      id: 'keys',
+      label: 'Keys',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
         </svg>
-      )
+      ),
     },
-    { 
-      id: 'history', 
-      label: 'History', 
+    {
+      id: 'history',
+      label: 'History',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-      )
+      ),
     },
-    { 
-      id: 'settings', 
-      label: 'Settings', 
+    {
+      id: 'settings',
+      label: 'Settings',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-      )
+      ),
     },
   ]
 
@@ -332,7 +388,7 @@ export default function Layout() {
                 New Snippet
               </button>
             </div>
-            
+
             {snippets.length === 0 ? (
               <div
                 onClick={handleNewSnippet}
@@ -437,231 +493,235 @@ export default function Layout() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-dark-950">
-      {/* Full-width header (spans over sidebar area) */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-10 bg-dark-900 border-b border-dark-800 flex items-center px-2 gap-0.5">
-        {/* Mobile menu toggle */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="lg:hidden p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0 mr-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
+    <DragDropProvider
+      sensors={(defaults) => [
+        ...defaults.filter((sensor) => sensor !== PointerSensor),
+        PointerSensor.configure({
+          activationConstraints: (event) => {
+            if (event.pointerType === 'touch') {
+              return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })]
+            }
+            return [new PointerActivationConstraints.Distance({ value: 5 })]
+          },
+        }),
+      ]}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="min-h-screen bg-dark-950">
+        {/* Full-width header (spans over sidebar area) */}
+        <header className="fixed top-0 left-0 right-0 z-50 h-10 bg-dark-900 border-b border-dark-800 flex items-center px-2 gap-0.5">
+          {/* Mobile menu toggle */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0 mr-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
 
-        {/* Vaults Tab */}
-        <button
-          onClick={() => setActiveView('vault')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
-            activeView === 'vault'
-              ? 'bg-dark-800 text-white'
-              : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
-          }`}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-          Vaults
-          {activeView === 'vault' && <VaultSelector />}
-        </button>
-
-        {/* SFTP Tab */}
-        <button
-          onClick={() => setActiveView('sftp')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
-            activeView === 'sftp'
-              ? 'bg-dark-800 text-white'
-              : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
-          }`}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-          SFTP
-        </button>
-
-        {/* Separator */}
-        {tabs.length > 0 && <div className="flex-shrink-0 w-px h-4 mx-1 bg-dark-700" />}
-
-        {/* Real Tabs */}
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id)
-              setActiveView(tab.id)
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded cursor-pointer transition-colors max-w-[140px] flex-shrink-0 ${
-              activeView === tab.id
+          {/* Vaults Tab */}
+          <button
+            onClick={() => setActiveView('vault')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
+              activeView === 'vault'
                 ? 'bg-dark-800 text-white'
                 : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
             }`}
           >
-            <div
-              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                !tab.hostId
-                  ? 'bg-dark-500'
-                  : tab.connectionStatus === 'connected'
-                    ? 'bg-green-500'
-                    : tab.connectionStatus === 'connecting'
-                      ? 'bg-yellow-500 animate-pulse'
-                      : 'bg-dark-500'
-              }`}
-            />
-            <span className="truncate">{tab.title}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                const isClosingActive = activeView === tab.id
-                removeTab(tab.id)
-                if (isClosingActive) {
-                  const { tabs: remainingTabs } = useTerminalStore.getState()
-                  if (remainingTabs.length > 0) {
-                    setActiveView(remainingTabs[remainingTabs.length - 1].id)
-                  } else {
-                    setActiveView('vault')
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            Vaults
+            {activeView === 'vault' && <VaultSelector />}
+          </button>
+
+          {/* SFTP Tab */}
+          <button
+            onClick={() => setActiveView('sftp')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
+              activeView === 'sftp'
+                ? 'bg-dark-800 text-white'
+                : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            SFTP
+          </button>
+
+          {/* Separator */}
+          {tabs.length > 0 && <div className="flex-shrink-0 w-px h-4 mx-1 bg-dark-700" />}
+
+          {/* Real Tabs (sortable, powered by dnd-kit) */}
+          <div className="flex items-center">
+            {tabs.map((tab, index) => (
+              <SortableTab
+                key={tab.id}
+                tab={tab}
+                index={index}
+                isActive={activeView === tab.id}
+                onActivate={() => {
+                  setActiveTab(tab.id)
+                  setActiveView(tab.id)
+                }}
+                onClose={() => {
+                  const isClosingActive = activeView === tab.id
+                  removeTab(tab.id)
+                  if (isClosingActive) {
+                    const { tabs: remainingTabs } = useTerminalStore.getState()
+                    if (remainingTabs.length > 0) {
+                      setActiveView(remainingTabs[remainingTabs.length - 1].id)
+                    } else {
+                      setActiveView('vault')
+                    }
                   }
-                }
-              }}
-              className="ml-0.5 text-dark-500 hover:text-white flex-shrink-0"
+                }}
+              />
+            ))}
+          </div>
+
+          {/* New Tab Button */}
+          <button
+            onClick={() => {
+              const newTabId = addEmptyTab()
+              setActiveView(newTabId)
+            }}
+            className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0"
+            title="New Tab"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Right-side actions */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-xs text-dark-500">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+              <span>Connected</span>
+            </div>
+            <button
+              onClick={() => { setActiveSidebarItem('settings'); setShowSettings(true); }}
+              className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors"
+              title="Settings"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
           </div>
-        ))}
+        </header>
 
-        {/* New Tab Button */}
-        <button
-          onClick={() => {
-            const newTabId = addEmptyTab()
-            setActiveView(newTabId)
-          }}
-          className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0"
-          title="New Tab"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Right-side actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-xs text-dark-500">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-            <span>Connected</span>
-          </div>
-          <button
-            onClick={() => { setActiveSidebarItem('settings'); setShowSettings(true); }}
-            className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors"
-            title="Settings"
+        {/* Sidebar (below header) */}
+        {activeView === 'vault' && (
+          <aside
+            className={`fixed left-0 top-10 bottom-0 z-40 w-72 bg-dark-900 border-r border-dark-800 transform transition-transform duration-300 ease-in-out flex flex-col ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}`}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        </div>
-      </header>
+            {/* Navigation */}
+            <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
+              {sidebarItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveSidebarItem(item.id)
+                    if (item.id === 'settings') setShowSettings(true)
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    activeSidebarItem === item.id
+                      ? 'bg-primary-600/20 text-primary-400'
+                      : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
+                  }`}
+                >
+                  <span className="flex items-center justify-center flex-shrink-0 w-5 h-5">{item.icon}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                </button>
+              ))}
+            </nav>
 
-      {/* Sidebar (below header) */}
-      {activeView === 'vault' && (
-        <aside
-          className={`fixed left-0 top-10 bottom-0 z-40 w-72 bg-dark-900 border-r border-dark-800 transform transition-transform duration-300 ease-in-out flex flex-col ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}`}
-        >
-          {/* Navigation */}
-          <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveSidebarItem(item.id)
-                  if (item.id === 'settings') setShowSettings(true)
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  activeSidebarItem === item.id
-                    ? 'bg-primary-600/20 text-primary-400'
-                    : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
-                }`}
-              >
-                <span className="flex items-center justify-center flex-shrink-0 w-5 h-5">{item.icon}</span>
-                <span className="flex-1 text-left">{item.label}</span>
-              </button>
-            ))}
-          </nav>
-
-          {/* Bottom: User & Actions */}
-          <div className="p-3 space-y-2 border-t border-dark-800">
-            <div className="flex items-center gap-3 p-2 rounded-lg bg-dark-800/50">
-              <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-full bg-primary-600/20">
-                <svg className="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+            {/* Bottom: User & Actions */}
+            <div className="p-3 space-y-2 border-t border-dark-800">
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-dark-800/50">
+                <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-full bg-primary-600/20">
+                  <svg className="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{user?.username || 'User'}</p>
+                  <p className="text-xs truncate text-dark-400">{user?.email}</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{user?.username || 'User'}</p>
-                <p className="text-xs truncate text-dark-400">{user?.email}</p>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center justify-center flex-1 gap-2 px-3 py-2 text-sm font-medium text-white transition-colors rounded-lg bg-dark-800 hover:bg-red-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span>Logout</span>
+                </button>
               </div>
             </div>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={handleLogout}
-                className="flex items-center justify-center flex-1 gap-2 px-3 py-2 text-sm font-medium text-white transition-colors rounded-lg bg-dark-800 hover:bg-red-600"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
-        </aside>
-      )}
+          </aside>
+        )}
 
-      {/* Mobile sidebar overlay */}
-      {activeView === 'vault' && isMobile && sidebarOpen && (
-        <div 
-          className="fixed bottom-0 left-0 right-0 z-30 top-10 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+        {/* Mobile sidebar overlay */}
+        {activeView === 'vault' && isMobile && sidebarOpen && (
+          <div
+            className="fixed bottom-0 left-0 right-0 z-30 top-10 bg-black/50 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      {/* Main Content (below header, right of sidebar when vault view) */}
-      <main className={`pt-10 h-screen flex flex-col ${activeView === 'vault' ? 'lg:ml-72' : ''} ${activeView === 'vault' && isMobile && sidebarOpen ? 'ml-72' : ''}`}>
-        {renderMainContent()}
-      </main>
+        {/* Main Content (below header, right of sidebar when vault view) */}
+        <main className={`pt-10 h-screen flex flex-col ${activeView === 'vault' ? 'lg:ml-72' : ''} ${activeView === 'vault' && isMobile && sidebarOpen ? 'ml-72' : ''}`}>
+          {renderMainContent()}
+        </main>
 
-      {/* Modals */}
-      <Modal open={showHostForm} onClose={() => { setShowHostForm(false); setEditingHost(null); }} title={editingHost ? 'Edit Host' : 'Add Host'} maxWidth="max-w-md">
-        <HostForm
-          host={editingHost}
-          onClose={() => { setShowHostForm(false); setEditingHost(null); }}
-        />
-      </Modal>
+        {/* Modals */}
+        <Modal open={showHostForm} onClose={() => { setShowHostForm(false); setEditingHost(null); }} title={editingHost ? 'Edit Host' : 'Add Host'} maxWidth="max-w-md">
+          <HostForm
+            host={editingHost}
+            onClose={() => { setShowHostForm(false); setEditingHost(null); }}
+          />
+        </Modal>
 
-      <Modal open={showGroupForm} onClose={() => { setShowGroupForm(false); setEditingGroup(null); }} title={editingGroup ? 'Edit Group' : 'New Group'} maxWidth="max-w-md">
-        <GroupForm
-          group={editingGroup}
-          onClose={() => { setShowGroupForm(false); setEditingGroup(null); }}
-        />
-      </Modal>
+        <Modal open={showGroupForm} onClose={() => { setShowGroupForm(false); setEditingGroup(null); }} title={editingGroup ? 'Edit Group' : 'New Group'} maxWidth="max-w-md">
+          <GroupForm
+            group={editingGroup}
+            onClose={() => { setShowGroupForm(false); setEditingGroup(null); }}
+          />
+        </Modal>
 
-      <Modal open={showSnippetForm} onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); }} title={editingSnippet ? 'Edit Snippet' : 'New Snippet'} maxWidth="max-w-md">
-        <SnippetForm
-          snippet={editingSnippet}
-          onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); fetchSnippets(currentVaultId || undefined); }}
-        />
-      </Modal>
+        <Modal open={showSnippetForm} onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); }} title={editingSnippet ? 'Edit Snippet' : 'New Snippet'} maxWidth="max-w-md">
+          <SnippetForm
+            snippet={editingSnippet}
+            onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); fetchSnippets(currentVaultId || undefined); }}
+          />
+        </Modal>
 
-      <Modal open={showSettings} onClose={() => setShowSettings(false)} title="Settings" maxWidth="max-w-2xl">
-        <SettingsPanel onClose={() => setShowSettings(false)} />
-      </Modal>
-    </div>
+        <Modal open={showSettings} onClose={() => setShowSettings(false)} title="Settings" maxWidth="max-w-2xl">
+          <SettingsPanel onClose={() => setShowSettings(false)} />
+        </Modal>
+
+        <DragOverlay>
+          {(source) => {
+            const tab = tabs.find((t) => t.id === source.id)
+            if (!tab) return null
+            return <TabPreview tab={tab} />
+          }}
+        </DragOverlay>
+      </div>
+    </DragDropProvider>
   )
 }

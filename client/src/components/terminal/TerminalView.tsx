@@ -1,26 +1,23 @@
 import { useCallback, useState } from 'react'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useTerminalStore } from '../../stores/terminalStore'
-import ConnectionStatus from '../connection/ConnectionStatus'
 import CommandAutocomplete from './CommandAutocomplete'
 import FocusMode from './FocusMode'
-import HostBrowser from './HostBrowser'
+import PaneTree from './PaneTree'
 import QuickConnect from './QuickConnect'
-import Terminal from './Terminal'
 
 interface TerminalViewProps {
   onSetActiveView?: (view: string) => void
 }
 
 export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
-  const { tabs, activeTabId, connectTab } =
+  const { tabs, activeTabId, connectActivePane, splitPane, removePane } =
     useTerminalStore()
   const [isFocusMode, setIsFocusMode] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [sidebarVisible, setSidebarVisible] = useState(true)
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
-  const connectionStatus = activeTab?.connectionStatus ?? 'disconnected'
 
   const handleNextTab = useCallback(() => {
     const currentIndex = tabs.findIndex((t) => t.id === activeTabId)
@@ -68,44 +65,54 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
 
   const handleQuickConnectHost = useCallback(
     (host: any) => {
-      const newTabId = useTerminalStore.getState().addEmptyTab()
-      connectTab(newTabId, host.id, host.name, {
+      const { activeTabId: atId } = useTerminalStore.getState()
+      if (!atId) {
+        const newTabId = useTerminalStore.getState().addEmptyTab()
+        onSetActiveView?.(newTabId)
+        useTerminalStore.getState().connectActivePane(newTabId, host.id, host.name, {
+          hostAddress: host.address,
+          hostPort: host.port,
+          hostUsername: host.username,
+        })
+        return
+      }
+      connectActivePane(atId, host.id, host.name, {
         hostAddress: host.address,
         hostPort: host.port,
         hostUsername: host.username,
       })
-      onSetActiveView?.(newTabId)
+      onSetActiveView?.(atId)
     },
-    [connectTab, onSetActiveView],
+    [connectActivePane, onSetActiveView],
   )
 
-  // Create a stable onConnect handler for each tab's HostBrowser
-  const makeTabConnectHandler = useCallback(
-    (tabId: string) => {
-      return (host: any) => {
-        const tab = useTerminalStore.getState().tabs.find((t) => t.id === tabId)
-        if (tab && !tab.hostId) {
-          connectTab(tabId, host.id, host.name, {
-            hostAddress: host.address,
-            hostPort: host.port,
-            hostUsername: host.username,
-          })
-        }
-      }
+  const handleSplit = useCallback(
+    (direction: 'horizontal' | 'vertical') => {
+      const { activeTabId: atId, tabs: currentTabs } = useTerminalStore.getState()
+      const tab = currentTabs.find((t) => t.id === atId)
+      if (!atId || !tab || !tab.activePaneId) return
+      splitPane(atId, tab.activePaneId, direction)
     },
-    [connectTab],
+    [splitPane],
   )
+
+  const handleCloseTab = useCallback(() => {
+    const { activeTabId: atId, tabs: currentTabs } = useTerminalStore.getState()
+    const tab = currentTabs.find((t) => t.id === atId)
+    if (!atId || !tab || !tab.activePaneId) return
+    removePane(atId, tab.activePaneId)
+  }, [removePane])
 
   useKeyboardShortcuts({
     onNewTab: () => {
       const newTabId = useTerminalStore.getState().addEmptyTab()
       onSetActiveView?.(newTabId)
     },
-    onCloseTab: () => {},
+    onCloseTab: handleCloseTab,
     onNextTab: handleNextTab,
     onPrevTab: handlePrevTab,
-    onSplitHorizontal: () => {},
-    onSplitVertical: () => {},
+    onSplitHorizontal: () => handleSplit('horizontal'),
+    onSplitVertical: () => handleSplit('vertical'),
     onFocusMode: handleFocusMode,
     onQuickConnect: () => {},
     onCommandPalette: () => setShowCommandPalette(!showCommandPalette),
@@ -118,36 +125,14 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
   return (
     <FocusMode isActive={isFocusMode} onExit={() => setIsFocusMode(false)}>
       <div className="flex flex-col flex-1 min-h-0">
-        {/* Connection Status Bar */}
-        {activeTab.hostId && (
-          <div className="px-4 py-2 border-b bg-dark-800 border-dark-700">
-            <ConnectionStatus
-              status={connectionStatus}
-              hostName={activeTab.title}
-            />
-          </div>
-        )}
-
-        {/* Terminal Content — render ALL tabs, hide inactive ones */}
+        {/* All tabs rendered (kept mounted so SSH sessions persist); only active shown */}
         <div className="relative flex-1 min-h-0 overflow-hidden bg-dark-950">
           {tabs.map((tab) => (
             <div
               key={tab.id}
               className={`absolute inset-0 ${tab.id === activeTabId ? '' : 'opacity-0 pointer-events-none'}`}
             >
-              {tab.hostId ? (
-                <Terminal
-                  hostId={tab.hostId}
-                  hostName={tab.title}
-                  tabId={tab.id}
-                  hostAddress={tab.hostAddress}
-                  hostPort={tab.hostPort}
-                  hostUsername={tab.hostUsername}
-                  isActive={tab.id === activeTabId}
-                />
-              ) : (
-                <HostBrowser onConnect={makeTabConnectHandler(tab.id)} />
-              )}
+              <PaneTree tabId={tab.id} node={tab.root} activePaneId={tab.activePaneId} isActiveTab={tab.id === activeTabId} />
             </div>
           ))}
         </div>
