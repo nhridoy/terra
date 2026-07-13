@@ -243,6 +243,39 @@ class ApiClient {
     })
   }
 
+  // Quick Presets (tab groups)
+  async listTabGroups(vaultId?: string) {
+    const query = vaultId ? `?vaultId=${encodeURIComponent(vaultId)}` : ''
+    return this.request<{ tabGroups: any[] }>(`/tab-groups${query}`)
+  }
+
+  async createTabGroup(tabGroup: any) {
+    return this.request<{ tabGroup: any }>('/tab-groups', {
+      method: 'POST',
+      body: JSON.stringify(tabGroup),
+    })
+  }
+
+  async updateTabGroup(id: string, tabGroup: any) {
+    return this.request<{ tabGroup: any }>(`/tab-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(tabGroup),
+    })
+  }
+
+  async renameTabGroup(id: string, name: string) {
+    return this.request<{ tabGroup: any }>(`/tab-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async deleteTabGroup(id: string) {
+    return this.request(`/tab-groups/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
   // SFTP
   async listFiles(hostId: string, path: string) {
     return this.request<{ files: any[] }>(

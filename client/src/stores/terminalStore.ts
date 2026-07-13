@@ -42,6 +42,11 @@ export interface TerminalTab {
   activePaneId: string | null
   isActive: boolean
   title: string
+  // Preset tracking: when this tab was launched from / saved as a Quick Preset.
+  activePresetId: string | null
+  activePresetName: string | null
+  savedPresetSnapshot: string
+  presetDirty: boolean
 }
 
 interface ConnectOptions {
@@ -102,6 +107,12 @@ interface TerminalState {
   ) => void
   // Restore a saved workspace: rebuild every tab and reconnect to its hosts.
   launchWorkspace: (layout: WorkspaceLayout, workspaceId?: string, workspaceName?: string) => void
+  // Restore a saved Quick Preset: replace a single tab's pane tree and reconnect hosts.
+  restorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
+  // Persist the current tab's layout back onto its active preset (overwrite).
+  saveCurrentPreset: (tabId: string) => Promise<void>
+  // Mark a tab as belonging to a preset (used right after saving a new preset).
+  setPresetForTab: (tabId: string, presetId: string, presetName: string) => void
   // Persist the current tabs back onto the active workspace (overwrite).
   saveCurrentWorkspace: () => Promise<void>
   // Persist the current tabs as a brand new workspace.
@@ -301,6 +312,12 @@ export function serializeWorkspaceLayout(tabs: TerminalTab[]): WorkspaceSavePayl
   return { tabs: out, hostIds }
 }
 
+// A stable snapshot of a single tab's pane tree (volatile fields stripped).
+// Used for per-tab Quick Preset dirty detection.
+export function computeTabSnapshot(root: PaneNode): string {
+  return JSON.stringify(stripVolatile(root))
+}
+
 // A stable snapshot of the live tabs' structure (only connected, volatile
 // stripped). Used to cheaply detect whether the user changed the layout.
 function computeSnapshot(tabs: TerminalTab[]): string {
@@ -335,6 +352,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       activePaneId: leaf.id,
       isActive: true,
       title: hostName,
+      activePresetId: null,
+      activePresetName: null,
+      savedPresetSnapshot: '',
+      presetDirty: false,
     }
     const tabs = get().tabs.map((t) => ({ ...t, isActive: false }))
     set({ tabs: [...tabs, tab], activeTabId: tab.id })
@@ -348,10 +369,96 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       activePaneId: leaf.id,
       isActive: true,
       title: 'New Tab',
+      activePresetId: null,
+      activePresetName: null,
+      savedPresetSnapshot: '',
+      presetDirty: false,
     }
     const tabs = get().tabs.map((t) => ({ ...t, isActive: false }))
     set({ tabs: [...tabs, tab], activeTabId: tab.id })
     return tab.id
+  },
+
+  restorePreset: (preset, tabId) => {
+    let root: PaneNode
+    try {
+      root = regenerateNodeIds(JSON.parse(preset.layout))
+    } catch (e) {
+      console.error('Failed to parse preset layout:', e)
+      return
+    }
+    // Replace the CURRENT tab's content (so launching a preset behaves like
+    // connecting a host from the New Tab view — same tab, not a new one).
+    const snapshot = computeTabSnapshot(root)
+    const tabs = get().tabs.map((t) => {
+      if (t.id !== tabId) return t
+      return {
+        ...t,
+        root,
+        activePaneId: firstLeafId(root),
+        title: deriveTitle(root),
+        activePresetId: preset.id ?? null,
+        activePresetName: preset.name ?? null,
+        savedPresetSnapshot: snapshot,
+        presetDirty: false,
+      }
+    })
+    set({ tabs })
+
+    // Reconnect every leaf that references a host.
+    const tab = tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    const leaves: LeafNode[] = []
+    const collect = (node: PaneNode) => {
+      if (node.type === 'leaf') leaves.push(node)
+      else node.children.forEach(collect)
+    }
+    collect(tab.root)
+    leaves.forEach((leaf) => {
+      if (leaf.hostId) {
+        get().connectPane(tabId, leaf.id, leaf.hostId, leaf.hostName, {
+          hostAddress: leaf.hostAddress,
+          hostPort: leaf.hostPort,
+          hostUsername: leaf.hostUsername,
+        })
+      }
+    })
+  },
+
+  saveCurrentPreset: async (tabId) => {
+    const { tabs } = get()
+    const tab = tabs.find((t) => t.id === tabId)
+    if (!tab || !tab.activePresetId) return
+    try {
+      await api.updateTabGroup(tab.activePresetId, {
+        layout: JSON.stringify(stripVolatile(tab.root)),
+      })
+      set({
+        tabs: tabs.map((t) =>
+          t.id === tabId
+            ? { ...t, savedPresetSnapshot: computeTabSnapshot(t.root), presetDirty: false }
+            : t,
+        ),
+      })
+    } catch (e) {
+      console.error('Failed to save preset changes:', e)
+    }
+  },
+
+  setPresetForTab: (tabId, presetId, presetName) => {
+    set({
+      tabs: get().tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              activePresetId: presetId,
+              activePresetName: presetName,
+              savedPresetSnapshot: computeTabSnapshot(t.root),
+              presetDirty: false,
+            }
+          : t,
+      ),
+    })
   },
 
   connectPane: (tabId, paneId, hostId, hostName, options) => {
@@ -653,6 +760,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         activePaneId: firstLeafId(root),
         isActive: false,
         title: savedTab.title || deriveTitle(root),
+        activePresetId: null,
+        activePresetName: null,
+        savedPresetSnapshot: '',
+        presetDirty: false,
       }
     })
 

@@ -12,6 +12,7 @@ interface PaneProps {
   isActive: boolean
   closable: boolean
   isActiveTab: boolean
+  onRestorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
 }
 
 function statusDotClass(status: string): string {
@@ -82,7 +83,7 @@ function PaneDropZone({ tabId, paneId, side }: { tabId: string; paneId: string; 
   return <div ref={ref} style={style} />
 }
 
-export default function Pane({ tabId, pane, isActive, closable, isActiveTab }: PaneProps) {
+export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onRestorePreset }: PaneProps) {
   const { setActivePane, splitPane, removePane, connectPane } = useTerminalStore()
   const dropPane = useDragStore((s) => s.dropPane)
   const dropSide: DropSide | null =
@@ -203,7 +204,7 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab }: P
             isActive={isActive}
           />
         ) : (
-          <HostBrowser onConnect={handleConnect} />
+          <HostBrowser onConnect={handleConnect} onRestorePreset={(preset) => onRestorePreset(preset, tabId)} />
         )}
         {isActiveTab && (
           <>

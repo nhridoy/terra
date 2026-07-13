@@ -8,6 +8,7 @@ interface PaneTreeProps {
   node: PaneNode
   activePaneId: string | null
   isActiveTab: boolean
+  onRestorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
 }
 
 interface PlacedPane {
@@ -209,7 +210,7 @@ function findSplitInStore(tabId: string, splitId: string) {
   return null
 }
 
-export default function PaneTree({ tabId, node, activePaneId, isActiveTab }: PaneTreeProps) {
+export default function PaneTree({ tabId, node, activePaneId, isActiveTab, onRestorePreset }: PaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const closable = countLeaves(node) > 1
 
@@ -239,6 +240,7 @@ export default function PaneTree({ tabId, node, activePaneId, isActiveTab }: Pan
               isActive={p.id === activePaneId}
               closable={closable}
               isActiveTab={isActiveTab}
+              onRestorePreset={onRestorePreset}
             />
           </div>
         )

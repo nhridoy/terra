@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/react/sortable'
 import { closestCenter } from '@dnd-kit/collision'
 import type { TerminalTab, PaneNode } from '../../stores/terminalStore'
+import { computeTabSnapshot } from '../../stores/terminalStore'
 
 function collectPaneStatuses(node: PaneNode): string[] {
   if (node.type === 'leaf') return [node.connectionStatus]
@@ -17,14 +18,9 @@ function statusDotClass(statuses: string[]): string {
         : 'bg-dark-500'
 }
 
-export function TabPreview({ tab }: { tab: TerminalTab }) {
-  const dot = statusDotClass(collectPaneStatuses(tab.root))
-  return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-dark-800 text-white shadow-xl pointer-events-none opacity-90 ring-1 ring-primary-500/60">
-      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-      <span className="truncate max-w-[120px]">{tab.title}</span>
-    </div>
-  )
+function countLeaves(node: PaneNode): number {
+  if (node.type === 'leaf') return 1
+  return node.children.reduce((sum, c) => sum + countLeaves(c), 0)
 }
 
 interface SortableTabProps {
@@ -33,9 +29,11 @@ interface SortableTabProps {
   isActive: boolean
   onActivate: () => void
   onClose: () => void
+  onSavePreset?: (tabId: string) => void
+  onSavePresetChanges?: (tabId: string) => void
 }
 
-export default function SortableTab({ tab, index, isActive, onActivate, onClose }: SortableTabProps) {
+export default function SortableTab({ tab, index, isActive, onActivate, onClose, onSavePreset, onSavePresetChanges }: SortableTabProps) {
   const { ref, isDragging } = useSortable({
     id: tab.id,
     index,
@@ -43,6 +41,9 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose 
     collisionDetector: closestCenter,
   })
   const dot = statusDotClass(collectPaneStatuses(tab.root))
+  const multiPane = countLeaves(tab.root) > 1
+  const hasPreset = !!tab.activePresetId
+  const isPresetDirty = hasPreset && computeTabSnapshot(tab.root) !== tab.savedPresetSnapshot
 
   return (
     <div
@@ -57,6 +58,58 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose 
     >
       <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
       <span className="truncate">{tab.title}</span>
+
+      {/* Quick Preset controls */}
+      {hasPreset ? (
+        <>
+          {isPresetDirty && (
+            <span
+              className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500"
+              title="Unsaved changes"
+            />
+          )}
+          {onSavePresetChanges && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onSavePresetChanges(tab.id)
+              }}
+              disabled={!isPresetDirty}
+              title={isPresetDirty ? 'Save preset changes' : 'No unsaved changes'}
+              className={`flex-shrink-0 ${
+                isPresetDirty
+                  ? 'text-primary-400 hover:text-white'
+                  : 'text-dark-600 cursor-default'
+              }`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
+              </svg>
+            </button>
+          )}
+        </>
+      ) : (
+        multiPane &&
+        onSavePreset && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onSavePreset(tab.id)
+            }}
+            className="text-dark-500 hover:text-white flex-shrink-0"
+            title="Save as Quick Preset"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
+            </svg>
+          </button>
+        )
+      )}
+
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -69,6 +122,14 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose 
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
+    </div>
+  )
+}
+
+export function TabPreview({ tab }: { tab: TerminalTab }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800/50">
+      <span className="text-xs text-dark-300 truncate max-w-[160px]">{tab.title}</span>
     </div>
   )
 }

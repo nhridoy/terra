@@ -8,6 +8,7 @@ import { useTerminalStore, findLeaf, serializeWorkspaceLayout } from '../../stor
 import { useAuthStore } from '../../stores/authStore'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useTabGroupStore } from '../../stores/tabGroupStore'
 import { useDragStore, type DropSide } from '../../stores/dragStore'
 import api from '../../lib/api'
 import Modal from '../ui/Modal'
@@ -160,6 +161,8 @@ export default function Layout() {
   const [showSettings, setShowSettings] = useState(false)
   const [snippets, setSnippets] = useState<any[]>([])
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false)
+  const [showPresetForm, setShowPresetForm] = useState(false)
+  const [presetTargetTabId, setPresetTargetTabId] = useState<string | null>(null)
 
   // Handle mobile breakpoint
   useEffect(() => {
@@ -258,6 +261,31 @@ export default function Layout() {
     // (sets activeWorkspaceId, clears dirty state, refreshes the list).
     useTerminalStore.getState().saveAsNewWorkspace(name, currentVaultId || undefined)
     setShowWorkspaceForm(false)
+  }
+
+  const handleSavePreset = (tabId: string) => {
+    setPresetTargetTabId(tabId)
+    setShowPresetForm(true)
+  }
+
+  const handlePresetFormSubmit = async (name: string) => {
+    if (presetTargetTabId) {
+      const tab = useTerminalStore.getState().tabs.find((t) => t.id === presetTargetTabId)
+      if (tab) {
+        const created = await useTabGroupStore.getState().createTabGroup(name, tab.root, currentVaultId || undefined)
+        if (created) {
+          // Associate this tab with the new preset so the "save as new" button
+          // disappears and the per-tab dirty/save-changes UI takes over.
+          useTerminalStore.getState().setPresetForTab(presetTargetTabId, created.id, created.name)
+        }
+      }
+    }
+    setShowPresetForm(false)
+    setPresetTargetTabId(null)
+  }
+
+  const handleSavePresetChanges = (tabId: string) => {
+    useTerminalStore.getState().saveCurrentPreset(tabId)
   }
 
   const handleLogout = () => {
@@ -670,6 +698,8 @@ export default function Layout() {
                   setActiveTab(tab.id)
                   setActiveView(tab.id)
                 }}
+                onSavePreset={handleSavePreset}
+                onSavePresetChanges={handleSavePresetChanges}
                 onClose={() => {
                   const isClosingActive = activeView === tab.id
                   removeTab(tab.id)
@@ -878,6 +908,18 @@ export default function Layout() {
           submitLabel="Save"
           onSubmit={handleWorkspaceFormSubmit}
           onClose={() => { setShowWorkspaceForm(false) }}
+        />
+
+        <WorkspaceForm
+          open={showPresetForm}
+          title="Save Quick Preset"
+          submitLabel="Save"
+          initialName=""
+          onSubmit={handlePresetFormSubmit}
+          onClose={() => {
+            setShowPresetForm(false)
+            setPresetTargetTabId(null)
+          }}
         />
 
         <DragOverlay>

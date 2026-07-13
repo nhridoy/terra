@@ -103,6 +103,14 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
     removePane(atId, tab.activePaneId)
   }, [removePane])
 
+  const handleRestorePreset = useCallback(
+    (preset: { id?: string; name?: string; layout: string }, tabId: string) => {
+      useTerminalStore.getState().restorePreset(preset, tabId)
+      onSetActiveView?.(tabId)
+    },
+    [onSetActiveView],
+  )
+
   useKeyboardShortcuts({
     onNewTab: () => {
       const newTabId = useTerminalStore.getState().addEmptyTab()
@@ -132,7 +140,7 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
               key={tab.id}
               className={`absolute inset-0 ${tab.id === activeTabId ? '' : 'opacity-0 pointer-events-none'}`}
             >
-              <PaneTree tabId={tab.id} node={tab.root} activePaneId={tab.activePaneId} isActiveTab={tab.id === activeTabId} />
+              <PaneTree tabId={tab.id} node={tab.root} activePaneId={tab.activePaneId} isActiveTab={tab.id === activeTabId} onRestorePreset={handleRestorePreset} />
             </div>
           ))}
         </div>
