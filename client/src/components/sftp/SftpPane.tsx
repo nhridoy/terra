@@ -5,8 +5,11 @@ import { CollisionPriority } from '@dnd-kit/abstract'
 import type { SftpLeafNode } from '../../stores/sftpStore'
 import { useSftpStore } from '../../stores/sftpStore'
 import FileBrowser from './FileBrowser'
+import LocalFileBrowser from './LocalFileBrowser'
 import SftpHostPicker from './SftpHostPicker'
 import Modal from '../ui/Modal'
+import { openDirectoryPicker } from '../../lib/localFs'
+import { toast } from '../ui/Toast'
 
 type DropSide = 'left' | 'right' | 'top' | 'bottom'
 
@@ -69,7 +72,7 @@ interface SftpPaneProps {
 }
 
 export default function SftpPane({ pane, isActive, closable, dropSide, onConnectHost }: SftpPaneProps) {
-  const { splitPane, removePane, setActivePane } = useSftpStore()
+  const { splitPane, removePane, setActivePane, connectLocal } = useSftpStore()
   const [showHostPicker, setShowHostPicker] = useState(false)
 
   const { ref, isDragging } = useDraggable({
@@ -167,18 +170,13 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
         {pane.connectionType === 'host' && pane.hostId ? (
           <FileBrowser
             hostId={pane.hostId}
+            hostAddress={pane.hostAddress}
+            hostPort={pane.hostPort}
+            hostUsername={pane.hostUsername}
             onFileSelect={() => {}}
           />
         ) : pane.connectionType === 'local' ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <svg className="w-12 h-12 mx-auto mb-3 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <p className="text-sm text-dark-400">Local filesystem</p>
-              <p className="text-xs text-dark-500 mt-1">{pane.localPath || '/'}</p>
-            </div>
-          </div>
+          <LocalFileBrowser rootPath={pane.localPath || '/'} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -197,7 +195,15 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
                   Connect Host
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); /* placeholder */ }}
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    try {
+                      const path = await openDirectoryPicker()
+                      if (path) connectLocal(pane.id, path)
+                    } catch (err) {
+                      toast(err instanceof Error ? err.message : 'Failed to open directory picker', 'error')
+                    }
+                  }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors rounded bg-dark-700 hover:bg-dark-600 text-dark-300"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

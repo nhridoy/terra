@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import LoginScreen from './components/auth/LoginScreen'
 import Layout from './components/layout/Layout'
+import ToastContainer from './components/ui/Toast'
 import { useAuthStore } from './stores/authStore'
 import { useHostStore } from './stores/hostStore'
 import { useVaultStore } from './stores/vaultStore'
@@ -30,7 +31,12 @@ function App() {
     return <LoginScreen />
   }
 
-  return <Layout />
+  return (
+    <>
+      <Layout />
+      <ToastContainer />
+    </>
+  )
 }
 
 export default App

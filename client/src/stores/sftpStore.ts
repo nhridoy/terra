@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { TransferItem } from '../lib/sftpTypes'
 
 // ---- Node types ----
 
@@ -101,9 +102,17 @@ function mapSplitChildren(node: SftpPaneNode, splitId: string, children: SftpPan
 
 // ---- Store ----
 
+interface ClipboardEntry {
+  hostId: string
+  paths: string[]
+}
+
 interface SftpState {
   root: SftpPaneNode
   activePaneId: string | null
+  transfers: TransferItem[]
+  clipboard: ClipboardEntry | null
+  clipboardMode: 'copy' | 'cut' | null
 
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void
   removePane: (paneId: string) => void
@@ -113,6 +122,12 @@ interface SftpState {
   connectHost: (paneId: string, hostId: string, hostName: string, options?: { hostAddress?: string; hostPort?: number; hostUsername?: string }) => void
   connectLocal: (paneId: string, path: string) => void
   disconnectPane: (paneId: string) => void
+  addTransfer: (transfer: TransferItem) => void
+  updateTransfer: (id: string, updates: Partial<TransferItem>) => void
+  removeTransfer: (id: string) => void
+  clearCompletedTransfers: () => void
+  setClipboard: (hostId: string, paths: string[], mode: 'copy' | 'cut') => void
+  clearClipboard: () => void
 }
 
 // Two horizontal panes by default
@@ -130,6 +145,9 @@ const initialRoot: SftpPaneNode = {
 export const useSftpStore = create<SftpState>((set, get) => ({
   root: initialRoot,
   activePaneId: findFirstLeafId(initialRoot),
+  transfers: [],
+  clipboard: null,
+  clipboardMode: null,
 
   splitPane: (paneId, direction) => {
     const newId = uid('sftp_pane')
@@ -256,6 +274,32 @@ export const useSftpStore = create<SftpState>((set, get) => ({
         })
       })(),
     })
+  },
+
+  addTransfer: (transfer) => {
+    set({ transfers: [...get().transfers, transfer] })
+  },
+
+  updateTransfer: (id, updates) => {
+    set({
+      transfers: get().transfers.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    })
+  },
+
+  removeTransfer: (id) => {
+    set({ transfers: get().transfers.filter((t) => t.id !== id) })
+  },
+
+  clearCompletedTransfers: () => {
+    set({ transfers: get().transfers.filter((t) => t.status !== 'complete' && t.status !== 'error') })
+  },
+
+  setClipboard: (hostId, paths, mode) => {
+    set({ clipboard: { hostId, paths }, clipboardMode: mode })
+  },
+
+  clearClipboard: () => {
+    set({ clipboard: null, clipboardMode: null })
   },
 }))
 

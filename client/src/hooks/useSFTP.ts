@@ -1,17 +1,6 @@
 import { useCallback, useState } from 'react'
 import api from '../lib/api'
-
-interface FileItem {
-  name: string
-  path: string
-  type: 'file' | 'directory' | 'symlink'
-  size: number
-  permissions: string
-  owner: string
-  group: string
-  modifiedAt: string
-  isHidden: boolean
-}
+import type { FileItem } from '../lib/sftpTypes'
 
 interface TransferItem {
   id: string
@@ -43,8 +32,8 @@ export function useSFTP(hostId: string) {
         const result = await api.listFiles(hostId, dirPath)
         setFiles(result.files)
         if (path) setCurrentPath(path)
-      } catch (err: any) {
-        setError(err.message || 'Failed to load directory')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load directory')
       } finally {
         setIsLoading(false)
       }
@@ -74,15 +63,10 @@ export function useSFTP(hostId: string) {
       setIsLoading(true)
       setError(null)
       try {
-        const reader = new FileReader()
-        reader.onload = async () => {
-          const content = reader.result as string
-          await api.uploadFile(hostId, path, file.name, content)
-          loadDirectory(currentPath)
-        }
-        reader.readAsText(file)
-      } catch (err: any) {
-        setError(err.message || 'Failed to upload file')
+        await api.uploadFileWithProgress(hostId, path, file)
+        loadDirectory(currentPath)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to upload file')
       } finally {
         setIsLoading(false)
       }
@@ -98,8 +82,8 @@ export function useSFTP(hostId: string) {
         for (let i = 0; i < fileList.length; i++) {
           await uploadFile(fileList[i])
         }
-      } catch (err: any) {
-        setError(err.message || 'Failed to upload files')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to upload files')
       } finally {
         setIsLoading(false)
       }
@@ -112,16 +96,9 @@ export function useSFTP(hostId: string) {
       setIsLoading(true)
       setError(null)
       try {
-        const result = await api.readFile(hostId, file.path)
-        const blob = new Blob([result.content], { type: 'text/plain' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = file.name
-        a.click()
-        URL.revokeObjectURL(url)
-      } catch (err: any) {
-        setError(err.message || 'Failed to download file')
+        await api.downloadFileBlob(hostId, file.path, file.name)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to download file')
       } finally {
         setIsLoading(false)
       }
@@ -131,15 +108,13 @@ export function useSFTP(hostId: string) {
 
   const deleteFile = useCallback(
     async (file: FileItem) => {
-      if (!confirm(`Are you sure you want to delete ${file.name}?`)) return
-
       setIsLoading(true)
       setError(null)
       try {
         await api.deleteFile(hostId, file.path)
         loadDirectory(currentPath)
-      } catch (err: any) {
-        setError(err.message || 'Failed to delete file')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to delete file')
       } finally {
         setIsLoading(false)
       }
@@ -150,15 +125,14 @@ export function useSFTP(hostId: string) {
   const renameFile = useCallback(
     async (file: FileItem, newName: string) => {
       if (newName === file.name) return
-
       setIsLoading(true)
       setError(null)
       try {
         const newPath = currentPath + '/' + newName
         await api.moveFile(hostId, file.path, newPath)
         loadDirectory(currentPath)
-      } catch (err: any) {
-        setError(err.message || 'Failed to rename file')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to rename file')
       } finally {
         setIsLoading(false)
       }
@@ -173,8 +147,8 @@ export function useSFTP(hostId: string) {
       try {
         await api.createDirectory(hostId, currentPath, name)
         loadDirectory(currentPath)
-      } catch (err: any) {
-        setError(err.message || 'Failed to create folder')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to create folder')
       } finally {
         setIsLoading(false)
       }
@@ -189,8 +163,8 @@ export function useSFTP(hostId: string) {
       try {
         const result = await api.readFile(hostId, filePath)
         return result.content
-      } catch (err: any) {
-        setError(err.message || 'Failed to read file')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to read file')
         return null
       } finally {
         setIsLoading(false)
@@ -206,8 +180,8 @@ export function useSFTP(hostId: string) {
       try {
         await api.writeFile(hostId, filePath, content)
         return true
-      } catch (err: any) {
-        setError(err.message || 'Failed to write file')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to write file')
         return false
       } finally {
         setIsLoading(false)

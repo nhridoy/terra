@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
 interface ModalProps {
   open?: boolean
@@ -16,15 +16,6 @@ export default function Modal({
   maxWidth = 'max-w-lg',
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleEsc)
-    return () => document.removeEventListener('keydown', handleEsc)
-  }, [open, onClose])
 
   if (!open) return null
 

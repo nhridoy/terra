@@ -2,6 +2,30 @@
 
 const API_BASE = 'http://localhost:8080/api'
 
+const mimeTypes: Record<string, string> = {
+  'txt': 'text/plain',
+  'html': 'text/html',
+  'css': 'text/css',
+  'js': 'application/javascript',
+  'json': 'application/json',
+  'xml': 'application/xml',
+  'pdf': 'application/pdf',
+  'zip': 'application/zip',
+  'gz': 'application/gzip',
+  'tar': 'application/x-tar',
+  'png': 'image/png',
+  'jpg': 'image/jpeg',
+  'jpeg': 'image/jpeg',
+  'gif': 'image/gif',
+  'svg': 'image/svg+xml',
+  'webp': 'image/webp',
+  'mp3': 'audio/mpeg',
+  'mp4': 'video/mp4',
+  'woff': 'font/woff',
+  'woff2': 'font/woff2',
+  'ttf': 'font/ttf',
+}
+
 class ApiClient {
   private token: string | null = null
   private refreshToken: string | null = null
@@ -277,20 +301,30 @@ class ApiClient {
   }
 
   // SFTP
-  async listFiles(hostId: string, path: string) {
+  private directQuery(hostId: string, direct?: { host?: string; port?: number; username?: string }): string {
+    if (!hostId.startsWith('direct_') || !direct) return ''
+    const params = new URLSearchParams()
+    if (direct.host) params.set('host', direct.host)
+    if (direct.port) params.set('port', String(direct.port))
+    if (direct.username) params.set('username', direct.username)
+    const qs = params.toString()
+    return qs ? `&${qs}` : ''
+  }
+
+  async listFiles(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
     return this.request<{ files: any[] }>(
-      `/sftp/${hostId}/list?path=${encodeURIComponent(path)}`,
+      `/sftp/${hostId}/list?path=${encodeURIComponent(path)}${this.directQuery(hostId, direct)}`,
     )
   }
 
-  async readFile(hostId: string, path: string) {
+  async readFile(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
     return this.request<{ content: string }>(
-      `/sftp/${hostId}/read?path=${encodeURIComponent(path)}`,
+      `/sftp/${hostId}/read?path=${encodeURIComponent(path)}${this.directQuery(hostId, direct)}`,
     )
   }
 
-  async writeFile(hostId: string, path: string, content: string) {
-    return this.request(`/sftp/${hostId}/write`, {
+  async writeFile(hostId: string, path: string, content: string, direct?: { host?: string; port?: number; username?: string }) {
+    return this.request(`/sftp/${hostId}/write${this.directQuery(hostId, direct).replace('&', '?')}`, {
       method: 'POST',
       body: JSON.stringify({ path, content }),
     })
@@ -301,33 +335,123 @@ class ApiClient {
     remotePath: string,
     fileName: string,
     content: string,
+    direct?: { host?: string; port?: number; username?: string },
   ) {
-    return this.request(`/sftp/${hostId}/upload`, {
+    return this.request(`/sftp/${hostId}/upload${this.directQuery(hostId, direct).replace('&', '?')}`, {
       method: 'POST',
       body: JSON.stringify({ remotePath, fileName, content }),
     })
   }
 
-  async deleteFile(hostId: string, path: string) {
+  uploadFileWithProgress(
+    hostId: string,
+    remotePath: string,
+    file: File,
+    onProgress?: (loaded: number, total: number) => void,
+    direct?: { host?: string; port?: number; username?: string },
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const { token } = this.getTokens()
+      const xhr = new XMLHttpRequest()
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('path', remotePath)
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress(e.loaded, e.total)
+        }
+      })
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+        } else {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            reject(new Error(data.error || 'Upload failed'))
+          } catch {
+            reject(new Error('Upload failed'))
+          }
+        }
+      })
+
+      xhr.addEventListener('error', () => reject(new Error('Network error')))
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')))
+
+      const qs = this.directQuery(hostId, direct)
+      const sep = qs ? (hostId.startsWith('direct_') ? '&' : '?') : ''
+      xhr.open('POST', `${API_BASE}/sftp/${hostId}/upload${sep}${qs.replace('&', '')}`)
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      }
+      xhr.send(formData)
+    })
+  }
+
+  downloadFileBlob(
+    hostId: string,
+    path: string,
+    fileName: string,
+    direct?: { host?: string; port?: number; username?: string },
+  ): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const result = await this.readFile(hostId, path, direct)
+        // Server returns content as string — decode to binary
+        const bytes = Uint8Array.from(result.content, (c) => c.charCodeAt(0))
+        const ext = fileName.split('.').pop()?.toLowerCase() || ''
+        const mime = mimeTypes[ext] || 'application/octet-stream'
+        const blob = new Blob([bytes], { type: mime })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        resolve()
+      } catch (err) {
+        reject(err)
+      }
+    })
+  }
+
+  async deleteFile(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
+    const qs = this.directQuery(hostId, direct)
     return this.request(
-      `/sftp/${hostId}/delete?path=${encodeURIComponent(path)}`,
+      `/sftp/${hostId}/delete?path=${encodeURIComponent(path)}${qs}`,
       {
         method: 'DELETE',
       },
     )
   }
 
-  async moveFile(hostId: string, oldPath: string, newPath: string) {
-    return this.request(`/sftp/${hostId}/move`, {
+  async moveFile(hostId: string, oldPath: string, newPath: string, direct?: { host?: string; port?: number; username?: string }) {
+    const qs = this.directQuery(hostId, direct)
+    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
+    return this.request(`/sftp/${hostId}/move${sep}${qs}`, {
       method: 'POST',
       body: JSON.stringify({ oldPath, newPath }),
     })
   }
 
-  async createDirectory(hostId: string, parentPath: string, name: string) {
-    return this.request(`/sftp/${hostId}/mkdir`, {
+  async createDirectory(hostId: string, parentPath: string, name: string, direct?: { host?: string; port?: number; username?: string }) {
+    const qs = this.directQuery(hostId, direct)
+    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
+    return this.request(`/sftp/${hostId}/mkdir${sep}${qs}`, {
       method: 'POST',
       body: JSON.stringify({ parentPath, name }),
+    })
+  }
+
+  async copyFile(hostId: string, srcPath: string, dstPath: string, direct?: { host?: string; port?: number; username?: string }) {
+    const qs = this.directQuery(hostId, direct)
+    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
+    return this.request(`/sftp/${hostId}/copy${sep}${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ srcPath, dstPath }),
     })
   }
 

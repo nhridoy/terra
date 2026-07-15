@@ -30,6 +30,14 @@
         "renameFile": true,
         "exists": true
       },
+      "dialog": {
+        "all": true,
+        "open": true,
+        "save": true,
+        "message": true,
+        "ask": true,
+        "confirm": true
+      },
       "path": {
         "all": true
       },
