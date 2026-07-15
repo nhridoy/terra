@@ -19,7 +19,7 @@ function normalizeHost(raw: any): Host {
   return { ...raw, tags: normalizeTags(raw.tags) }
 }
 
-interface Host {
+export interface Host {
   id: string
   name: string
   address: string
@@ -34,7 +34,7 @@ interface Host {
   updatedAt: string
 }
 
-interface Group {
+export interface Group {
   id: string
   name: string
   parentId?: string | null
