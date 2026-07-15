@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent } from '@dnd-kit/react'
+import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent, useDraggable, useDroppable } from '@dnd-kit/react'
 import { isSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
 import { PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom'
@@ -36,9 +36,188 @@ type SidebarItem =
 interface Group {
   id: string
   name: string
-  parentId?: string
+  parentId?: string | null
   sortOrder: number
   createdAt: string
+}
+
+function getChildren(groups: Group[], parentId: string): Group[] {
+  return groups.filter((g) => g.parentId === parentId)
+}
+
+function getAncestors(groups: Group[], groupId: string): Group[] {
+  const ancestors: Group[] = []
+  let current = groups.find((g) => g.id === groupId)
+  while (current?.parentId) {
+    const parent = groups.find((g) => g.id === current!.parentId)
+    if (parent) {
+      ancestors.unshift(parent)
+      current = parent
+    } else break
+  }
+  return ancestors
+}
+
+function isDescendant(groups: Group[], groupId: string, potentialAncestorId: string): boolean {
+  let current = groups.find((g) => g.id === groupId)
+  while (current?.parentId) {
+    if (current.parentId === potentialAncestorId) return true
+    current = groups.find((g) => g.id === current!.parentId)
+  }
+  return false
+}
+
+function BreadcrumbDropTarget({ groupId, onClick, children }: { groupId: string | null; onClick: () => void; children: React.ReactNode }) {
+  const { ref, isDropTarget } = useDroppable({
+    id: groupId ? `breadcrumb:${groupId}` : 'breadcrumb:root',
+    data: groupId ? { type: 'group-target', groupId } : { type: 'root-target' },
+  })
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+        isDropTarget
+          ? 'bg-primary-600/20 text-primary-400 ring-1 ring-primary-500'
+          : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function DraggableHostCard({
+  host,
+  isDropTarget,
+  onConnect,
+  onEdit,
+  onDelete,
+}: {
+  host: any
+  isDropTarget?: boolean
+  onConnect: (host: any) => void
+  onEdit: (host: any) => void
+  onDelete: (id: string) => void
+}) {
+  const { ref, isDragging } = useDraggable({
+    id: `host:${host.id}`,
+    data: { type: 'host-source', hostId: host.id },
+  })
+
+  return (
+    <div
+      ref={ref}
+      onClick={() => onConnect(host)}
+      className={`relative p-3 transition-colors rounded-lg cursor-pointer bg-dark-800/50 hover:bg-dark-800 group ${isDragging ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-primary-500' : ''}`}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: host.color || '#64748b' }}
+        />
+        <span className="text-sm font-medium text-white truncate">{host.name}</span>
+      </div>
+      <p className="text-dark-500 text-xs mt-1 ml-[18px] truncate">
+        {host.username ? `${host.username}@` : ''}{host.address}:{host.port}
+      </p>
+      <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(host) }}
+          className="p-1 rounded text-dark-400 hover:text-yellow-500 hover:bg-dark-700"
+          title="Edit host"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete host "${host.name}"?`)) onDelete(host.id) }}
+          className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
+          title="Delete host"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DroppableGroupCard({
+  group,
+  hostCount,
+  childCount,
+  onClick,
+  onEdit,
+  onDelete,
+}: {
+  group: Group
+  hostCount: number
+  childCount: number
+  onClick: () => void
+  onEdit: (group: Group) => void
+  onDelete: (groupId: string) => void
+}) {
+  const { ref: droppableRef, isDropTarget } = useDroppable({
+    id: `group:${group.id}`,
+    data: { type: 'group-target', groupId: group.id },
+  })
+  const { ref: draggableRef, isDragging } = useDraggable({
+    id: `group-drag:${group.id}`,
+    data: { type: 'group-source', groupId: group.id },
+  })
+
+  const setRefs = (el: HTMLDivElement | null) => {
+    droppableRef(el)
+    draggableRef(el)
+  }
+
+  return (
+    <div
+      ref={setRefs}
+      onClick={onClick}
+      className={`relative p-3 transition-colors rounded-lg cursor-pointer group ${
+        isDragging
+          ? 'opacity-50'
+          : isDropTarget
+            ? 'bg-primary-600/20 ring-2 ring-primary-500'
+            : 'bg-dark-800/50 hover:bg-dark-800'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <svg className="w-4 h-4 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+        <span className="flex-1 text-sm font-medium text-white truncate">{group.name}</span>
+      </div>
+      <p className="mt-1 ml-6 text-xs text-dark-500">
+        {hostCount} host{hostCount === 1 ? '' : 's'}
+        {childCount > 0 && ` · ${childCount} sub-group${childCount === 1 ? '' : 's'}`}
+      </p>
+      <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(group) }}
+          className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700"
+          title="Edit group"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete group "${group.name}"?`)) onDelete(group.id) }}
+          className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
+          title="Delete group"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function Layout() {
@@ -48,6 +227,8 @@ export default function Layout() {
     groups,
     fetchHosts,
     fetchGroups,
+    updateHost,
+    updateGroup,
     deleteHost,
     deleteGroup,
   } = useHostStore()
@@ -73,6 +254,27 @@ export default function Layout() {
   const handleDragOver = (event: DragOverEvent) => {
     const { source, target } = event.operation
     const sourceType = source?.data?.type
+
+    // Host → group drag
+    if (sourceType === 'host-source' && target?.data?.type === 'group-target') {
+      return
+    }
+
+    // Host → root drag
+    if (sourceType === 'host-source' && target?.data?.type === 'root-target') {
+      return
+    }
+
+    // Group → group drag
+    if (sourceType === 'group-source' && target?.data?.type === 'group-target') {
+      return
+    }
+
+    // Group → root drag
+    if (sourceType === 'group-source' && target?.data?.type === 'root-target') {
+      return
+    }
+
     if (target?.data?.type === 'pane') {
       const isPaneSource = sourceType === 'pane-source'
       // Tab drag: drop only on a different tab's pane.
@@ -101,6 +303,49 @@ export default function Layout() {
       return
     }
     if (!source) {
+      setDropPane(null)
+      setSourcePane(null, null)
+      return
+    }
+
+    // Host → group drop (including breadcrumb segments).
+    if (source.data?.type === 'host-source' && target?.data?.type === 'group-target') {
+      const hostId = String(source.data.hostId)
+      const groupId = String(target.data.groupId)
+      updateHost(hostId, { groupId })
+      setDropPane(null)
+      setSourcePane(null, null)
+      return
+    }
+
+    // Host → root drop (ungroup host).
+    if (source.data?.type === 'host-source' && target?.data?.type === 'root-target') {
+      const hostId = String(source.data.hostId)
+      updateHost(hostId, { groupId: '' })
+      setDropPane(null)
+      setSourcePane(null, null)
+      return
+    }
+
+    // Group → group drop (reparent), including breadcrumb segments.
+    if (source.data?.type === 'group-source' && target?.data?.type === 'group-target') {
+      const sourceGroupId = String(source.data.groupId)
+      const targetGroupId = String(target.data.groupId)
+      if (sourceGroupId !== targetGroupId && !isDescendant(groups, targetGroupId, sourceGroupId)) {
+        updateGroup(sourceGroupId, { parentId: targetGroupId })
+      }
+      setDropPane(null)
+      setSourcePane(null, null)
+      return
+    }
+
+    // Group → root drop zone (move to root).
+    if (source.data?.type === 'group-source' && target?.data?.type === 'root-target') {
+      const sourceGroupId = String(source.data.groupId)
+      const group = groups.find((g) => g.id === sourceGroupId)
+      if (group && group.parentId) {
+        updateGroup(sourceGroupId, { parentId: '' })
+      }
       setDropPane(null)
       setSourcePane(null, null)
       return
@@ -154,8 +399,11 @@ export default function Layout() {
 
   const [showHostForm, setShowHostForm] = useState(false)
   const [editingHost, setEditingHost] = useState<any>(null)
+  const [defaultGroupId, setDefaultGroupId] = useState<string | undefined>()
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroup, setEditingGroup] = useState<any>(null)
+  const [newGroupParentId, setNewGroupParentId] = useState<string | null>(null)
   const [showSnippetForm, setShowSnippetForm] = useState(false)
   const [editingSnippet, setEditingSnippet] = useState<any>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -203,6 +451,19 @@ export default function Layout() {
 
   const handleNewHost = () => {
     setEditingHost(null)
+    setDefaultGroupId(undefined)
+    setShowHostForm(true)
+  }
+
+  const handleNewGroupInGroup = (parentId: string) => {
+    setEditingGroup(null)
+    setNewGroupParentId(parentId)
+    setShowGroupForm(true)
+  }
+
+  const handleNewHostInGroup = (groupId: string) => {
+    setEditingHost(null)
+    setDefaultGroupId(groupId)
     setShowHostForm(true)
   }
 
@@ -369,10 +630,138 @@ export default function Layout() {
           />
         )
 
-      case 'hosts':
+      case 'hosts': {
+        const selectedGroup = selectedGroupId ? groups.find((g) => g.id === selectedGroupId) : null
+        const rootGroups = groups.filter((g) => !g.parentId)
+
+        if (selectedGroup && selectedGroupId) {
+          const groupHosts = hosts.filter((h) => h.groupId === selectedGroupId)
+          const subGroups = getChildren(groups, selectedGroupId)
+
+          return (
+            <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+              {/* App-style breadcrumb */}
+              {(() => {
+                const ancestors = getAncestors(groups, selectedGroupId)
+                return (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <BreadcrumbDropTarget groupId={null} onClick={() => setSelectedGroupId(null)}>
+                      All Groups
+                    </BreadcrumbDropTarget>
+                    {ancestors.map((a) => (
+                      <span key={a.id} className="flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        <BreadcrumbDropTarget groupId={a.id} onClick={() => setSelectedGroupId(a.id)}>
+                          {a.name}
+                        </BreadcrumbDropTarget>
+                      </span>
+                    ))}
+                    <svg className="w-3.5 h-3.5 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="px-2.5 py-1 text-xs font-medium rounded-md bg-primary-600/20 text-primary-400">
+                      {selectedGroup.name}
+                    </span>
+                  </div>
+                )
+              })()}
+
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">{selectedGroup.name}</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleNewGroupInGroup(selectedGroupId!)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors rounded bg-dark-700 hover:bg-dark-600 text-dark-300"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Group
+                  </button>
+                  <button
+                    onClick={() => handleNewHostInGroup(selectedGroupId!)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white transition-colors rounded bg-primary-600 hover:bg-primary-700"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Host
+                  </button>
+                  <button
+                    onClick={() => handleEditGroup(selectedGroup)}
+                    className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700"
+                    title="Edit group"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => { if (confirm(`Delete group "${selectedGroup.name}"?`)) { deleteGroup(selectedGroup.id); setSelectedGroupId(null) } }}
+                    className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
+                    title="Delete group"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-groups */}
+              {subGroups.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold tracking-wider uppercase text-dark-400 mb-3">Sub-groups</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {subGroups.map((sg) => (
+                      <DroppableGroupCard
+                        key={sg.id}
+                        group={sg}
+                        hostCount={hosts.filter((h) => h.groupId === sg.id).length}
+                        childCount={getChildren(groups, sg.id).length}
+                        onClick={() => setSelectedGroupId(sg.id)}
+                        onEdit={handleEditGroup}
+                        onDelete={deleteGroup}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hosts in this group */}
+              <div>
+                <h3 className="text-sm font-semibold tracking-wider uppercase text-dark-400 mb-3">
+                  Hosts ({groupHosts.length})
+                </h3>
+                {groupHosts.length === 0 ? (
+                  <div className="p-6 text-center transition-colors border-2 border-dashed rounded-lg border-dark-600">
+                    <p className="text-sm text-dark-400">No hosts in this group</p>
+                    <p className="text-xs text-dark-500 mt-1">Drag a host here or click "Add Host"</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {groupHosts.map((host) => (
+                      <DraggableHostCard
+                        key={host.id}
+                        host={host}
+                        onConnect={handleConnect}
+                        onEdit={handleEditHost}
+                        onDelete={deleteHost}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        // Top-level view: groups + all hosts
         return (
           <div className="flex-1 p-4 space-y-6 overflow-y-auto">
-            {/* Groups Section */}
+            {/* Groups Section — root groups only */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold tracking-wider uppercase text-dark-400">Groups</h3>
@@ -386,7 +775,7 @@ export default function Layout() {
                   New Group
                 </button>
               </div>
-              {groups.length === 0 ? (
+              {rootGroups.length === 0 ? (
                 <div
                   onClick={handleNewGroup}
                   className="p-4 text-center transition-colors border-2 border-dashed rounded-lg cursor-pointer border-dark-600 hover:border-dark-500 hover:bg-dark-800/50"
@@ -395,39 +784,16 @@ export default function Layout() {
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
-                  {groups.map((group) => (
-                    <div
+                  {rootGroups.map((group) => (
+                    <DroppableGroupCard
                       key={group.id}
-                      className="relative p-3 transition-colors rounded-lg bg-dark-800/50 hover:bg-dark-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary-500" />
-                        <span className="flex-1 text-sm font-medium text-white truncate">{group.name}</span>
-                      </div>
-                      <p className="mt-1 ml-4 text-xs text-dark-500">
-                        {hosts.filter((h) => h.groupId === group.id).length} hosts
-                      </p>
-                      <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleEditGroup(group) }}
-                          className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700"
-                          title="Edit group"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete group "${group.name}"?`)) deleteGroup(group.id) }}
-                          className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
-                          title="Delete group"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
+                      group={group}
+                      hostCount={hosts.filter((h) => h.groupId === group.id).length}
+                      childCount={getChildren(groups, group.id).length}
+                      onClick={() => setSelectedGroupId(group.id)}
+                      onEdit={handleEditGroup}
+                      onDelete={deleteGroup}
+                    />
                   ))}
                 </div>
               )}
@@ -460,48 +826,20 @@ export default function Layout() {
               ) : (
                 <div className="grid grid-cols-3 gap-2">
                   {hosts.map((host) => (
-                    <div
+                    <DraggableHostCard
                       key={host.id}
-                      onClick={() => handleConnect(host)}
-                      className="relative p-3 transition-colors rounded-lg cursor-pointer bg-dark-800/50 hover:bg-dark-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: host.color || '#64748b' }}
-                        />
-                        <span className="text-sm font-medium text-white truncate">{host.name}</span>
-                      </div>
-                      <p className="text-dark-500 text-xs mt-1 ml-[18px] truncate">
-                        {host.username ? `${host.username}@` : ''}{host.address}:{host.port}
-                      </p>
-                      <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleEditHost(host) }}
-                          className="p-1 rounded text-dark-400 hover:text-yellow-500 hover:bg-dark-700"
-                          title="Edit host"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete host "${host.name}"?`)) deleteHost(host.id) }}
-                          className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
-                          title="Delete host"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
+                      host={host}
+                      onConnect={handleConnect}
+                      onEdit={handleEditHost}
+                      onDelete={deleteHost}
+                    />
                   ))}
                 </div>
               )}
             </div>
           </div>
         )
+      }
 
       case 'snippets':
         return (
@@ -877,17 +1215,19 @@ export default function Layout() {
         </main>
 
         {/* Modals */}
-        <Modal open={showHostForm} onClose={() => { setShowHostForm(false); setEditingHost(null); }} title={editingHost ? 'Edit Host' : 'Add Host'} maxWidth="max-w-md">
+        <Modal open={showHostForm} onClose={() => { setShowHostForm(false); setEditingHost(null); setDefaultGroupId(undefined); }} title={editingHost ? 'Edit Host' : 'Add Host'} maxWidth="max-w-md">
           <HostForm
             host={editingHost}
-            onClose={() => { setShowHostForm(false); setEditingHost(null); }}
+            defaultGroupId={defaultGroupId}
+            onClose={() => { setShowHostForm(false); setEditingHost(null); setDefaultGroupId(undefined); }}
           />
         </Modal>
 
-        <Modal open={showGroupForm} onClose={() => { setShowGroupForm(false); setEditingGroup(null); }} title={editingGroup ? 'Edit Group' : 'New Group'} maxWidth="max-w-md">
+        <Modal open={showGroupForm} onClose={() => { setShowGroupForm(false); setEditingGroup(null); setNewGroupParentId(null); }} title={editingGroup ? 'Edit Group' : 'New Group'} maxWidth="max-w-md">
           <GroupForm
             group={editingGroup}
-            onClose={() => { setShowGroupForm(false); setEditingGroup(null); }}
+            defaultParentId={newGroupParentId || undefined}
+            onClose={() => { setShowGroupForm(false); setEditingGroup(null); setNewGroupParentId(null); }}
           />
         </Modal>
 
@@ -931,6 +1271,38 @@ export default function Layout() {
                 if (pane) return <PanePreview pane={pane} />
               }
               return null
+            }
+            if (source.data?.type === 'host-source') {
+              const host = hosts.find((h) => h.id === source.data.hostId)
+              if (!host) return null
+              return (
+                <div className="w-60 p-3 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: host.color || '#64748b' }}
+                    />
+                    <span className="text-sm font-medium text-white truncate">{host.name}</span>
+                  </div>
+                  <p className="text-dark-400 text-xs mt-1 ml-[18px] truncate">
+                    {host.username ? `${host.username}@` : ''}{host.address}:{host.port}
+                  </p>
+                </div>
+              )
+            }
+            if (source.data?.type === 'group-source') {
+              const group = groups.find((g) => g.id === source.data.groupId)
+              if (!group) return null
+              return (
+                <div className="w-60 p-3 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span className="text-sm font-medium text-white truncate">{group.name}</span>
+                  </div>
+                </div>
+              )
             }
             const tab = tabs.find((t) => t.id === source.id)
             if (!tab) return null

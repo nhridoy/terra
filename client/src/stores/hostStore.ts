@@ -25,7 +25,7 @@ interface Host {
   address: string
   port: number
   username?: string
-  groupId?: string
+  groupId?: string | null
   tags: string[]
   color?: string
   icon?: string
@@ -37,7 +37,7 @@ interface Host {
 interface Group {
   id: string
   name: string
-  parentId?: string
+  parentId?: string | null
   vaultId?: string
   sortOrder: number
   createdAt: string

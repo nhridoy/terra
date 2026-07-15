@@ -13,18 +13,17 @@ interface Group {
 
 interface GroupFormProps {
   group?: Group
+  defaultParentId?: string
   onClose: () => void
 }
 
-export default function GroupForm({ group, onClose }: GroupFormProps) {
+export default function GroupForm({ group, defaultParentId, onClose }: GroupFormProps) {
   const { createGroup, updateGroup } = useHostStore()
   const { currentVaultId } = useVaultStore()
   const [name, setName] = useState(group?.name || '')
-  const [parentId, setParentId] = useState(group?.parentId || '')
+  const parentId = group?.parentId || defaultParentId || ''
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const groups = useHostStore((state) => state.groups)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -72,25 +71,6 @@ export default function GroupForm({ group, onClose }: GroupFormProps) {
           required
           autoFocus
         />
-      </div>
-
-      <div>
-        <label htmlFor="group-parent" className="block text-dark-300 text-sm mb-2">
-          Parent Group (optional)
-        </label>
-        <select
-          id="group-parent"
-          value={parentId}
-          onChange={(e) => setParentId(e.target.value)}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value="">-- No Parent --</option>
-          {groups.map((g) => (
-            g.id !== group?.id && (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            )
-          ))}
-        </select>
       </div>
 
       <div className="flex gap-3 justify-end pt-2">

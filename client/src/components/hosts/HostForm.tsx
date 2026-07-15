@@ -19,6 +19,7 @@ interface HostData {
 
 interface HostFormProps {
   host?: HostData
+  defaultGroupId?: string
   onClose: () => void
 }
 
@@ -44,8 +45,8 @@ function parseTags(tags: unknown): string[] {
   return []
 }
 
-export default function HostForm({ host, onClose }: HostFormProps) {
-  const { createHost, updateHost } = useHostStore()
+export default function HostForm({ host, defaultGroupId, onClose }: HostFormProps) {
+  const { createHost, updateHost, groups } = useHostStore()
   const { currentVaultId } = useVaultStore()
   const [name, setName] = useState(host?.name || '')
   const [address, setAddress] = useState(host?.address || '')
@@ -55,7 +56,7 @@ export default function HostForm({ host, onClose }: HostFormProps) {
   const [password, setPassword] = useState('')
   const [keyId, setKeyId] = useState(host?.keyId || '')
   const [color, setColor] = useState(host?.color || '#64748b')
-  const [groupId, setGroupId] = useState(host?.groupId || '')
+  const [groupId, setGroupId] = useState(host?.groupId || defaultGroupId || '')
   const [tags, setTags] = useState(parseTags(host?.tags).join(', ') || '')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -282,6 +283,23 @@ export default function HostForm({ host, onClose }: HostFormProps) {
             placeholder="production, web (comma-separated)"
           />
         </div>
+
+        {!defaultGroupId && (
+          <div>
+            <label htmlFor="host-group" className="block text-dark-300 text-sm mb-2">Group</label>
+            <select
+              id="host-group"
+              value={groupId}
+              onChange={(e) => setGroupId(e.target.value)}
+              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">No Group</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex gap-3 justify-end pt-2">
           <button
