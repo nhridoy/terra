@@ -21,10 +21,10 @@ import SettingsPanel from '../settings/SettingsPanel'
 import TerminalView from '../terminal/TerminalView'
 import VaultSelector from './VaultSelector'
 import SortableTab, { TabPreview } from './SortableTab'
-import PanePreview from '../terminal/PanePreview'
 import WorkspaceList from '../workspace/WorkspaceList'
 import WorkspaceForm from '../workspace/WorkspaceForm'
 import HostsPage from '../hosts/HostsPage'
+import SftpLayout from '../sftp/SftpLayout'
 
 type SidebarItem =
   | 'hosts'
@@ -530,17 +530,7 @@ export default function Layout() {
 
   const renderMainContent = () => {
     if (activeView === 'sftp') {
-      return (
-        <div className="flex items-center justify-center flex-1 text-dark-500">
-          <div className="text-center">
-            <svg className="w-16 h-16 mx-auto mb-4 text-dark-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            <p className="text-lg font-medium">SFTP Browser</p>
-            <p className="mt-1 text-sm">Coming soon</p>
-          </div>
-        </div>
-      )
+      return <SftpLayout />
     }
 
     if (activeView !== 'vault') {
@@ -871,11 +861,24 @@ export default function Layout() {
           {(source) => {
             if (source.data?.type === 'pane-source') {
               const tab = tabs.find((t) => t.id === source.data.tabId)
-              if (tab) {
-                const pane = findLeaf(tab.root, source.data.paneId)
-                if (pane) return <PanePreview pane={pane} />
-              }
-              return null
+              const pane = tab ? findLeaf(tab.root, source.data.paneId) : null
+              const statusClass = pane?.connectionStatus === 'connected' ? 'bg-green-500'
+                : pane?.connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse'
+                : pane?.connectionStatus === 'error' ? 'bg-red-500'
+                : 'bg-dark-500'
+              return (
+                <div className="w-60 p-3 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusClass}`} />
+                    <svg className="w-4 h-4 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-sm font-medium text-white truncate">
+                      {pane?.hostName || 'Empty pane'}
+                    </span>
+                  </div>
+                </div>
+              )
             }
             if (source.data?.type === 'host-source') {
               const host = hosts.find((h) => h.id === source.data.hostId)
