@@ -32,6 +32,9 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
   const [isDragOver, setIsDragOver] = useState(false)
   const [pasteConflicts, setPasteConflicts] = useState<{ srcPath: string; dstPath: string; dstName: string }[] | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ files: FileItem[]; selectedNames: Set<string> | null } | null>(null)
+  const [fileDragState, setFileDragState] = useState<{ files: FileItem[]; sourceHostId: string } | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [pendingDrop, setPendingDrop] = useState<{ files: FileItem[]; sourceHostId: string; destDirPath: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const addTransfer = useSftpStore((s) => s.addTransfer)
@@ -296,6 +299,183 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     }
   }
 
+  // ---- File drag & drop ----
+
+  const handleFileDragStart = (e: React.DragEvent, file: FileItem) => {
+    e.stopPropagation()
+    // If dragging a selected file, drag all selected. Otherwise drag just this one.
+    const dragFiles = selectedFiles.has(file.name)
+      ? files.filter((f) => selectedFiles.has(f.name))
+      : [file]
+    setFileDragState({ files: dragFiles, sourceHostId: hostId })
+    e.dataTransfer.effectAllowed = 'move'
+    // Set drag image to show count if multi
+    if (dragFiles.length > 1) {
+      const ghost = document.createElement('div')
+      ghost.textContent = `${dragFiles.length} items`
+      ghost.className = 'bg-dark-800 text-white text-xs px-2 py-1 rounded shadow-lg fixed -top-10 -left-10'
+      document.body.appendChild(ghost)
+      e.dataTransfer.setDragImage(ghost, 0, 0)
+      requestAnimationFrame(() => ghost.remove())
+    }
+  }
+
+  const handleFileDragEnd = () => {
+    setFileDragState(null)
+    setDropTarget(null)
+  }
+
+  const handleDirDragOver = (e: React.DragEvent, filePath: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!fileDragState) return
+    // Don't allow drop on self
+    if (fileDragState.files.some((f) => f.path === filePath)) return
+    // Don't allow drop in same directory (no-op move)
+    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+    if (fileDragState.sourceHostId === hostId && srcDir === filePath) return
+    e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
+    setDropTarget(filePath)
+  }
+
+  const handleDirDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const target = e.currentTarget as HTMLElement | null
+    if (!target) return
+    const related = e.relatedTarget as HTMLElement | null
+    if (related && target.contains(related)) return
+    setDropTarget(null)
+  }
+
+  const handleDirDrop = (e: React.DragEvent, dirPath: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropTarget(null)
+    if (!fileDragState) return
+    // Don't allow drop on self
+    if (fileDragState.files.some((f) => f.path === dirPath)) return
+    // Don't allow drop in same directory (no-op move)
+    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+    if (fileDragState.sourceHostId === hostId && srcDir === dirPath) return
+    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, dirPath)
+  }
+
+  const handleEmptyAreaDragOver = (e: React.DragEvent) => {
+    if (!fileDragState) return
+    // Don't allow drop in same directory (no-op move)
+    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+    if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
+    setDropTarget(currentPath)
+  }
+
+  const handleEmptyAreaDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    const related = e.relatedTarget as HTMLElement | null
+    if (related && containerRef.current?.contains(related)) return
+    setDropTarget(null)
+  }
+
+  const handleEmptyAreaDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDropTarget(null)
+    if (!fileDragState) return
+    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, currentPath)
+  }
+
+  const executeFileDrop = async (dragFiles: FileItem[], sourceHostId: string, destDirPath: string, overrides?: Map<string, { action: 'replace' | 'rename' | 'auto' | 'skip'; newName?: string }>) => {
+    const isMove = sourceHostId === hostId
+    let successCount = 0
+    let failCount = 0
+
+    // Check for name conflicts by listing the destination directory
+    try {
+      const destResult = await api.listFiles(hostId, destDirPath, hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined)
+      const destNames = new Set(destResult.files.map((f: FileItem) => f.name))
+      const conflicts = dragFiles.filter((f) => destNames.has(f.name))
+
+      if (conflicts.length > 0) {
+        setPasteConflicts(conflicts.map((f) => ({
+          srcPath: f.path,
+          dstPath: destDirPath === '/' ? `/${f.name}` : `${destDirPath}/${f.name}`,
+          dstName: f.name,
+        })))
+        setPendingDrop({ files: dragFiles, sourceHostId, destDirPath })
+        setFileDragState(null)
+        return
+      }
+    } catch {
+      // If we can't list the directory, proceed anyway and let individual operations fail
+    }
+
+    // Optimistic updates
+    if (destDirPath === currentPath) {
+      // Dropping into the current directory — add the entries (e.g. paste from clipboard)
+      const newFileEntries: FileItem[] = dragFiles.map((f) => ({
+        ...f,
+        path: destDirPath === '/' ? `/${f.name}` : `${destDirPath}/${f.name}`,
+      }))
+      setFiles((prev) => [...prev, ...newFileEntries])
+    }
+
+    // If move within same host, remove from source optimistically
+    if (isMove) {
+      const movedPaths = new Set(dragFiles.map((f) => f.path))
+      setFiles((prev) => prev.filter((f) => !movedPaths.has(f.path)))
+    }
+
+    // Pre-generate auto names
+    const autoNames = new Map<string, string>()
+    if (overrides) {
+      const existingNames = dragFiles.map((f) => f.name)
+      for (const [srcPath, res] of overrides) {
+        if (res.action === 'auto') {
+          const srcName = srcPath.split('/').pop() || ''
+          autoNames.set(srcPath, generateAutoName(srcName, existingNames))
+          existingNames.push(autoNames.get(srcPath)!)
+        }
+      }
+    }
+
+    for (const file of dragFiles) {
+      const override = overrides?.get(file.path)
+      if (override?.action === 'skip') continue
+
+      let dstName: string
+      if (override?.action === 'rename' && override.newName) {
+        dstName = override.newName
+      } else if (override?.action === 'auto') {
+        dstName = autoNames.get(file.path) || file.name
+      } else {
+        dstName = file.name
+      }
+      const dstPath = destDirPath === '/' ? `/${dstName}` : `${destDirPath}/${dstName}`
+
+      try {
+        if (isMove) {
+          await api.moveFile(sourceHostId, file.path, dstPath)
+        } else {
+          await api.copyFile(sourceHostId, file.path, dstPath)
+        }
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+
+    if (successCount > 0) {
+      toast(`${isMove ? 'Moved' : 'Copied'} ${successCount} item${successCount > 1 ? 's' : ''}`, 'success')
+    }
+    if (failCount > 0) {
+      toast(`Failed to ${isMove ? 'move' : 'copy'} ${failCount} item${failCount > 1 ? 's' : ''}`, 'error')
+      loadDirectory(currentPath)
+    }
+
+    setFileDragState(null)
+  }
+
   const handleCopy = () => {
     const paths = [...selectedFiles].map((name) => {
       const file = files.find((f) => f.name === name)
@@ -448,27 +628,30 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
   // Drag & drop from desktop
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
     e.stopPropagation()
     setIsDragOver(true)
-  }, [])
+  }, [fileDragState])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
     e.stopPropagation()
     if (e.currentTarget === containerRef.current) {
       setIsDragOver(false)
     }
-  }, [])
+  }, [fileDragState])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
+    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
     e.stopPropagation()
     setIsDragOver(false)
     if (e.dataTransfer.files.length > 0) {
       handleUpload(e.dataTransfer.files)
     }
-  }, [hostId, currentPath])
+  }, [hostId, currentPath, fileDragState])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -799,7 +982,13 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
       {/* Empty state */}
       {!isLoading && sortedFiles.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center text-dark-400" onContextMenu={(e) => handleContextMenu(e)}>
+        <div
+          className="flex-1 flex flex-col items-center justify-center text-dark-400"
+          onContextMenu={(e) => handleContextMenu(e)}
+          onDragOver={handleEmptyAreaDragOver}
+          onDragLeave={handleEmptyAreaDragLeave}
+          onDrop={handleEmptyAreaDrop}
+        >
           <svg className="w-16 h-16 mb-3 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
@@ -809,7 +998,13 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
       {/* File list */}
       {!isLoading && sortedFiles.length > 0 && (
-        <div className="flex-1 overflow-y-auto" onContextMenu={(e) => handleContextMenu(e)}>
+        <div
+          className={`flex-1 overflow-y-auto ${dropTarget === currentPath && fileDragState ? 'bg-primary-600/10' : ''}`}
+          onContextMenu={(e) => handleContextMenu(e)}
+          onDragOver={handleEmptyAreaDragOver}
+          onDragLeave={handleEmptyAreaDragLeave}
+          onDrop={handleEmptyAreaDrop}
+        >
           {viewMode === 'list' ? (
             <table className="w-full">
               <thead className="bg-dark-800 sticky top-0">
@@ -841,10 +1036,18 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
                 {sortedFiles.map((file) => (
                   <tr
                     key={file.path}
+                    draggable
+                    onDragStart={(e) => handleFileDragStart(e, file)}
+                    onDragEnd={handleFileDragEnd}
+                    onDragOver={file.type === 'directory' ? (e) => handleDirDragOver(e, file.path) : undefined}
+                    onDragLeave={file.type === 'directory' ? handleDirDragLeave : undefined}
+                    onDrop={file.type === 'directory' ? (e) => handleDirDrop(e, file.path) : undefined}
                     onDoubleClick={() => handleDoubleClick(file)}
                     onClick={(e) => handleSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
                     onContextMenu={(e) => handleContextMenu(e, file)}
-                    className={`border-t border-dark-800 hover:bg-dark-800/50 cursor-pointer select-none ${selectedFiles.has(file.name) ? 'bg-primary-600/15' : ''}`}
+                    className={`border-t border-dark-800 hover:bg-dark-800/50 cursor-pointer select-none ${
+                      dropTarget === file.path ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
+                    } ${selectedFiles.has(file.name) ? 'bg-primary-600/15' : ''}`}
                   >
                     <td className="p-2">{getFileIcon(file)}</td>
                     <td className="p-2 text-white text-sm">
@@ -877,10 +1080,18 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
               {sortedFiles.map((file) => (
                 <div
                   key={file.path}
+                  draggable
+                  onDragStart={(e) => handleFileDragStart(e, file)}
+                  onDragEnd={handleFileDragEnd}
+                  onDragOver={file.type === 'directory' ? (e) => handleDirDragOver(e, file.path) : undefined}
+                  onDragLeave={file.type === 'directory' ? handleDirDragLeave : undefined}
+                  onDrop={file.type === 'directory' ? (e) => handleDirDrop(e, file.path) : undefined}
                   onDoubleClick={() => handleDoubleClick(file)}
                   onClick={(e) => handleSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
                   onContextMenu={(e) => handleContextMenu(e, file)}
-                  className={`p-3 rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${selectedFiles.has(file.name) ? 'bg-primary-600/15 border border-primary-500/50' : 'bg-dark-800 hover:bg-dark-700'}`}
+                  className={`p-3 rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${
+                    dropTarget === file.path ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
+                  } ${selectedFiles.has(file.name) ? 'bg-primary-600/15 border border-primary-500/50' : 'bg-dark-800 hover:bg-dark-700'}`}
                 >
                   {getFileIcon(file)}
                   {renamingPath === file.path ? (
@@ -922,8 +1133,20 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       {pasteConflicts && (
         <PasteConflictDialog
           conflicts={pasteConflicts}
-          onConfirm={(overrides) => { setPasteConflicts(null); executePaste(overrides) }}
-          onCancel={() => { setPasteConflicts(null); if (clipboardMode === 'cut') clearClipboard() }}
+          onConfirm={(overrides) => {
+            setPasteConflicts(null)
+            if (pendingDrop) {
+              executeFileDrop(pendingDrop.files, pendingDrop.sourceHostId, pendingDrop.destDirPath, overrides)
+              setPendingDrop(null)
+            } else {
+              executePaste(overrides)
+            }
+          }}
+          onCancel={() => {
+            setPasteConflicts(null)
+            setPendingDrop(null)
+            if (clipboardMode === 'cut') clearClipboard()
+          }}
         />
       )}
 
