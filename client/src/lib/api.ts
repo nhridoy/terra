@@ -455,6 +455,51 @@ class ApiClient {
     })
   }
 
+  private crossDirectQuery(
+    srcHostId: string, srcDirect?: { host?: string; port?: number; username?: string },
+    dstHostId?: string, dstDirect?: { host?: string; port?: number; username?: string },
+  ): string {
+    const params = new URLSearchParams()
+    if (srcHostId.startsWith('direct_') && srcDirect) {
+      if (srcDirect.host) params.set('src_host', srcDirect.host)
+      if (srcDirect.port) params.set('src_port', String(srcDirect.port))
+      if (srcDirect.username) params.set('src_username', srcDirect.username)
+    }
+    if (dstHostId?.startsWith('direct_') && dstDirect) {
+      if (dstDirect.host) params.set('dst_host', dstDirect.host)
+      if (dstDirect.port) params.set('dst_port', String(dstDirect.port))
+      if (dstDirect.username) params.set('dst_username', dstDirect.username)
+    }
+    const qs = params.toString()
+    return qs ? `?${qs}` : ''
+  }
+
+  async crossHostCopy(
+    srcHostId: string, srcPath: string,
+    dstHostId: string, dstPath: string,
+    srcDirect?: { host?: string; port?: number; username?: string },
+    dstDirect?: { host?: string; port?: number; username?: string },
+  ) {
+    const qs = this.crossDirectQuery(srcHostId, srcDirect, dstHostId, dstDirect)
+    return this.request(`/sftp/cross-copy${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ srcHostId, srcPath, dstHostId, dstPath }),
+    })
+  }
+
+  async crossHostMove(
+    srcHostId: string, srcPath: string,
+    dstHostId: string, dstPath: string,
+    srcDirect?: { host?: string; port?: number; username?: string },
+    dstDirect?: { host?: string; port?: number; username?: string },
+  ) {
+    const qs = this.crossDirectQuery(srcHostId, srcDirect, dstHostId, dstDirect)
+    return this.request(`/sftp/cross-move${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ srcHostId, srcPath, dstHostId, dstPath }),
+    })
+  }
+
   // Settings
   async getSettings() {
     return this.request<{ settings: any }>('/settings')

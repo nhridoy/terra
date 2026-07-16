@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
 import type { FileItem, FileSortDirection, FileSortField, FileViewMode } from '../../lib/sftpTypes'
-import { useSftpStore } from '../../stores/sftpStore'
+import { useSftpStore, findAllLeaves } from '../../stores/sftpStore'
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
 import Modal from '../ui/Modal'
 import { toast } from '../ui/Toast'
 
 interface FileBrowserProps {
+  paneId?: string
   hostId: string
   hostAddress?: string
   hostPort?: number
@@ -14,7 +15,10 @@ interface FileBrowserProps {
   onFileSelect?: (file: FileItem) => void
 }
 
-export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsername, onFileSelect }: FileBrowserProps) {
+export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress, hostPort, hostUsername, onFileSelect }: FileBrowserProps) {
+  const fileDragState = useSftpStore((s) => s.fileDragState)
+  const setFileDragState = useSftpStore((s) => s.setFileDragState)
+  const setLastDragTarget = useSftpStore((s) => s.setLastDragTarget)
   const [files, setFiles] = useState<FileItem[]>([])
   const [currentPath, setCurrentPath] = useState('/')
   const [isLoading, setIsLoading] = useState(false)
@@ -32,9 +36,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
   const [isDragOver, setIsDragOver] = useState(false)
   const [pasteConflicts, setPasteConflicts] = useState<{ srcPath: string; dstPath: string; dstName: string }[] | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ files: FileItem[]; selectedNames: Set<string> | null } | null>(null)
-  const [fileDragState, setFileDragState] = useState<{ files: FileItem[]; sourceHostId: string } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [pendingDrop, setPendingDrop] = useState<{ files: FileItem[]; sourceHostId: string; destDirPath: string } | null>(null)
+  const [pendingDrop, setPendingDrop] = useState<{ files: FileItem[]; sourceHostId: string; destHostId: string; destDirPath: string; sourceDirect?: { host?: string; port?: number; username?: string }; sourcePaneId?: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const addTransfer = useSftpStore((s) => s.addTransfer)
@@ -43,11 +46,21 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
   const clipboardMode = useSftpStore((s) => s.clipboardMode)
   const setClipboard = useSftpStore((s) => s.setClipboard)
   const clearClipboard = useSftpStore((s) => s.clearClipboard)
+  const activePaneId = useSftpStore((s) => s.activePaneId)
+  const requestRefresh = useSftpStore((s) => s.requestRefresh)
+  const refreshVersion = useSftpStore((s) => s.refreshRequests[paneId] ?? 0)
 
   useEffect(() => {
     loadDirectory(currentPath)
     setPathInput(currentPath)
   }, [hostId, currentPath])
+
+  // Reload when another pane requests a refresh on this pane
+  useEffect(() => {
+    if (refreshVersion > 0) {
+      loadDirectory(currentPath)
+    }
+  }, [refreshVersion])
 
   useEffect(() => {
     if (renamingPath && renameInputRef.current) {
@@ -307,8 +320,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     const dragFiles = selectedFiles.has(file.name)
       ? files.filter((f) => selectedFiles.has(f.name))
       : [file]
-    setFileDragState({ files: dragFiles, sourceHostId: hostId })
-    e.dataTransfer.effectAllowed = 'move'
+    setFileDragState({ files: dragFiles, sourceHostId: hostId, sourcePaneId: paneId, sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined })
+    e.dataTransfer.effectAllowed = 'all'
     // Set drag image to show count if multi
     if (dragFiles.length > 1) {
       const ghost = document.createElement('div')
@@ -320,9 +333,21 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     }
   }
 
-  const handleFileDragEnd = () => {
+  const handleFileDragEnd = (e: React.DragEvent) => {
+    // Fallback: if native `drop` didn't fire (e.g. cross-host), use lastDragTarget
+    // Only act if the drag wasn't cancelled (Escape key resets dropEffect to 'none')
+    if (e.dataTransfer.dropEffect !== 'none') {
+      const { lastDragTarget } = useSftpStore.getState()
+      if (lastDragTarget && fileDragState) {
+        const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+        if (!(fileDragState.sourceHostId === lastDragTarget.hostId && srcDir === lastDragTarget.path)) {
+          executeFileDrop(fileDragState.files, fileDragState.sourceHostId, lastDragTarget.hostId, lastDragTarget.path, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
+        }
+      }
+    }
     setFileDragState(null)
     setDropTarget(null)
+    setLastDragTarget(null)
   }
 
   const handleDirDragOver = (e: React.DragEvent, filePath: string) => {
@@ -336,6 +361,11 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     if (fileDragState.sourceHostId === hostId && srcDir === filePath) return
     e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
     setDropTarget(filePath)
+    setLastDragTarget({
+      hostId,
+      path: filePath,
+      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+    })
   }
 
   const handleDirDragLeave = (e: React.DragEvent) => {
@@ -358,7 +388,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     // Don't allow drop in same directory (no-op move)
     const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
     if (fileDragState.sourceHostId === hostId && srcDir === dirPath) return
-    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, dirPath)
+    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, dirPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
+    setLastDragTarget(null)
   }
 
   const handleEmptyAreaDragOver = (e: React.DragEvent) => {
@@ -369,6 +400,11 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     e.preventDefault()
     e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
     setDropTarget(currentPath)
+    setLastDragTarget({
+      hostId,
+      path: currentPath,
+      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+    })
   }
 
   const handleEmptyAreaDragLeave = (e: React.DragEvent) => {
@@ -380,19 +416,24 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
   const handleEmptyAreaDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setDropTarget(null)
     if (!fileDragState) return
-    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, currentPath)
+    // Don't allow drop in same directory (no-op move)
+    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+    if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return
+    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, currentPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
+    setLastDragTarget(null)
   }
 
-  const executeFileDrop = async (dragFiles: FileItem[], sourceHostId: string, destDirPath: string, overrides?: Map<string, { action: 'replace' | 'rename' | 'auto' | 'skip'; newName?: string }>) => {
-    const isMove = sourceHostId === hostId
+  const executeFileDrop = async (dragFiles: FileItem[], sourceHostId: string, destHostId: string, destDirPath: string, overrides?: Map<string, { action: 'replace' | 'rename' | 'auto' | 'skip'; newName?: string }>, sourceDirect?: { host?: string; port?: number; username?: string }, sourcePaneId?: string) => {
+    const isMove = sourceHostId === destHostId
     let successCount = 0
     let failCount = 0
 
     // Check for name conflicts by listing the destination directory
     try {
-      const destResult = await api.listFiles(hostId, destDirPath, hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined)
+      const destResult = await api.listFiles(destHostId, destDirPath, destHostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined)
       const destNames = new Set(destResult.files.map((f: FileItem) => f.name))
       const conflicts = dragFiles.filter((f) => destNames.has(f.name))
 
@@ -402,12 +443,12 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
           dstPath: destDirPath === '/' ? `/${f.name}` : `${destDirPath}/${f.name}`,
           dstName: f.name,
         })))
-        setPendingDrop({ files: dragFiles, sourceHostId, destDirPath })
+        setPendingDrop({ files: dragFiles, sourceHostId, destHostId, destDirPath, sourceDirect: fileDragState?.sourceDirect, sourcePaneId: fileDragState?.sourcePaneId })
         setFileDragState(null)
         return
       }
-    } catch {
-      // If we can't list the directory, proceed anyway and let individual operations fail
+    } catch (e) {
+      console.error('executeFileDrop: failed to list destination directory', e)
     }
 
     // Optimistic updates
@@ -456,17 +497,30 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       try {
         if (isMove) {
           await api.moveFile(sourceHostId, file.path, dstPath)
+        } else if (sourceHostId !== destHostId) {
+          // Cross-host: stream from source to destination
+          await api.crossHostCopy(
+            sourceHostId, file.path,
+            destHostId, dstPath,
+            sourceDirect,
+            destHostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+          )
         } else {
           await api.copyFile(sourceHostId, file.path, dstPath)
         }
         successCount++
-      } catch {
+      } catch (e) {
+        console.error(`executeFileDrop: failed to ${isMove ? 'move' : 'copy'} ${file.path}`, e)
         failCount++
       }
     }
 
     if (successCount > 0) {
       toast(`${isMove ? 'Moved' : 'Copied'} ${successCount} item${successCount > 1 ? 's' : ''}`, 'success')
+      // After same-host move, refresh the source pane
+      if (isMove && sourcePaneId && sourcePaneId !== paneId) {
+        requestRefresh(sourcePaneId)
+      }
     }
     if (failCount > 0) {
       toast(`Failed to ${isMove ? 'move' : 'copy'} ${failCount} item${failCount > 1 ? 's' : ''}`, 'error')
@@ -482,7 +536,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       return file?.path || `${currentPath}/${name}`
     })
     if (paths.length === 0) return
-    setClipboard(hostId, paths, 'copy')
+    const srcDirect = hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined
+    setClipboard(hostId, paths, 'copy', srcDirect)
     toast(`Copied ${paths.length} item${paths.length > 1 ? 's' : ''}`, 'info')
   }
 
@@ -492,7 +547,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       return file?.path || `${currentPath}/${name}`
     })
     if (paths.length === 0) return
-    setClipboard(hostId, paths, 'cut')
+    const srcDirect = hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined
+    setClipboard(hostId, paths, 'cut', srcDirect)
     toast(`Cut ${paths.length} item${paths.length > 1 ? 's' : ''}`, 'info')
   }
 
@@ -564,10 +620,29 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       const isReplace = override?.action === 'replace' || (!override && files.some((f) => f.path === dstPath))
 
       try {
+        const isCrossHost = clipboard.hostId !== hostId
         if (clipboardMode === 'copy') {
-          await api.copyFile(clipboard.hostId, srcPath, dstPath)
+          if (isCrossHost) {
+            await api.crossHostCopy(
+              clipboard.hostId, srcPath,
+              hostId, dstPath,
+              clipboard.sourceDirect,
+              hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+            )
+          } else {
+            await api.copyFile(clipboard.hostId, srcPath, dstPath)
+          }
         } else {
-          await api.moveFile(clipboard.hostId, srcPath, dstPath)
+          if (isCrossHost) {
+            await api.crossHostMove(
+              clipboard.hostId, srcPath,
+              hostId, dstPath,
+              clipboard.sourceDirect,
+              hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+            )
+          } else {
+            await api.moveFile(clipboard.hostId, srcPath, dstPath)
+          }
         }
         successCount++
 
@@ -619,6 +694,14 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
     if (successCount > 0) {
       toast(`${clipboardMode === 'copy' ? 'Copied' : 'Moved'} ${successCount} item${successCount > 1 ? 's' : ''}`, 'success')
+      // After same-host cut, refresh other panes showing the same host so they see the file is gone
+      if (clipboardMode === 'cut' && clipboard.hostId === hostId) {
+        const { root } = useSftpStore.getState()
+        const otherPanes = findAllLeaves(root).filter((l) => l.id !== paneId && l.hostId === hostId)
+        for (const p of otherPanes) {
+          requestRefresh(p.id)
+        }
+      }
     }
     if (failCount > 0) {
       toast(`Failed to ${clipboardMode === 'copy' ? 'copy' : 'move'} ${failCount} item${failCount > 1 ? 's' : ''}`, 'error')
@@ -628,34 +711,61 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
 
   // Drag & drop from desktop
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(true)
-  }, [fileDragState])
+    // NOTE: NOT calling stopPropagation here to avoid potential interference with native drop
+    if (fileDragState) {
+      // In-app file drag — check if this is a no-op (same host + same dir)
+      const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+      if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return // no-op, don't set drop effect
+      e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
+      // Track last valid drop target for fallback if native drop doesn't fire
+      setLastDragTarget({
+        hostId,
+        path: currentPath,
+        sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+      })
+    } else {
+      // Desktop file upload
+      setIsDragOver(true)
+    }
+  }, [fileDragState, hostId, currentPath, hostAddress, hostPort, hostUsername, setLastDragTarget])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
     e.stopPropagation()
     if (e.currentTarget === containerRef.current) {
-      setIsDragOver(false)
+      if (!fileDragState) {
+        setIsDragOver(false)
+      }
     }
   }, [fileDragState])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    if (fileDragState) return // ignore in-app file drags
     e.preventDefault()
     e.stopPropagation()
-    setIsDragOver(false)
-    if (e.dataTransfer.files.length > 0) {
-      handleUpload(e.dataTransfer.files)
+    if (fileDragState) {
+      // In-app file drop — only execute if not a no-op (same host + same dir)
+      const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+      if (!(fileDragState.sourceHostId === hostId && srcDir === currentPath)) {
+        setDropTarget(null)
+        executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, currentPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
+      }
+      setLastDragTarget(null)
+    } else {
+      // Desktop file upload
+      setIsDragOver(false)
+      if (e.dataTransfer.files.length > 0) {
+        handleUpload(e.dataTransfer.files)
+      }
     }
-  }, [hostId, currentPath, fileDragState])
+  }, [hostId, currentPath, fileDragState, setLastDragTarget])
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Only handle keyboard shortcuts in the active pane
+      if (activePaneId && activePaneId !== paneId) return
+
       // Dialog-level shortcuts
       if (deleteConfirm) {
         if (e.key === 'Enter') { e.preventDefault(); confirmDelete(); return }
@@ -714,7 +824,7 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [selectedFiles, files, currentPath, clipboard, clipboardMode, deleteConfirm, pasteConflicts, confirmDelete])
+  }, [selectedFiles, files, currentPath, clipboard, clipboardMode, deleteConfirm, pasteConflicts, confirmDelete, activePaneId, paneId])
 
   const sortedFiles = useMemo(() => {
     return [...files]
@@ -855,6 +965,8 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
     }
   }
 
+
+
   return (
     <div
       ref={containerRef}
@@ -863,9 +975,9 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Upload overlay */}
-      {isDragOver && (
-        <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center pointer-events-none">
+      {/* Upload overlay (desktop files) */}
+      {isDragOver && !fileDragState && (
+        <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center" onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
           <div className="text-center">
             <svg className="w-12 h-12 mx-auto text-primary-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -874,6 +986,31 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
           </div>
         </div>
       )}
+
+      {/* In-app file drag overlay — only if not a no-op (same host + same dir) */}
+      {(() => {
+        if (!fileDragState) return null
+        const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+        const isNoop = fileDragState.sourceHostId === hostId && srcDir === currentPath
+        if (isNoop) return null
+        const isCrossHost = fileDragState.sourceHostId !== hostId
+        return (
+          <div className={`absolute inset-0 z-50 ${isCrossHost ? 'bg-green-600/15 border-green-500' : 'bg-primary-600/15 border-primary-500'} border-2 border-dashed rounded-lg flex items-center justify-center`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
+            <div className="text-center">
+              <svg className={`w-12 h-12 mx-auto mb-2 ${isCrossHost ? 'text-green-400' : 'text-primary-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isCrossHost ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                )}
+              </svg>
+              <p className={`text-lg font-medium ${isCrossHost ? 'text-green-300' : 'text-primary-300'}`}>
+                {isCrossHost ? 'Drop to copy between servers' : 'Drop to move'}
+              </p>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Toolbar */}
       <div className="p-3 border-b border-dark-700">
@@ -1136,7 +1273,7 @@ export default function FileBrowser({ hostId, hostAddress, hostPort, hostUsernam
           onConfirm={(overrides) => {
             setPasteConflicts(null)
             if (pendingDrop) {
-              executeFileDrop(pendingDrop.files, pendingDrop.sourceHostId, pendingDrop.destDirPath, overrides)
+              executeFileDrop(pendingDrop.files, pendingDrop.sourceHostId, pendingDrop.destHostId, pendingDrop.destDirPath, overrides, pendingDrop.sourceDirect, pendingDrop.sourcePaneId)
               setPendingDrop(null)
             } else {
               executePaste(overrides)

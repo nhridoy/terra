@@ -169,6 +169,7 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {pane.connectionType === 'host' && pane.hostId ? (
           <FileBrowser
+            paneId={pane.id}
             hostId={pane.hostId}
             hostAddress={pane.hostAddress}
             hostPort={pane.hostPort}

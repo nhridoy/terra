@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { TransferItem } from '../lib/sftpTypes'
+import type { FileItem, TransferItem } from '../lib/sftpTypes'
 
 // ---- Node types ----
 
@@ -57,6 +57,11 @@ export function findLeaf(node: SftpPaneNode, paneId: string): SftpLeafNode | nul
   return null
 }
 
+export function findAllLeaves(node: SftpPaneNode): SftpLeafNode[] {
+  if (node.type === 'leaf') return [node]
+  return node.children.flatMap(findAllLeaves)
+}
+
 function findSplit(node: SftpPaneNode, splitId: string): SftpSplitNode | null {
   if (node.type === 'split') {
     if (node.id === splitId) return node
@@ -105,6 +110,20 @@ function mapSplitChildren(node: SftpPaneNode, splitId: string, children: SftpPan
 interface ClipboardEntry {
   hostId: string
   paths: string[]
+  sourceDirect?: { host?: string; port?: number; username?: string }
+}
+
+export interface FileDragState {
+  files: FileItem[]
+  sourceHostId: string
+  sourcePaneId: string
+  sourceDirect?: { host?: string; port?: number; username?: string }
+}
+
+export interface DragTarget {
+  hostId: string
+  path: string
+  sourceDirect?: { host?: string; port?: number; username?: string }
 }
 
 interface SftpState {
@@ -113,6 +132,9 @@ interface SftpState {
   transfers: TransferItem[]
   clipboard: ClipboardEntry | null
   clipboardMode: 'copy' | 'cut' | null
+  fileDragState: FileDragState | null
+  lastDragTarget: DragTarget | null
+  refreshRequests: Record<string, number>
 
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void
   removePane: (paneId: string) => void
@@ -126,8 +148,11 @@ interface SftpState {
   updateTransfer: (id: string, updates: Partial<TransferItem>) => void
   removeTransfer: (id: string) => void
   clearCompletedTransfers: () => void
-  setClipboard: (hostId: string, paths: string[], mode: 'copy' | 'cut') => void
+  setClipboard: (hostId: string, paths: string[], mode: 'copy' | 'cut', sourceDirect?: { host?: string; port?: number; username?: string }) => void
   clearClipboard: () => void
+  setFileDragState: (state: FileDragState | null) => void
+  setLastDragTarget: (target: DragTarget | null) => void
+  requestRefresh: (paneId: string) => void
 }
 
 // Two horizontal panes by default
@@ -148,6 +173,9 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   transfers: [],
   clipboard: null,
   clipboardMode: null,
+  fileDragState: null,
+  lastDragTarget: null,
+  refreshRequests: {},
 
   splitPane: (paneId, direction) => {
     const newId = uid('sftp_pane')
@@ -294,12 +322,24 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     set({ transfers: get().transfers.filter((t) => t.status !== 'complete' && t.status !== 'error') })
   },
 
-  setClipboard: (hostId, paths, mode) => {
-    set({ clipboard: { hostId, paths }, clipboardMode: mode })
+  setClipboard: (hostId, paths, mode, sourceDirect) => {
+    set({ clipboard: { hostId, paths, sourceDirect }, clipboardMode: mode })
   },
 
   clearClipboard: () => {
     set({ clipboard: null, clipboardMode: null })
+  },
+
+  setFileDragState: (state) => {
+    set({ fileDragState: state })
+  },
+
+  setLastDragTarget: (target) => {
+    set({ lastDragTarget: target })
+  },
+
+  requestRefresh: (paneId) => {
+    set({ refreshRequests: { ...get().refreshRequests, [paneId]: (get().refreshRequests[paneId] || 0) + 1 } })
   },
 }))
 
