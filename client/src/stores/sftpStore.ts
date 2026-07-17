@@ -120,10 +120,14 @@ export interface FileDragState {
   sourceDirect?: { host?: string; port?: number; username?: string }
 }
 
-export interface DragTarget {
-  hostId: string
-  path: string
+export interface PendingFileDrop {
+  files: FileItem[]
+  sourceHostId: string
+  destHostId: string
+  destDirPath: string
+  destPaneId: string
   sourceDirect?: { host?: string; port?: number; username?: string }
+  sourcePaneId?: string
 }
 
 interface SftpState {
@@ -133,7 +137,7 @@ interface SftpState {
   clipboard: ClipboardEntry | null
   clipboardMode: 'copy' | 'cut' | null
   fileDragState: FileDragState | null
-  lastDragTarget: DragTarget | null
+  pendingFileDrop: PendingFileDrop | null
   refreshRequests: Record<string, number>
 
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void
@@ -151,7 +155,7 @@ interface SftpState {
   setClipboard: (hostId: string, paths: string[], mode: 'copy' | 'cut', sourceDirect?: { host?: string; port?: number; username?: string }) => void
   clearClipboard: () => void
   setFileDragState: (state: FileDragState | null) => void
-  setLastDragTarget: (target: DragTarget | null) => void
+  setPendingFileDrop: (drop: PendingFileDrop | null) => void
   requestRefresh: (paneId: string) => void
 }
 
@@ -174,7 +178,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   clipboard: null,
   clipboardMode: null,
   fileDragState: null,
-  lastDragTarget: null,
+  pendingFileDrop: null,
   refreshRequests: {},
 
   splitPane: (paneId, direction) => {
@@ -334,8 +338,8 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     set({ fileDragState: state })
   },
 
-  setLastDragTarget: (target) => {
-    set({ lastDragTarget: target })
+  setPendingFileDrop: (drop) => {
+    set({ pendingFileDrop: drop })
   },
 
   requestRefresh: (paneId) => {

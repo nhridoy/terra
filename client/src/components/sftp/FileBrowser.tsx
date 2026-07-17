@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useDraggable, useDroppable, useDragDropMonitor } from '@dnd-kit/react'
+import { pointerIntersection } from '@dnd-kit/collision'
+import { CollisionPriority } from '@dnd-kit/abstract'
 import api from '../../lib/api'
 import type { FileItem, FileSortDirection, FileSortField, FileViewMode } from '../../lib/sftpTypes'
 import { useSftpStore, findAllLeaves } from '../../stores/sftpStore'
@@ -18,7 +21,8 @@ interface FileBrowserProps {
 export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress, hostPort, hostUsername, onFileSelect }: FileBrowserProps) {
   const fileDragState = useSftpStore((s) => s.fileDragState)
   const setFileDragState = useSftpStore((s) => s.setFileDragState)
-  const setLastDragTarget = useSftpStore((s) => s.setLastDragTarget)
+  const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop)
+  const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop)
   const [files, setFiles] = useState<FileItem[]>([])
   const [currentPath, setCurrentPath] = useState('/')
   const [isLoading, setIsLoading] = useState(false)
@@ -34,11 +38,10 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
   const [renameValue, setRenameValue] = useState('')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileItem | null } | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [isDropTarget, setIsDropTarget] = useState(false)
   const [pasteConflicts, setPasteConflicts] = useState<{ srcPath: string; dstPath: string; dstName: string }[] | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ files: FileItem[]; selectedNames: Set<string> | null } | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [pendingDrop, setPendingDrop] = useState<{ files: FileItem[]; sourceHostId: string; destHostId: string; destDirPath: string; sourceDirect?: { host?: string; port?: number; username?: string }; sourcePaneId?: string } | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const addTransfer = useSftpStore((s) => s.addTransfer)
   const updateTransfer = useSftpStore((s) => s.updateTransfer)
@@ -314,118 +317,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
 
   // ---- File drag & drop ----
 
-  const handleFileDragStart = (e: React.DragEvent, file: FileItem) => {
-    e.stopPropagation()
-    // If dragging a selected file, drag all selected. Otherwise drag just this one.
-    const dragFiles = selectedFiles.has(file.name)
-      ? files.filter((f) => selectedFiles.has(f.name))
-      : [file]
-    setFileDragState({ files: dragFiles, sourceHostId: hostId, sourcePaneId: paneId, sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined })
-    e.dataTransfer.effectAllowed = 'all'
-    // Set drag image to show count if multi
-    if (dragFiles.length > 1) {
-      const ghost = document.createElement('div')
-      ghost.textContent = `${dragFiles.length} items`
-      ghost.className = 'bg-dark-800 text-white text-xs px-2 py-1 rounded shadow-lg fixed -top-10 -left-10'
-      document.body.appendChild(ghost)
-      e.dataTransfer.setDragImage(ghost, 0, 0)
-      requestAnimationFrame(() => ghost.remove())
-    }
-  }
-
-  const handleFileDragEnd = (e: React.DragEvent) => {
-    // Fallback: if native `drop` didn't fire (e.g. cross-host), use lastDragTarget
-    // Only act if the drag wasn't cancelled (Escape key resets dropEffect to 'none')
-    if (e.dataTransfer.dropEffect !== 'none') {
-      const { lastDragTarget } = useSftpStore.getState()
-      if (lastDragTarget && fileDragState) {
-        const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-        if (!(fileDragState.sourceHostId === lastDragTarget.hostId && srcDir === lastDragTarget.path)) {
-          executeFileDrop(fileDragState.files, fileDragState.sourceHostId, lastDragTarget.hostId, lastDragTarget.path, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
-        }
-      }
-    }
-    setFileDragState(null)
-    setDropTarget(null)
-    setLastDragTarget(null)
-  }
-
-  const handleDirDragOver = (e: React.DragEvent, filePath: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!fileDragState) return
-    // Don't allow drop on self
-    if (fileDragState.files.some((f) => f.path === filePath)) return
-    // Don't allow drop in same directory (no-op move)
-    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-    if (fileDragState.sourceHostId === hostId && srcDir === filePath) return
-    e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
-    setDropTarget(filePath)
-    setLastDragTarget({
-      hostId,
-      path: filePath,
-      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
-    })
-  }
-
-  const handleDirDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const target = e.currentTarget as HTMLElement | null
-    if (!target) return
-    const related = e.relatedTarget as HTMLElement | null
-    if (related && target.contains(related)) return
-    setDropTarget(null)
-  }
-
-  const handleDirDrop = (e: React.DragEvent, dirPath: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDropTarget(null)
-    if (!fileDragState) return
-    // Don't allow drop on self
-    if (fileDragState.files.some((f) => f.path === dirPath)) return
-    // Don't allow drop in same directory (no-op move)
-    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-    if (fileDragState.sourceHostId === hostId && srcDir === dirPath) return
-    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, dirPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
-    setLastDragTarget(null)
-  }
-
-  const handleEmptyAreaDragOver = (e: React.DragEvent) => {
-    if (!fileDragState) return
-    // Don't allow drop in same directory (no-op move)
-    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-    if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
-    setDropTarget(currentPath)
-    setLastDragTarget({
-      hostId,
-      path: currentPath,
-      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
-    })
-  }
-
-  const handleEmptyAreaDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    const related = e.relatedTarget as HTMLElement | null
-    if (related && containerRef.current?.contains(related)) return
-    setDropTarget(null)
-  }
-
-  const handleEmptyAreaDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDropTarget(null)
-    if (!fileDragState) return
-    // Don't allow drop in same directory (no-op move)
-    const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-    if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return
-    executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, currentPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
-    setLastDragTarget(null)
-  }
-
   const executeFileDrop = async (dragFiles: FileItem[], sourceHostId: string, destHostId: string, destDirPath: string, overrides?: Map<string, { action: 'replace' | 'rename' | 'auto' | 'skip'; newName?: string }>, sourceDirect?: { host?: string; port?: number; username?: string }, sourcePaneId?: string) => {
     const isMove = sourceHostId === destHostId
     let successCount = 0
@@ -443,7 +334,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
           dstPath: destDirPath === '/' ? `/${f.name}` : `${destDirPath}/${f.name}`,
           dstName: f.name,
         })))
-        setPendingDrop({ files: dragFiles, sourceHostId, destHostId, destDirPath, sourceDirect: fileDragState?.sourceDirect, sourcePaneId: fileDragState?.sourcePaneId })
+        setPendingDrop({ files: dragFiles, sourceHostId, destHostId, destDirPath, sourceDirect, sourcePaneId })
         setFileDragState(null)
         return
       }
@@ -527,7 +418,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
       loadDirectory(currentPath)
     }
 
-    setFileDragState(null)
   }
 
   const handleCopy = () => {
@@ -709,56 +599,71 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     }
   }
 
-  // Drag & drop from desktop
+  // Drag & drop from desktop only (in-app handled by dnd-kit)
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    // NOTE: NOT calling stopPropagation here to avoid potential interference with native drop
-    if (fileDragState) {
-      // In-app file drag — check if this is a no-op (same host + same dir)
-      const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-      if (fileDragState.sourceHostId === hostId && srcDir === currentPath) return // no-op, don't set drop effect
-      e.dataTransfer.dropEffect = fileDragState.sourceHostId === hostId ? 'move' : 'copy'
-      // Track last valid drop target for fallback if native drop doesn't fire
-      setLastDragTarget({
-        hostId,
-        path: currentPath,
-        sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
-      })
-    } else {
-      // Desktop file upload
-      setIsDragOver(true)
-    }
-  }, [fileDragState, hostId, currentPath, hostAddress, hostPort, hostUsername, setLastDragTarget])
+    setIsDragOver(true)
+  }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    e.stopPropagation()
-    if (e.currentTarget === containerRef.current) {
-      if (!fileDragState) {
-        setIsDragOver(false)
-      }
-    }
-  }, [fileDragState])
+    setIsDragOver(false)
+  }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    e.stopPropagation()
-    if (fileDragState) {
-      // In-app file drop — only execute if not a no-op (same host + same dir)
-      const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-      if (!(fileDragState.sourceHostId === hostId && srcDir === currentPath)) {
-        setDropTarget(null)
-        executeFileDrop(fileDragState.files, fileDragState.sourceHostId, hostId, currentPath, undefined, fileDragState.sourceDirect, fileDragState.sourcePaneId)
-      }
-      setLastDragTarget(null)
-    } else {
-      // Desktop file upload
-      setIsDragOver(false)
-      if (e.dataTransfer.files.length > 0) {
-        handleUpload(e.dataTransfer.files)
-      }
+    setIsDragOver(false)
+    if (e.dataTransfer.files.length > 0) {
+      handleUpload(e.dataTransfer.files)
     }
-  }, [hostId, currentPath, fileDragState, setLastDragTarget])
+  }, [handleUpload])
+
+  // In-app file drop via dnd-kit
+  const droppable = useDroppable({
+    id: `file-drop-${paneId}`,
+    data: {
+      type: 'file-drop',
+      paneId,
+      hostId,
+      path: currentPath,
+    },
+    collisionDetector: pointerIntersection,
+  })
+
+  const setContainerRef = useCallback((node: HTMLDivElement | null) => {
+    droppable.ref(node)
+  }, [droppable.ref])
+
+  // Track whether this pane is a valid drop target for the full overlay
+  useDragDropMonitor({
+    onDragOver(event) {
+      const source = event.operation.source
+      const target = event.operation.target
+      if (source?.data?.type === 'file-drag' && target?.data?.type === 'file-drop') {
+        const sourceHostId = source.data.hostId as string
+        const destHostId = target.data.hostId as string
+        const files = source.data.files as FileItem[]
+        const destDirPath = target.data.path as string
+        const srcDir = files[0]?.path.split('/').slice(0, -1).join('/') || '/'
+        const isNoop = sourceHostId === destHostId && srcDir === destDirPath
+        const isTargetingEmptySpace = destDirPath === currentPath
+        setIsDropTarget(!isNoop && isTargetingEmptySpace)
+      } else {
+        setIsDropTarget(false)
+      }
+    },
+    onDragEnd() {
+      setIsDropTarget(false)
+    },
+  })
+
+  // Pick up pending file drops from dnd-kit (set by SftpLayout.onDragEnd)
+  useEffect(() => {
+    if (!pendingFileDrop) return
+    if (pendingFileDrop.destPaneId !== paneId) return
+    executeFileDrop(pendingFileDrop.files, pendingFileDrop.sourceHostId, pendingFileDrop.destHostId, pendingFileDrop.destDirPath, undefined, pendingFileDrop.sourceDirect, pendingFileDrop.sourcePaneId)
+    setPendingFileDrop(null)
+  }, [pendingFileDrop, paneId, executeFileDrop])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -969,7 +874,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerRef}
       className="h-full flex flex-col bg-dark-900 relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -988,11 +893,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
       )}
 
       {/* In-app file drag overlay — only if not a no-op (same host + same dir) */}
-      {(() => {
-        if (!fileDragState) return null
-        const srcDir = fileDragState.files[0]?.path.split('/').slice(0, -1).join('/') || '/'
-        const isNoop = fileDragState.sourceHostId === hostId && srcDir === currentPath
-        if (isNoop) return null
+      {isDropTarget && fileDragState && (() => {
         const isCrossHost = fileDragState.sourceHostId !== hostId
         return (
           <div className={`absolute inset-0 z-50 ${isCrossHost ? 'bg-green-600/15 border-green-500' : 'bg-primary-600/15 border-primary-500'} border-2 border-dashed rounded-lg flex items-center justify-center`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
@@ -1122,9 +1023,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
         <div
           className="flex-1 flex flex-col items-center justify-center text-dark-400"
           onContextMenu={(e) => handleContextMenu(e)}
-          onDragOver={handleEmptyAreaDragOver}
-          onDragLeave={handleEmptyAreaDragLeave}
-          onDrop={handleEmptyAreaDrop}
         >
           <svg className="w-16 h-16 mb-3 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -1136,11 +1034,8 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
       {/* File list */}
       {!isLoading && sortedFiles.length > 0 && (
         <div
-          className={`flex-1 overflow-y-auto ${dropTarget === currentPath && fileDragState ? 'bg-primary-600/10' : ''}`}
+          className="flex-1 overflow-y-auto"
           onContextMenu={(e) => handleContextMenu(e)}
-          onDragOver={handleEmptyAreaDragOver}
-          onDragLeave={handleEmptyAreaDragLeave}
-          onDrop={handleEmptyAreaDrop}
         >
           {viewMode === 'list' ? (
             <table className="w-full">
@@ -1171,84 +1066,60 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
               </thead>
               <tbody>
                 {sortedFiles.map((file) => (
-                  <tr
+                  <FileTableRow
                     key={file.path}
-                    draggable
-                    onDragStart={(e) => handleFileDragStart(e, file)}
-                    onDragEnd={handleFileDragEnd}
-                    onDragOver={file.type === 'directory' ? (e) => handleDirDragOver(e, file.path) : undefined}
-                    onDragLeave={file.type === 'directory' ? handleDirDragLeave : undefined}
-                    onDrop={file.type === 'directory' ? (e) => handleDirDrop(e, file.path) : undefined}
+                    file={file}
+                    paneId={paneId}
+                    hostId={hostId}
+                    hostAddress={hostAddress}
+                    hostPort={hostPort}
+                    hostUsername={hostUsername}
+                    selectedFiles={selectedFiles}
+                    files={files}
+                    renamingPath={renamingPath}
+                    renameValue={renameValue}
+                    renameInputRef={renameInputRef}
+                    commitRename={commitRename}
+                    setRenamingPath={setRenamingPath}
+                    setRenameValue={setRenameValue}
                     onDoubleClick={() => handleDoubleClick(file)}
-                    onClick={(e) => handleSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
-                    onContextMenu={(e) => handleContextMenu(e, file)}
-                    className={`border-t border-dark-800 hover:bg-dark-800/50 cursor-pointer select-none ${
-                      dropTarget === file.path ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
-                    } ${selectedFiles.has(file.name) ? 'bg-primary-600/15' : ''}`}
-                  >
-                    <td className="p-2">{getFileIcon(file)}</td>
-                    <td className="p-2 text-white text-sm">
-                      {renamingPath === file.path ? (
-                        <input
-                          ref={renameInputRef}
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitRename()
-                            if (e.key === 'Escape') setRenamingPath(null)
-                          }}
-                          onBlur={commitRename}
-                          onClick={(e) => e.stopPropagation()}
-                          className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-sm text-white w-full focus:outline-none"
-                        />
-                      ) : (
-                        <span className={file.type === 'directory' ? 'text-primary-400' : ''}>{file.name}</span>
-                      )}
-                    </td>
-                    <td className="p-2 text-dark-300 text-sm">{file.type === 'directory' ? '-' : formatSize(file.size)}</td>
-                    <td className="p-2 text-dark-300 font-mono text-xs">{file.permissions}</td>
-                    <td className="p-2 text-dark-300 text-sm">{formatDate(file.modifiedAt)}</td>
-                  </tr>
+                    onSelect={handleSelect}
+                    sortedFiles={sortedFiles}
+                    onContextMenu={handleContextMenu}
+                    getFileIcon={getFileIcon}
+                    formatSize={formatSize}
+                    formatDate={formatDate}
+                  />
                 ))}
               </tbody>
             </table>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 p-3">
               {sortedFiles.map((file) => (
-                <div
+                <FileGridItem
                   key={file.path}
-                  draggable
-                  onDragStart={(e) => handleFileDragStart(e, file)}
-                  onDragEnd={handleFileDragEnd}
-                  onDragOver={file.type === 'directory' ? (e) => handleDirDragOver(e, file.path) : undefined}
-                  onDragLeave={file.type === 'directory' ? handleDirDragLeave : undefined}
-                  onDrop={file.type === 'directory' ? (e) => handleDirDrop(e, file.path) : undefined}
+                  file={file}
+                  paneId={paneId}
+                  hostId={hostId}
+                  hostAddress={hostAddress}
+                  hostPort={hostPort}
+                  hostUsername={hostUsername}
+                  selectedFiles={selectedFiles}
+                  files={files}
+                  renamingPath={renamingPath}
+                  renameValue={renameValue}
+                  renameInputRef={renameInputRef}
+                  commitRename={commitRename}
+                  setRenamingPath={setRenamingPath}
+                  setRenameValue={setRenameValue}
                   onDoubleClick={() => handleDoubleClick(file)}
-                  onClick={(e) => handleSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
-                  onContextMenu={(e) => handleContextMenu(e, file)}
-                  className={`p-3 rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${
-                    dropTarget === file.path ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
-                  } ${selectedFiles.has(file.name) ? 'bg-primary-600/15 border border-primary-500/50' : 'bg-dark-800 hover:bg-dark-700'}`}
-                >
-                  {getFileIcon(file)}
-                  {renamingPath === file.path ? (
-                    <input
-                      ref={renameInputRef}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitRename()
-                        if (e.key === 'Escape') setRenamingPath(null)
-                      }}
-                      onBlur={commitRename}
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-xs text-white w-full mt-2 text-center focus:outline-none"
-                    />
-                  ) : (
-                    <div className="text-white text-xs mt-2 truncate w-full">{file.name}</div>
-                  )}
-                  <div className="text-dark-400 text-xs mt-1">{file.type === 'directory' ? '-' : formatSize(file.size)}</div>
-                </div>
+                  onSelect={handleSelect}
+                  sortedFiles={sortedFiles}
+                  onContextMenu={handleContextMenu}
+                  getFileIcon={getFileIcon}
+                  formatSize={formatSize}
+                  formatDate={formatDate}
+                />
               ))}
             </div>
           )}
@@ -1448,6 +1319,156 @@ function generateAutoName(originalName: string, existingNames: string[]): string
     counter++
   }
   return candidate
+}
+
+interface FileRowProps {
+  file: FileItem
+  paneId: string
+  hostId: string
+  hostAddress?: string
+  hostPort?: number
+  hostUsername?: string
+  selectedFiles: Set<string>
+  files: FileItem[]
+  renamingPath: string | null
+  renameValue: string
+  renameInputRef: React.RefObject<HTMLInputElement>
+  commitRename: () => void
+  setRenamingPath: (path: string | null) => void
+  setRenameValue: (value: string) => void
+  onDoubleClick: () => void
+  onSelect: (name: string, ctrl: boolean, shift: boolean, files: FileItem[]) => void
+  sortedFiles: FileItem[]
+  onContextMenu: (e: React.MouseEvent, file?: FileItem) => void
+  getFileIcon: (file: FileItem) => React.ReactNode
+  formatSize: (size: number) => string
+  formatDate: (date: string) => string
+}
+
+function FileTableRow({
+  file, paneId, hostId, hostAddress, hostPort, hostUsername,
+  selectedFiles, files, renamingPath, renameValue, renameInputRef,
+  commitRename, setRenamingPath, setRenameValue,
+  onDoubleClick, onSelect, sortedFiles, onContextMenu,
+  getFileIcon, formatSize, formatDate,
+}: FileRowProps) {
+  const draggable = useDraggable({
+    id: `file-drag-${paneId}-${file.path}`,
+    data: {
+      type: 'file-drag',
+      paneId,
+      hostId,
+      files: selectedFiles.has(file.name) ? files.filter((f) => selectedFiles.has(f.name)) : [file],
+      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+    },
+  })
+  const droppable = useDroppable({
+    id: `file-drop-${paneId}-${file.path}`,
+    data: { type: 'file-drop', paneId, hostId, path: file.path },
+    disabled: file.type !== 'directory',
+    collisionDetector: pointerIntersection,
+    collisionPriority: CollisionPriority.High,
+  })
+  const mergedRef = useCallback((node: HTMLTableRowElement | null) => {
+    draggable.ref(node)
+    droppable.ref(node)
+  }, [draggable.ref, droppable.ref])
+
+  return (
+    <tr
+      ref={mergedRef}
+      onDoubleClick={onDoubleClick}
+      onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
+      onContextMenu={(e) => onContextMenu(e, file)}
+      className={`border-t border-dark-800 hover:bg-dark-800/50 cursor-pointer select-none ${
+        droppable.isDropTarget ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
+      } ${selectedFiles.has(file.name) ? 'bg-primary-600/15' : ''}`}
+    >
+      <td className="p-2">{getFileIcon(file)}</td>
+      <td className="p-2 text-white text-sm">
+        {renamingPath === file.path ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRenamingPath(null)
+            }}
+            onBlur={commitRename}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-sm text-white w-full focus:outline-none"
+          />
+        ) : (
+          <span className={file.type === 'directory' ? 'text-primary-400' : ''}>{file.name}</span>
+        )}
+      </td>
+      <td className="p-2 text-dark-300 text-sm">{file.type === 'directory' ? '-' : formatSize(file.size)}</td>
+      <td className="p-2 text-dark-300 font-mono text-xs">{file.permissions}</td>
+      <td className="p-2 text-dark-300 text-sm">{formatDate(file.modifiedAt)}</td>
+    </tr>
+  )
+}
+
+function FileGridItem({
+  file, paneId, hostId, hostAddress, hostPort, hostUsername,
+  selectedFiles, files, renamingPath, renameValue, renameInputRef,
+  commitRename, setRenamingPath, setRenameValue,
+  onDoubleClick, onSelect, sortedFiles, onContextMenu,
+  getFileIcon, formatSize,
+}: FileRowProps) {
+  const draggable = useDraggable({
+    id: `file-drag-${paneId}-${file.path}`,
+    data: {
+      type: 'file-drag',
+      paneId,
+      hostId,
+      files: selectedFiles.has(file.name) ? files.filter((f) => selectedFiles.has(f.name)) : [file],
+      sourceDirect: hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
+    },
+  })
+  const droppable = useDroppable({
+    id: `file-drop-${paneId}-${file.path}`,
+    data: { type: 'file-drop', paneId, hostId, path: file.path },
+    disabled: file.type !== 'directory',
+    collisionDetector: pointerIntersection,
+    collisionPriority: CollisionPriority.High,
+  })
+  const mergedRef = useCallback((node: HTMLDivElement | null) => {
+    draggable.ref(node)
+    droppable.ref(node)
+  }, [draggable.ref, droppable.ref])
+
+  return (
+    <div
+      ref={mergedRef}
+      onDoubleClick={onDoubleClick}
+      onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)}
+      onContextMenu={(e) => onContextMenu(e, file)}
+      className={`p-3 rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${
+        droppable.isDropTarget ? 'bg-primary-600/20 ring-1 ring-inset ring-primary-500/50' : ''
+      } ${selectedFiles.has(file.name) ? 'bg-primary-600/15 border border-primary-500/50' : 'bg-dark-800 hover:bg-dark-700'}`}
+    >
+      {getFileIcon(file)}
+      {renamingPath === file.path ? (
+        <input
+          ref={renameInputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') setRenamingPath(null)
+          }}
+          onBlur={commitRename}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-xs text-white w-full mt-2 text-center focus:outline-none"
+        />
+      ) : (
+        <div className="text-white text-xs mt-2 truncate w-full">{file.name}</div>
+      )}
+      <div className="text-dark-400 text-xs mt-1">{file.type === 'directory' ? '-' : formatSize(file.size)}</div>
+    </div>
+  )
 }
 
 const extColors: Record<string, string> = {

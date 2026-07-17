@@ -38,6 +38,7 @@ function DropZone({ paneId, side }: { paneId: string; side: DropSide }) {
   const { ref } = useDroppable({
     id: `sftp-drop:${paneId}:${side}`,
     data: { type: 'sftp-pane', paneId, side },
+    accept: (draggable) => draggable.data?.type === 'sftp-pane-source',
     collisionDetector: pointerIntersection,
     collisionPriority: CollisionPriority.High,
   })
