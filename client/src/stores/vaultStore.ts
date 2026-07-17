@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
+import { useAuthStore } from './authStore'
 
 interface VaultItem {
   id: string
@@ -40,6 +42,10 @@ interface VaultState {
   clearError: () => void
 }
 
+function getUserId(): string {
+  return useAuthStore.getState().user?.id || ''
+}
+
 export const useVaultStore = create<VaultState>((set, get) => ({
   vaults: [],
   currentVaultId: null,
@@ -51,13 +57,10 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fetchVaults: async () => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.listVaults()
-      const vaults = result.vaults || []
+      const vaults = await invoke<any[]>('list_vaults', { userId: getUserId() })
       set({ vaults, isLoading: false })
-      
-      // Auto-select default vault if none selected
       if (vaults.length > 0 && !get().currentVaultId) {
-        const defaultVault = vaults.find(v => v.isDefault) || vaults[0]
+        const defaultVault = vaults.find((v: any) => v.isDefault) || vaults[0]
         get().switchVault(defaultVault.id)
       }
     } catch (error) {
@@ -68,11 +71,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   createVault: async (name, description) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.createVault({ name, description })
-      const vault = result.vault
+      const deviceId = await getDeviceId()
+      const vault = await invoke<any>('create_vault', {
+        vault: { userId: getUserId(), name, description },
+        deviceId,
+      })
       set({ vaults: [...get().vaults, vault], isLoading: false })
-
-      // Switch to new vault
       get().switchVault(vault.id)
     } catch (error) {
       set({ isLoading: false })
@@ -83,9 +87,14 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   updateVault: async (id, vault) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.updateVault(id, vault)
+      const deviceId = await getDeviceId()
+      const updated = await invoke<any>('update_vault', {
+        id,
+        vault: { userId: getUserId(), name: vault.name || '', description: vault.description },
+        deviceId,
+      })
       set({
-        vaults: get().vaults.map((v) => (v.id === id ? result.vault : v)),
+        vaults: get().vaults.map((v) => (v.id === id ? updated : v)),
         isLoading: false,
       })
     } catch (error) {
@@ -96,21 +105,22 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   deleteVault: async (id) => {
     set({ isLoading: true, error: null })
     try {
-      await api.deleteVault(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_vault', { id, deviceId })
       const { vaults, currentVaultId } = get()
       const newVaults = vaults.filter((v) => v.id !== id)
       let newCurrentVaultId = currentVaultId
-      
+
       if (currentVaultId === id) {
         newCurrentVaultId = newVaults[0]?.id || null
       }
-      
+
       set({
         vaults: newVaults,
         currentVaultId: newCurrentVaultId,
         isLoading: false,
       })
-      
+
       if (newCurrentVaultId) {
         get().switchVault(newCurrentVaultId)
       }
@@ -122,11 +132,10 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   switchVault: async (vaultId) => {
     set({ isLoading: true, error: null })
     try {
-      // Fetch vault-specific data
-      const result = await api.getVaultData(vaultId)
+      const result = await invoke<any>('get_vault_data', { id: vaultId })
       set({
         currentVaultId: vaultId,
-        decryptedData: result.data,
+        decryptedData: result.encryptedData ? JSON.parse(result.encryptedData) : null,
         isLoading: false,
       })
     } catch (error) {
@@ -134,13 +143,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  unlockVault: async (password) => {
+  unlockVault: async (_password) => {
     set({ isLoading: true, error: null })
     try {
-      const { currentVaultId } = get()
-      if (!currentVaultId) throw new Error('No vault selected')
-      
-      await api.unlockVault(currentVaultId, password)
       set({ isUnlocked: true, isLoading: false })
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })

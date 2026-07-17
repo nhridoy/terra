@@ -1,15 +1,7 @@
 import { create } from 'zustand'
-import api from '../lib/api'
-
-interface WorkspaceTab {
-  title: string
-  root: unknown
-}
-
-interface WorkspaceLayout {
-  tabs: WorkspaceTab[]
-  hostIds: string[]
-}
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
+import { useAuthStore } from './authStore'
 
 interface Workspace {
   id: string
@@ -29,7 +21,7 @@ interface WorkspaceState {
   fetchWorkspaces: (vaultId?: string) => Promise<void>
   createWorkspace: (
     name: string,
-    layout: WorkspaceLayout,
+    layout: any,
     vaultId?: string,
   ) => Promise<void>
   renameWorkspace: (id: string, name: string) => Promise<void>
@@ -37,16 +29,20 @@ interface WorkspaceState {
   clearError: () => void
 }
 
+function getUserId(): string {
+  return useAuthStore.getState().user?.id || ''
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspaces: [],
   isLoading: false,
   error: null,
 
-  fetchWorkspaces: async (vaultId?: string) => {
+  fetchWorkspaces: async (_vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.listWorkspaces(vaultId)
-      set({ workspaces: result.workspaces || [], isLoading: false })
+      const workspaces = await invoke<Workspace[]>('list_workspaces', { userId: getUserId() })
+      set({ workspaces, isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -55,13 +51,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   createWorkspace: async (name, layout, vaultId) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.createWorkspace({
-        name,
-        layout: JSON.stringify(layout),
-        hostIds: layout.hostIds,
-        vaultId,
+      const deviceId = await getDeviceId()
+      const result = await invoke<Workspace>('create_workspace', {
+        ws: {
+          userId: getUserId(),
+          name,
+          layout: JSON.stringify(layout),
+          hostIds: JSON.stringify(layout.hostIds || []),
+          vaultId: vaultId || null,
+        },
+        deviceId,
       })
-      set({ workspaces: [...get().workspaces, result.workspace], isLoading: false })
+      set({ workspaces: [...get().workspaces, result], isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
       throw error
@@ -71,9 +72,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   renameWorkspace: async (id, name) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.updateWorkspace(id, { name })
+      const deviceId = await getDeviceId()
+      const existing = get().workspaces.find((w) => w.id === id)
+      const result = await invoke<Workspace>('update_workspace', {
+        id,
+        ws: {
+          userId: getUserId(),
+          name,
+          layout: existing?.layout || '{}',
+          hostIds: existing?.hostIds || '[]',
+          vaultId: existing?.vaultId || null,
+        },
+        deviceId,
+      })
       set({
-        workspaces: get().workspaces.map((w) => (w.id === id ? result.workspace : w)),
+        workspaces: get().workspaces.map((w) => (w.id === id ? result : w)),
         isLoading: false,
       })
     } catch (error: any) {
@@ -85,7 +98,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   deleteWorkspace: async (id) => {
     set({ isLoading: true, error: null })
     try {
-      await api.deleteWorkspace(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_workspace', { id, deviceId })
       set({
         workspaces: get().workspaces.filter((w) => w.id !== id),
         isLoading: false,

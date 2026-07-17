@@ -1,17 +1,18 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
+import { useAuthStore } from './authStore'
 import type { PaneNode } from './terminalStore'
 import { useTerminalStore } from './terminalStore'
 
 export interface TabGroup {
   id: string
   name: string
-  layout: string // JSON string of the PaneNode tree root
+  layout: string
   vaultId?: string
   createdAt?: string
 }
 
-// Strip volatile fields (connection status) from a pane tree before saving.
 function stripVolatile(node: PaneNode): PaneNode {
   if (node.type === 'leaf') {
     const { connectionStatus: _cs, lastConnected: _lc, ...rest } = node
@@ -20,6 +21,10 @@ function stripVolatile(node: PaneNode): PaneNode {
     return rest as PaneNode
   }
   return { ...node, children: node.children.map(stripVolatile) }
+}
+
+function getUserId(): string {
+  return useAuthStore.getState().user?.id || ''
 }
 
 export const useTabGroupStore = create<{
@@ -31,10 +36,10 @@ export const useTabGroupStore = create<{
 }>((set, get) => ({
   tabGroups: [],
 
-  fetchTabGroups: async (vaultId?: string) => {
+  fetchTabGroups: async (_vaultId?: string) => {
     try {
-      const result = await api.listTabGroups(vaultId)
-      if (result.tabGroups) set({ tabGroups: result.tabGroups })
+      const tabGroups = await invoke<TabGroup[]>('list_tab_groups', { userId: getUserId() })
+      set({ tabGroups })
     } catch (e) {
       console.error('Failed to fetch tab groups:', e)
     }
@@ -42,14 +47,21 @@ export const useTabGroupStore = create<{
 
   createTabGroup: async (name, root, vaultId?: string) => {
     try {
+      const deviceId = await getDeviceId()
       const layout = JSON.stringify(stripVolatile(root))
-      const result = await api.createTabGroup({ name, layout, vaultId })
-      if (result.tabGroup) {
-        set({
-          tabGroups: [result.tabGroup as TabGroup, ...get().tabGroups],
-        })
-        return result.tabGroup as TabGroup
-      }
+      const result = await invoke<TabGroup>('create_tab_group', {
+        tg: {
+          userId: getUserId(),
+          name,
+          layout,
+          vaultId: vaultId || null,
+        },
+        deviceId,
+      })
+      set({
+        tabGroups: [result, ...get().tabGroups],
+      })
+      return result
     } catch (e) {
       console.error('Failed to create tab group:', e)
     }
@@ -58,7 +70,18 @@ export const useTabGroupStore = create<{
 
   renameTabGroup: async (id, name) => {
     try {
-      await api.renameTabGroup(id, name)
+      const deviceId = await getDeviceId()
+      const existing = get().tabGroups.find((g) => g.id === id)
+      await invoke('update_tab_group', {
+        id,
+        tg: {
+          userId: getUserId(),
+          name,
+          layout: existing?.layout || '{}',
+          vaultId: existing?.vaultId || null,
+        },
+        deviceId,
+      })
       set({
         tabGroups: get().tabGroups.map((g) => (g.id === id ? { ...g, name } : g)),
       })
@@ -69,10 +92,9 @@ export const useTabGroupStore = create<{
 
   deleteTabGroup: async (id) => {
     try {
-      await api.deleteTabGroup(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_tab_group', { id, deviceId })
       set({ tabGroups: get().tabGroups.filter((g) => g.id !== id) })
-      // Clear Quick Preset tracking on any tab that was launched from this preset
-      // so the "save as new" button re-appears there.
       const { tabs } = useTerminalStore.getState()
       if (tabs.some((t) => t.activePresetId === id)) {
         useTerminalStore.setState({

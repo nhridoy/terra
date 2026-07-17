@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../lib/api'
+import { setUserId } from '../lib/device'
 
 interface User {
   id: string
@@ -65,6 +66,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const result = await api.login(email, password)
       const user = { id: result.userId, email, username: email.split('@')[0] }
       saveUser(user)
+      await setUserId(result.userId)
       set({
         user,
         isAuthenticated: true,
@@ -82,6 +84,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const result = await api.login(email, password)
       const user = { id: result.userId, email, username }
       saveUser(user)
+      await setUserId(result.userId)
       set({
         user,
         isAuthenticated: true,
@@ -128,6 +131,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     const user = loadUser()
     const { token } = api.getTokens()
     if (user && token) {
+      setUserId(user.id).catch(() => {})
       set({ user, isAuthenticated: true })
     } else {
       api.clearTokens()

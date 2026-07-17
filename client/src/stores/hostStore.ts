@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
+import { useAuthStore } from './authStore'
 
 function normalizeTags(tags: unknown): string[] {
   if (!tags) return []
@@ -62,6 +64,10 @@ interface HostState {
   clearError: () => void
 }
 
+function getUserId(): string {
+  return useAuthStore.getState().user?.id || ''
+}
+
 export const useHostStore = create<HostState>((set, get) => ({
   hosts: [],
   groups: [],
@@ -69,21 +75,21 @@ export const useHostStore = create<HostState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchHosts: async (vaultId?: string) => {
+  fetchHosts: async (_vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.listHosts(vaultId)
-      set({ hosts: (result.hosts || []).map(normalizeHost), isLoading: false })
+      const hosts = await invoke<any[]>('list_hosts', { userId: getUserId() })
+      set({ hosts: hosts.map(normalizeHost), isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
   },
 
-  fetchGroups: async (vaultId?: string) => {
+  fetchGroups: async (_vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.listGroups(vaultId)
-      set({ groups: result.groups, isLoading: false })
+      const groups = await invoke<Group[]>('list_groups', { userId: getUserId() })
+      set({ groups, isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -92,8 +98,22 @@ export const useHostStore = create<HostState>((set, get) => ({
   createHost: async (host) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.createHost(host)
-      set({ hosts: [...get().hosts, normalizeHost(result.host)], isLoading: false })
+      const deviceId = await getDeviceId()
+      const result = await invoke<any>('create_host', {
+        host: {
+          userId: getUserId(),
+          name: host.name || '',
+          address: host.address || '',
+          port: host.port || 22,
+          username: host.username || '',
+          groupId: host.groupId || null,
+          tags: host.tags ? JSON.stringify(host.tags) : '[]',
+          color: host.color || null,
+          icon: host.icon || null,
+        },
+        deviceId,
+      })
+      set({ hosts: [...get().hosts, normalizeHost(result)], isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -102,9 +122,24 @@ export const useHostStore = create<HostState>((set, get) => ({
   updateHost: async (id, host) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.updateHost(id, host)
+      const deviceId = await getDeviceId()
+      const result = await invoke<any>('update_host', {
+        id,
+        host: {
+          userId: getUserId(),
+          name: host.name || '',
+          address: host.address || '',
+          port: host.port || 22,
+          username: host.username || '',
+          groupId: host.groupId || null,
+          tags: host.tags ? JSON.stringify(host.tags) : '[]',
+          color: host.color || null,
+          icon: host.icon || null,
+        },
+        deviceId,
+      })
       set({
-        hosts: get().hosts.map((h) => (h.id === id ? normalizeHost(result.host) : h)),
+        hosts: get().hosts.map((h) => (h.id === id ? normalizeHost(result) : h)),
         isLoading: false,
       })
     } catch (error: any) {
@@ -115,7 +150,8 @@ export const useHostStore = create<HostState>((set, get) => ({
   deleteHost: async (id) => {
     set({ isLoading: true, error: null })
     try {
-      await api.deleteHost(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_host', { id, deviceId })
       set({
         hosts: get().hosts.filter((h) => h.id !== id),
         isLoading: false,
@@ -130,8 +166,17 @@ export const useHostStore = create<HostState>((set, get) => ({
   createGroup: async (group) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.createGroup(group)
-      set({ groups: [...get().groups, result.group], isLoading: false })
+      const deviceId = await getDeviceId()
+      const result = await invoke<Group>('create_group', {
+        group: {
+          userId: getUserId(),
+          name: group.name || '',
+          parentId: group.parentId || null,
+          vaultId: group.vaultId || null,
+        },
+        deviceId,
+      })
+      set({ groups: [...get().groups, result], isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -140,9 +185,19 @@ export const useHostStore = create<HostState>((set, get) => ({
   updateGroup: async (id, group) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.updateGroup(id, group)
+      const deviceId = await getDeviceId()
+      const result = await invoke<Group>('update_group', {
+        id,
+        group: {
+          userId: getUserId(),
+          name: group.name || '',
+          parentId: group.parentId || null,
+          vaultId: group.vaultId || null,
+        },
+        deviceId,
+      })
       set({
-        groups: get().groups.map((g) => (g.id === id ? result.group : g)),
+        groups: get().groups.map((g) => (g.id === id ? result : g)),
         isLoading: false,
       })
     } catch (error: any) {
@@ -153,7 +208,8 @@ export const useHostStore = create<HostState>((set, get) => ({
   deleteGroup: async (id) => {
     set({ isLoading: true, error: null })
     try {
-      await api.deleteGroup(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_group', { id, deviceId })
       set({
         groups: get().groups.filter((g) => g.id !== id),
         isLoading: false,

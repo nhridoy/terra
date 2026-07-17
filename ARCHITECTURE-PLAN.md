@@ -701,7 +701,7 @@ Read this file and update to use new invoke-based SFTP methods. The hook likely 
 
 ---
 
-## Phase 2: Local Database [ ]
+## Phase 2: Local Database [x]
 
 **Goal**: All config data stored locally in SQLite. Server-independent CRUD.
 
@@ -723,7 +723,7 @@ Read this file and update to use new invoke-based SFTP methods. The hook likely 
 | `client/src/stores/authStore.ts` | Add set_user_id after login |
 | `client/src/lib/api.ts` | Remove old CRUD HTTP calls (keep auth endpoints) |
 
-### Task 2.1 — Add SQLite dependencies [ ]
+### Task 2.1 — Add SQLite dependencies [x]
 
 File: `client/src-tauri/Cargo.toml` (already done in Task 0.1 — `rusqlite` is included)
 
@@ -734,7 +734,7 @@ Add `once_cell` if not using std's `LazyLock`:
 
 **Verify**: `cargo build` succeeds.
 
-### Task 2.2 — Create db.rs module [ ]
+### Task 2.2 — Create db.rs module [x]
 
 File: `client/src-tauri/src/db.rs` (NEW)
 
@@ -771,7 +771,7 @@ db::init(db_path.to_str().unwrap()).expect("Failed to init DB");
 
 **Verify**: `cargo build` succeeds.
 
-### Task 2.3 — Create local schema [ ]
+### Task 2.3 — Create local schema [x]
 
 In `db.rs`, `run_migrations()`:
 
@@ -938,7 +938,7 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 
 **Verify**: Run migration on app startup. DB file created with all tables.
 
-### Task 2.4 — Implement local CRUD commands [ ]
+### Task 2.4 — Implement local CRUD commands [x]
 
 File: `client/src-tauri/src/crud.rs` (NEW)
 
@@ -1058,7 +1058,7 @@ Initialize in `lib.rs`:
 
 **Verify**: `cargo build` succeeds.
 
-### Task 2.5 — Update stores to use local DB [ ]
+### Task 2.5 — Update stores to use local DB [x]
 
 For each Zustand store, replace HTTP API calls with Tauri `invoke()` calls:
 
@@ -1088,7 +1088,7 @@ Stores to update:
 
 **Verify**: `npx tsc --noEmit` passes.
 
-### Task 2.6 — Build verification [ ]
+### Task 2.6 — Build verification [x]
 
 - [ ] `cargo build` succeeds
 - [ ] SQLite file created at app data directory

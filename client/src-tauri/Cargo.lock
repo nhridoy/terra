@@ -4377,6 +4377,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs",
  "env_logger",
  "log",
  "reqwest 0.12.28",
