@@ -12,6 +12,7 @@ use tauri::Manager;
 pub struct AppState {
     pub device_id: String,
     pub user_id: Mutex<Option<String>>,
+    pub encryption_key: Mutex<Option<String>>,
 }
 
 #[tauri::command]
@@ -28,6 +29,13 @@ fn get_device_id(state: tauri::State<'_, AppState>) -> String {
 fn set_user_id(user_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut guard = state.user_id.lock().map_err(|e| e.to_string())?;
     *guard = Some(user_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_encryption_key(key: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.encryption_key.lock().map_err(|e| e.to_string())?;
+    *guard = Some(key);
     Ok(())
 }
 
@@ -68,11 +76,17 @@ pub fn run() {
         .manage(AppState {
             device_id: get_or_create_device_id(),
             user_id: Mutex::new(None),
+            encryption_key: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_device_id,
             set_user_id,
+            set_encryption_key,
+            vault::generate_salt,
+            vault::derive_key,
+            vault::encrypt,
+            vault::decrypt,
             ssh::connect,
             ssh::disconnect,
             ssh::send_input,

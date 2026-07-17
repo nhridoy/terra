@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::sync::LazyLock;
 
 pub static DB: LazyLock<Mutex<Option<Connection>>> = LazyLock::new(|| Mutex::new(None));
+pub static ENCRYPTION_KEY: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 
 pub fn init(db_path: &str) -> Result<(), String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
@@ -12,6 +13,17 @@ pub fn init(db_path: &str) -> Result<(), String> {
     let mut guard = DB.lock().map_err(|e| e.to_string())?;
     *guard = Some(conn);
     Ok(())
+}
+
+pub fn set_encryption_key(key: String) -> Result<(), String> {
+    let mut guard = ENCRYPTION_KEY.lock().map_err(|e| e.to_string())?;
+    *guard = Some(key);
+    Ok(())
+}
+
+pub fn get_encryption_key() -> Result<Option<String>, String> {
+    let guard = ENCRYPTION_KEY.lock().map_err(|e| e.to_string())?;
+    Ok(guard.clone())
 }
 
 pub fn conn() -> Result<std::sync::MutexGuard<'static, Option<Connection>>, String> {

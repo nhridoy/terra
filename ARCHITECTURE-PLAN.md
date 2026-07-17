@@ -1100,7 +1100,7 @@ Stores to update:
 
 ---
 
-## Phase 3: Local Encryption [ ]
+## Phase 3: Local Encryption [x]
 
 **Goal**: All sensitive data encrypted at rest with master password.
 
@@ -1113,7 +1113,7 @@ Stores to update:
 | `client/src-tauri/src/lib.rs` | Add encryption_key to AppState, register new commands |
 | `client/src-tauri/src/db.rs` | Add encryption wrappers for sensitive fields |
 
-### Task 3.1 — Rewrite vault.rs with Argon2id + XSalsa20+Poly1305 [ ]
+### Task 3.1 — Rewrite vault.rs with Argon2id + XSalsa20+Poly1305 [x]
 
 File: `client/src-tauri/src/vault.rs`
 
@@ -1204,7 +1204,7 @@ pub fn decrypt(ciphertext_hex: String, nonce_hex: String, key_hex: String) -> Re
 
 **Verify**: `cargo build` succeeds. Can encrypt/decrypt a string round-trip.
 
-### Task 3.2 — Encrypt sensitive fields in DB [ ]
+### Task 3.2 — Encrypt sensitive fields in DB [x]
 
 In `db.rs` / `crud.rs`, encrypt/decrypt sensitive fields automatically:
 

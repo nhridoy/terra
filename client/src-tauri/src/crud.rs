@@ -1,4 +1,5 @@
 use crate::db;
+use crate::vault;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
@@ -278,6 +279,34 @@ fn update_sync(conn: &Connection, table: &str, record_id: &str, device_id: &str)
     );
 }
 
+fn maybe_encrypt(plaintext: &str) -> Result<String, String> {
+    if plaintext.is_empty() {
+        return Ok(plaintext.to_string());
+    }
+    let key = db::get_encryption_key().map_err(|e| e.to_string())?;
+    match key {
+        Some(k) => vault::encrypt_field(plaintext, &k),
+        None => Ok(plaintext.to_string()),
+    }
+}
+
+fn maybe_decrypt(value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Ok(value.to_string());
+    }
+    let key = db::get_encryption_key().map_err(|e| e.to_string())?;
+    match key {
+        Some(k) => {
+            if vault::is_encrypted_field(value) {
+                vault::decrypt_field(value, &k)
+            } else {
+                Ok(value.to_string())
+            }
+        }
+        None => Ok(value.to_string()),
+    }
+}
+
 // ── Hosts ──
 
 #[tauri::command]
@@ -289,9 +318,12 @@ pub fn create_host(host: HostData, device_id: String) -> Result<Host, String> {
         let auth_method = host.auth_method.clone().unwrap_or_else(|| "password".to_string());
         let tags = host.tags.clone().unwrap_or_else(|| "[]".to_string());
         let sort_order = host.sort_order.unwrap_or(0);
+        let password = host.password.as_deref().map(|p| maybe_encrypt(p)).transpose()?;
+        let private_key = host.private_key.as_deref().map(|k| maybe_encrypt(k)).transpose()?;
+        let passphrase = host.passphrase.as_deref().map(|p| maybe_encrypt(p)).transpose()?;
         conn.execute(
             "INSERT INTO hosts (id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
-            params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, host.password, host.private_key, host.passphrase, auth_method, tags, host.color, host.icon, sort_order, now, now],
+            params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, password, private_key, passphrase, auth_method, tags, host.color, host.icon, sort_order, now, now],
         ).map_err(|e| e.to_string())?;
         update_sync(conn, "hosts", &id, &device_id);
         Ok(Host { id, user_id: host.user_id, vault_id: host.vault_id, group_id: host.group_id, name: host.name, hostname: host.hostname, address: host.address, port, username: host.username, password: host.password, private_key: host.private_key, passphrase: host.passphrase, auth_method, tags, color: host.color, icon: host.icon, sort_order, created_at: now.clone(), updated_at: now })
@@ -301,9 +333,15 @@ pub fn create_host(host: HostData, device_id: String) -> Result<Host, String> {
 #[tauri::command]
 pub fn get_host(id: String) -> Result<Host, String> {
     with_conn(|conn| {
-        conn.query_row("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE id = ?1", params![id], |row| {
+        let host = conn.query_row("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE id = ?1", params![id], |row| {
             Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
-        }).map_err(|e| e.to_string())
+        }).map_err(|e| e.to_string())?;
+        Ok(Host {
+            password: host.password.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+            private_key: host.private_key.as_deref().map(|k| maybe_decrypt(k)).transpose()?,
+            passphrase: host.passphrase.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+            ..host
+        })
     })
 }
 
@@ -314,7 +352,15 @@ pub fn list_hosts(user_id: String) -> Result<Vec<Host>, String> {
         let rows = stmt.query_map(params![user_id], |row| {
             Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
         }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        let hosts: Vec<Host> = rows.filter_map(|r| r.ok()).collect();
+        hosts.into_iter().map(|h| {
+            Ok(Host {
+                password: h.password.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+                private_key: h.private_key.as_deref().map(|k| maybe_decrypt(k)).transpose()?,
+                passphrase: h.passphrase.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+                ..h
+            })
+        }).collect()
     })
 }
 
@@ -325,7 +371,15 @@ pub fn list_hosts_by_group(group_id: String) -> Result<Vec<Host>, String> {
         let rows = stmt.query_map(params![group_id], |row| {
             Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
         }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        let hosts: Vec<Host> = rows.filter_map(|r| r.ok()).collect();
+        hosts.into_iter().map(|h| {
+            Ok(Host {
+                password: h.password.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+                private_key: h.private_key.as_deref().map(|k| maybe_decrypt(k)).transpose()?,
+                passphrase: h.passphrase.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+                ..h
+            })
+        }).collect()
     })
 }
 
@@ -337,14 +391,23 @@ pub fn update_host(id: String, host: HostData, device_id: String) -> Result<Host
         let auth_method = host.auth_method.clone().unwrap_or_else(|| "password".to_string());
         let tags = host.tags.clone().unwrap_or_else(|| "[]".to_string());
         let sort_order = host.sort_order.unwrap_or(0);
+        let password = host.password.as_deref().map(|p| maybe_encrypt(p)).transpose()?;
+        let private_key = host.private_key.as_deref().map(|k| maybe_encrypt(k)).transpose()?;
+        let passphrase = host.passphrase.as_deref().map(|p| maybe_encrypt(p)).transpose()?;
         conn.execute(
             "UPDATE hosts SET user_id=?2, vault_id=?3, group_id=?4, name=?5, hostname=?6, address=?7, port=?8, username=?9, password=?10, private_key=?11, passphrase=?12, auth_method=?13, tags=?14, color=?15, icon=?16, sort_order=?17, updated_at=?18 WHERE id=?1",
-            params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, host.password, host.private_key, host.passphrase, auth_method, tags, host.color, host.icon, sort_order, now],
+            params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, password, private_key, passphrase, auth_method, tags, host.color, host.icon, sort_order, now],
         ).map_err(|e| e.to_string())?;
         update_sync(conn, "hosts", &id, &device_id);
-        conn.query_row("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE id = ?1", params![id], |row| {
+        let h = conn.query_row("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE id = ?1", params![id], |row| {
             Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
-        }).map_err(|e| e.to_string())
+        }).map_err(|e| e.to_string())?;
+        Ok(Host {
+            password: h.password.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+            private_key: h.private_key.as_deref().map(|k| maybe_decrypt(k)).transpose()?,
+            passphrase: h.passphrase.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
+            ..h
+        })
     })
 }
 
@@ -477,9 +540,10 @@ pub fn create_key(key: KeyData, device_id: String) -> Result<Key, String> {
     with_conn(|conn| {
         let id = new_id();
         let now = now();
+        let enc_pk = key.encrypted_private_key.as_deref().map(|k| maybe_encrypt(k)).transpose()?;
         conn.execute(
             "INSERT INTO keychain (id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![id, key.user_id, key.vault_id, key.name, key.description, key.key_type, key.public_key, key.encrypted_private_key, key.fingerprint, now, now],
+            params![id, key.user_id, key.vault_id, key.name, key.description, key.key_type, key.public_key, enc_pk, key.fingerprint, now, now],
         ).map_err(|e| e.to_string())?;
         update_sync(conn, "keychain", &id, &device_id);
         Ok(Key { id, user_id: key.user_id, vault_id: key.vault_id, name: key.name, description: key.description, key_type: key.key_type, public_key: key.public_key, encrypted_private_key: key.encrypted_private_key, fingerprint: key.fingerprint, created_at: now.clone(), updated_at: now })
@@ -493,16 +557,26 @@ pub fn list_keys(user_id: String) -> Result<Vec<Key>, String> {
         let rows = stmt.query_map(params![user_id], |row| {
             Ok(Key { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, description: row.get(4)?, key_type: row.get(5)?, public_key: row.get(6)?, encrypted_private_key: row.get(7)?, fingerprint: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)? })
         }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        let keys: Vec<Key> = rows.filter_map(|r| r.ok()).collect();
+        keys.into_iter().map(|k| {
+            Ok(Key {
+                encrypted_private_key: k.encrypted_private_key.as_deref().map(|v| maybe_decrypt(v)).transpose()?,
+                ..k
+            })
+        }).collect()
     })
 }
 
 #[tauri::command]
 pub fn get_key(id: String) -> Result<Key, String> {
     with_conn(|conn| {
-        conn.query_row("SELECT id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at FROM keychain WHERE id = ?1", params![id], |row| {
+        let k = conn.query_row("SELECT id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at FROM keychain WHERE id = ?1", params![id], |row| {
             Ok(Key { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, description: row.get(4)?, key_type: row.get(5)?, public_key: row.get(6)?, encrypted_private_key: row.get(7)?, fingerprint: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)? })
-        }).map_err(|e| e.to_string())
+        }).map_err(|e| e.to_string())?;
+        Ok(Key {
+            encrypted_private_key: k.encrypted_private_key.as_deref().map(|v| maybe_decrypt(v)).transpose()?,
+            ..k
+        })
     })
 }
 
