@@ -38,10 +38,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchWorkspaces: async (_vaultId?: string) => {
+  fetchWorkspaces: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const workspaces = await invoke<Workspace[]>('list_workspaces', { userId: getUserId() })
+      const workspaces = await invoke<Workspace[]>('list_workspaces', { userId: getUserId(), vaultId: vaultId || null })
       set({ workspaces, isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })

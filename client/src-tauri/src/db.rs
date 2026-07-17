@@ -70,9 +70,11 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
             user_id TEXT NOT NULL,
             name TEXT NOT NULL,
             description TEXT,
+            is_default INTEGER DEFAULT 0,
             encrypted_data TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, name)
         );
 
         CREATE TABLE IF NOT EXISTS keychain (

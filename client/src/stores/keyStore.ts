@@ -20,7 +20,7 @@ interface KeyState {
   isLoading: boolean
   error: string | null
 
-  fetchKeys: () => Promise<void>
+  fetchKeys: (vaultId?: string) => Promise<void>
   selectKey: (key: Key | null) => void
   importKey: (key: Partial<Key>) => Promise<void>
   generateKey: (name: string, keyType: string) => Promise<void>
@@ -38,10 +38,10 @@ export const useKeyStore = create<KeyState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchKeys: async (_vaultId?: string) => {
+  fetchKeys: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const keys = await invoke<Key[]>('list_keys', { userId: getUserId() })
+      const keys = await invoke<Key[]>('list_keys', { userId: getUserId(), vaultId: vaultId || null })
       set({ keys, isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })

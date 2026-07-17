@@ -55,10 +55,10 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   error: null,
   searchQuery: '',
 
-  fetchSnippets: async (_vaultId?: string) => {
+  fetchSnippets: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const snippets = await invoke<any[]>('list_snippets', { userId: getUserId() })
+      const snippets = await invoke<any[]>('list_snippets', { userId: getUserId(), vaultId: vaultId || null })
       set({
         snippets: snippets.map((s) => ({ ...s, tags: normalizeTags(s.tags) })),
         isLoading: false,

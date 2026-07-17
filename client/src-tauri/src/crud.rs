@@ -76,6 +76,7 @@ pub struct VaultData {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
+    pub is_default: Option<bool>,
     pub encrypted_data: Option<String>,
 }
 
@@ -86,6 +87,7 @@ pub struct Vault {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
+    pub is_default: bool,
     pub encrypted_data: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -346,13 +348,21 @@ pub fn get_host(id: String) -> Result<Host, String> {
 }
 
 #[tauri::command]
-pub fn list_hosts(user_id: String) -> Result<Vec<Host>, String> {
+pub fn list_hosts(user_id: String, vault_id: Option<String>) -> Result<Vec<Host>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE user_id = ?1 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
-        }).map_err(|e| e.to_string())?;
-        let hosts: Vec<Host> = rows.filter_map(|r| r.ok()).collect();
+        let hosts: Vec<Host> = if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE user_id = ?1 AND vault_id = ?2 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
+            }).map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE user_id = ?1 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
+            }).map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
         hosts.into_iter().map(|h| {
             Ok(Host {
                 password: h.password.as_deref().map(|p| maybe_decrypt(p)).transpose()?,
@@ -438,13 +448,21 @@ pub fn create_group(group: GroupData, device_id: String) -> Result<Group, String
 }
 
 #[tauri::command]
-pub fn list_groups(user_id: String) -> Result<Vec<Group>, String> {
+pub fn list_groups(user_id: String, vault_id: Option<String>) -> Result<Vec<Group>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, parent_id, name, sort_order, created_at, updated_at FROM groups WHERE user_id = ?1 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Group { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, parent_id: row.get(3)?, name: row.get(4)?, sort_order: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
-        }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, parent_id, name, sort_order, created_at, updated_at FROM groups WHERE user_id = ?1 AND vault_id = ?2 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(Group { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, parent_id: row.get(3)?, name: row.get(4)?, sort_order: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, parent_id, name, sort_order, created_at, updated_at FROM groups WHERE user_id = ?1 ORDER BY sort_order, name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(Group { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, parent_id: row.get(3)?, name: row.get(4)?, sort_order: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        }
     })
 }
 
@@ -480,21 +498,40 @@ pub fn create_vault(vault: VaultData, device_id: String) -> Result<Vault, String
     with_conn(|conn| {
         let id = new_id();
         let now = now();
+        let is_default = vault.is_default.unwrap_or(false) as i32;
         conn.execute(
-            "INSERT INTO vaults (id, user_id, name, description, encrypted_data, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![id, vault.user_id, vault.name, vault.description, vault.encrypted_data, now, now],
+            "INSERT INTO vaults (id, user_id, name, description, is_default, encrypted_data, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![id, vault.user_id, vault.name, vault.description, is_default, vault.encrypted_data, now, now],
         ).map_err(|e| e.to_string())?;
         update_sync(conn, "vaults", &id, &device_id);
-        Ok(Vault { id, user_id: vault.user_id, name: vault.name, description: vault.description, encrypted_data: vault.encrypted_data, created_at: now.clone(), updated_at: now })
+        Ok(Vault { id, user_id: vault.user_id, name: vault.name, description: vault.description, is_default: is_default != 0, encrypted_data: vault.encrypted_data, created_at: now.clone(), updated_at: now })
+    })
+}
+
+#[tauri::command]
+pub fn create_default_vaults(user_id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        let now = now();
+        let personal_id = new_id();
+        let team_id = new_id();
+        conn.execute(
+            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, created_at, updated_at) VALUES (?1,?2,'Personal',1,?3,?3)",
+            params![personal_id, user_id, now],
+        ).map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, created_at, updated_at) VALUES (?1,?2,'Team',1,?3,?3)",
+            params![team_id, user_id, now],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
     })
 }
 
 #[tauri::command]
 pub fn list_vaults(user_id: String) -> Result<Vec<Vault>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, name, description, encrypted_data, created_at, updated_at FROM vaults WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE user_id = ?1 ORDER BY is_default DESC, name").map_err(|e| e.to_string())?;
         let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, encrypted_data: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
         }).map_err(|e| e.to_string())?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     })
@@ -503,14 +540,20 @@ pub fn list_vaults(user_id: String) -> Result<Vec<Vault>, String> {
 #[tauri::command]
 pub fn update_vault(id: String, vault: VaultData, device_id: String) -> Result<Vault, String> {
     with_conn(|conn| {
+        let existing: Vault = conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+        }).map_err(|e| e.to_string())?;
+        if existing.is_default {
+            return Err("Cannot edit default vault".to_string());
+        }
         let now = now();
         conn.execute(
             "UPDATE vaults SET user_id=?2, name=?3, description=?4, encrypted_data=?5, updated_at=?6 WHERE id=?1",
             params![id, vault.user_id, vault.name, vault.description, vault.encrypted_data, now],
         ).map_err(|e| e.to_string())?;
         update_sync(conn, "vaults", &id, &device_id);
-        conn.query_row("SELECT id, user_id, name, description, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, encrypted_data: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
+        conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
         }).map_err(|e| e.to_string())
     })
 }
@@ -518,6 +561,10 @@ pub fn update_vault(id: String, vault: VaultData, device_id: String) -> Result<V
 #[tauri::command]
 pub fn delete_vault(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
+        let is_default: i32 = conn.query_row("SELECT is_default FROM vaults WHERE id = ?1", params![id], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if is_default != 0 {
+            return Err("Cannot delete default vault".to_string());
+        }
         conn.execute("DELETE FROM vaults WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
         update_sync(conn, "vaults", &id, &device_id);
         Ok(())
@@ -527,8 +574,8 @@ pub fn delete_vault(id: String, device_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_vault_data(id: String) -> Result<Vault, String> {
     with_conn(|conn| {
-        conn.query_row("SELECT id, user_id, name, description, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, encrypted_data: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
+        conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
         }).map_err(|e| e.to_string())
     })
 }
@@ -551,13 +598,21 @@ pub fn create_key(key: KeyData, device_id: String) -> Result<Key, String> {
 }
 
 #[tauri::command]
-pub fn list_keys(user_id: String) -> Result<Vec<Key>, String> {
+pub fn list_keys(user_id: String, vault_id: Option<String>) -> Result<Vec<Key>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at FROM keychain WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Key { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, description: row.get(4)?, key_type: row.get(5)?, public_key: row.get(6)?, encrypted_private_key: row.get(7)?, fingerprint: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)? })
-        }).map_err(|e| e.to_string())?;
-        let keys: Vec<Key> = rows.filter_map(|r| r.ok()).collect();
+        let keys: Vec<Key> = if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at FROM keychain WHERE user_id = ?1 AND vault_id = ?2 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(Key { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, description: row.get(4)?, key_type: row.get(5)?, public_key: row.get(6)?, encrypted_private_key: row.get(7)?, fingerprint: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)? })
+            }).map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at FROM keychain WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(Key { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, description: row.get(4)?, key_type: row.get(5)?, public_key: row.get(6)?, encrypted_private_key: row.get(7)?, fingerprint: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)? })
+            }).map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
         keys.into_iter().map(|k| {
             Ok(Key {
                 encrypted_private_key: k.encrypted_private_key.as_deref().map(|v| maybe_decrypt(v)).transpose()?,
@@ -607,13 +662,21 @@ pub fn create_snippet(snippet: SnippetData, device_id: String) -> Result<Snippet
 }
 
 #[tauri::command]
-pub fn list_snippets(user_id: String) -> Result<Vec<Snippet>, String> {
+pub fn list_snippets(user_id: String, vault_id: Option<String>) -> Result<Vec<Snippet>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, command, description, tags, created_at, updated_at FROM snippets WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Snippet { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, command: row.get(4)?, description: row.get(5)?, tags: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
-        }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, command, description, tags, created_at, updated_at FROM snippets WHERE user_id = ?1 AND vault_id = ?2 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(Snippet { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, command: row.get(4)?, description: row.get(5)?, tags: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, command, description, tags, created_at, updated_at FROM snippets WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(Snippet { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, command: row.get(4)?, description: row.get(5)?, tags: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        }
     })
 }
 
@@ -672,13 +735,21 @@ pub fn create_workspace(ws: WorkspaceData, device_id: String) -> Result<Workspac
 }
 
 #[tauri::command]
-pub fn list_workspaces(user_id: String) -> Result<Vec<Workspace>, String> {
+pub fn list_workspaces(user_id: String, vault_id: Option<String>) -> Result<Vec<Workspace>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, host_ids, created_at, updated_at FROM workspaces WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Workspace { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, host_ids: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
-        }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, host_ids, created_at, updated_at FROM workspaces WHERE user_id = ?1 AND vault_id = ?2 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(Workspace { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, host_ids: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, host_ids, created_at, updated_at FROM workspaces WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(Workspace { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, host_ids: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        }
     })
 }
 
@@ -724,13 +795,21 @@ pub fn create_tab_group(tg: TabGroupData, device_id: String) -> Result<TabGroup,
 }
 
 #[tauri::command]
-pub fn list_tab_groups(user_id: String) -> Result<Vec<TabGroup>, String> {
+pub fn list_tab_groups(user_id: String, vault_id: Option<String>) -> Result<Vec<TabGroup>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, created_at, updated_at FROM tab_groups WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![user_id], |row| {
-            Ok(TabGroup { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
-        }).map_err(|e| e.to_string())?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        if let Some(ref vid) = vault_id {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, created_at, updated_at FROM tab_groups WHERE user_id = ?1 AND vault_id = ?2 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id, vid], |row| {
+                Ok(TabGroup { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        } else {
+            let mut stmt = conn.prepare("SELECT id, user_id, vault_id, name, layout, created_at, updated_at FROM tab_groups WHERE user_id = ?1 ORDER BY name").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(params![user_id], |row| {
+                Ok(TabGroup { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
+            }).map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        }
     })
 }
 

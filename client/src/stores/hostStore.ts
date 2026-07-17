@@ -75,20 +75,20 @@ export const useHostStore = create<HostState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchHosts: async (_vaultId?: string) => {
+  fetchHosts: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const hosts = await invoke<any[]>('list_hosts', { userId: getUserId() })
+      const hosts = await invoke<any[]>('list_hosts', { userId: getUserId(), vaultId: vaultId || null })
       set({ hosts: hosts.map(normalizeHost), isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
   },
 
-  fetchGroups: async (_vaultId?: string) => {
+  fetchGroups: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const groups = await invoke<Group[]>('list_groups', { userId: getUserId() })
+      const groups = await invoke<Group[]>('list_groups', { userId: getUserId(), vaultId: vaultId || null })
       set({ groups, isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })

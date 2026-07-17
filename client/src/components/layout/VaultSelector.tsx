@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useVaultStore } from '../../stores/vaultStore'
-import api from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
+import { getDeviceId } from '../../lib/device'
 
 const VAULT_COLORS = [
   'bg-emerald-500',
@@ -73,12 +75,13 @@ export function VaultSelector() {
   }
 
   const handleDelete = async (vault: any) => {
-    if (vault.isSystem) return
+    if (vault.isDefault) return
     if (!window.confirm(`Delete vault "${vault.name}"? All hosts, keys, groups, snippets, and history in this vault will be permanently removed.`)) {
       return
     }
     try {
-      await api.deleteVault(vault.id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_vault', { id: vault.id, deviceId })
       const { fetchVaults } = useVaultStore.getState()
       fetchVaults()
     } catch (e) {
@@ -93,10 +96,16 @@ export function VaultSelector() {
     setIsCreating(true)
     setError('')
     try {
+      const deviceId = await getDeviceId()
       if (editingVault) {
-        await api.updateVault(editingVault.id, {
-          name: newVaultName.trim(),
-          description: newVaultDesc.trim(),
+        await invoke('update_vault', {
+          id: editingVault.id,
+          vault: {
+            userId: useAuthStore.getState().user?.id || '',
+            name: newVaultName.trim(),
+            description: newVaultDesc.trim(),
+          },
+          deviceId,
         })
         const { fetchVaults } = useVaultStore.getState()
         fetchVaults()
@@ -105,11 +114,13 @@ export function VaultSelector() {
       }
       setShowModal(false)
     } catch (err: any) {
-      const status = err?.status ?? err?.response?.status
-      if (status === 409 || err?.message?.includes('already exists')) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Failed to save vault'
+      if (msg.includes('already exists') || msg.includes('UNIQUE')) {
         setError('A vault with this name already exists')
+      } else if (msg.includes('default vault')) {
+        setError('Cannot edit default vault')
       } else {
-        setError(err?.message || 'Failed to save vault')
+        setError(msg)
       }
     } finally {
       setIsCreating(false)
@@ -208,7 +219,7 @@ export function VaultSelector() {
                         <p className="text-xs text-dark-500 truncate mt-0.5">{vault.description}</p>
                       )}
                     </div>
-                    {vault.isSystem ? (
+                    {vault.isDefault ? (
                       <span className="w-4 flex-shrink-0" />
                     ) : (
                       <div className="flex items-center gap-0.5 flex-shrink-0">

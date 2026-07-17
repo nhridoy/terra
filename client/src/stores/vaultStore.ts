@@ -60,7 +60,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const vaults = await invoke<any[]>('list_vaults', { userId: getUserId() })
       set({ vaults, isLoading: false })
       if (vaults.length > 0 && !get().currentVaultId) {
-        const defaultVault = vaults.find((v: any) => v.isDefault) || vaults[0]
+        const personalVault = vaults.find((v: any) => v.name === 'Personal')
+        const defaultVault = personalVault || vaults.find((v: any) => v.isDefault) || vaults[0]
         get().switchVault(defaultVault.id)
       }
     } catch (error) {

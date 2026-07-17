@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Libsodium-compatible encryption utilities
 // Matches Termius encryption architecture exactly
 

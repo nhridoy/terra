@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent } from '@dnd-kit/react'
 import { isSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
@@ -10,7 +11,7 @@ import { useVaultStore } from '../../stores/vaultStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useTabGroupStore } from '../../stores/tabGroupStore'
 import { useDragStore, type DropSide } from '../../stores/dragStore'
-import api from '../../lib/api'
+import { getDeviceId } from '../../lib/device'
 import Modal from '../ui/Modal'
 import HostForm from '../hosts/HostForm'
 import GroupForm from '../groups/GroupForm'
@@ -246,8 +247,8 @@ export default function Layout() {
 
   const fetchSnippets = async (vaultId?: string) => {
     try {
-      const res = await api.listSnippets(vaultId)
-      setSnippets(res.snippets || [])
+      const result = await invoke<any[]>('list_snippets', { userId: useAuthStore.getState().user?.id || '', vaultId: vaultId || null })
+      setSnippets(result || [])
     } catch (e) {
       console.error('Failed to fetch snippets:', e)
     }
@@ -255,8 +256,8 @@ export default function Layout() {
 
   const fetchKeys = async (vaultId?: string) => {
     try {
-      const res = await api.listKeys(vaultId)
-      return res.keys || []
+      const result = await invoke<any[]>('list_keys', { userId: useAuthStore.getState().user?.id || '', vaultId: vaultId || null })
+      return result || []
     } catch (e) {
       console.error('Failed to fetch keys:', e)
       return []
@@ -497,7 +498,7 @@ export default function Layout() {
                         </svg>
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); if (confirm('Delete this snippet?')) api.deleteSnippet(snippet.id).then(() => fetchSnippets(currentVaultId || undefined)) }}
+                        onClick={(e) => { e.stopPropagation(); if (confirm('Delete this snippet?')) getDeviceId().then(deviceId => invoke('delete_snippet', { id: snippet.id, deviceId })).then(() => fetchSnippets(currentVaultId || undefined)) }}
                         className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
                         title="Delete snippet"
                       >

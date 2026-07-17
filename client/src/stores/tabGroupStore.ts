@@ -36,9 +36,9 @@ export const useTabGroupStore = create<{
 }>((set, get) => ({
   tabGroups: [],
 
-  fetchTabGroups: async (_vaultId?: string) => {
+  fetchTabGroups: async (vaultId?: string) => {
     try {
-      const tabGroups = await invoke<TabGroup[]>('list_tab_groups', { userId: getUserId() })
+      const tabGroups = await invoke<TabGroup[]>('list_tab_groups', { userId: getUserId(), vaultId: vaultId || null })
       set({ tabGroups })
     } catch (e) {
       console.error('Failed to fetch tab groups:', e)

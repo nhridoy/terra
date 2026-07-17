@@ -115,6 +115,7 @@ pub fn run() {
             crud::update_group,
             crud::delete_group,
             crud::create_vault,
+            crud::create_default_vaults,
             crud::list_vaults,
             crud::update_vault,
             crud::delete_vault,

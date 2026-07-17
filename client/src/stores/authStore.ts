@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { invoke } from '@tauri-apps/api/core'
 import api from '../lib/api'
 import { setUserId } from '../lib/device'
 
@@ -85,6 +86,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = { id: result.userId, email, username }
       saveUser(user)
       await setUserId(result.userId)
+      await invoke('create_default_vaults', { userId: result.userId })
       set({
         user,
         isAuthenticated: true,
