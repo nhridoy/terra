@@ -2,22 +2,34 @@
 name = "termvault"
 version = "1.0.0"
 description = "TermVault - Self-hosted SSH client"
-authors = ["TermVault Contributors"]
-license = "MIT"
-repository = ""
 edition = "2021"
 
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "1.6", features = ["shell-open", "fs-all", "path-all", "http-all", "dialog-all"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 ssh2 = "0.9"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.11"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [features]
 default = ["custom-protocol"]

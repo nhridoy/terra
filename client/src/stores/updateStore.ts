@@ -25,7 +25,7 @@ export const useUpdateStore = create<UpdateState>((set) => ({
   checkForUpdates: async () => {
     try {
       // Tauri updater - only available in Tauri context
-      if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
         const { check } = await import('@tauri-apps/plugin-updater')
         const update = await check()
         if (update) {
@@ -50,14 +50,14 @@ export const useUpdateStore = create<UpdateState>((set) => ({
     set({ downloading: true, downloadProgress: 0, error: null })
 
     try {
-      if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
         const { check } = await import('@tauri-apps/plugin-updater')
         const update = await check()
         if (update) {
           let downloaded = 0
           let contentLength = 0
 
-          await update.downloadAndInstall((event: { event: string; data: { contentLength?: number; chunkLength?: number } }) => {
+          await update.downloadAndInstall((event) => {
             switch (event.event) {
               case 'Started':
                 contentLength = event.data.contentLength || 0
@@ -85,7 +85,7 @@ export const useUpdateStore = create<UpdateState>((set) => ({
 
   installUpdate: async () => {
     try {
-      if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
         const { relaunch } = await import('@tauri-apps/plugin-process')
         await relaunch()
       }

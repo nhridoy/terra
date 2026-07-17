@@ -1,41 +1,42 @@
 import type { FileItem } from './sftpTypes'
 
-const TAURI_ERROR = 'Local filesystem is only available in the desktop app. Run "npm run tauri dev" to test locally.'
+const TAURI_ERROR = 'Local filesystem is only available in the desktop app. Run "pnpm tauri dev" to test locally.'
 
 function ensureTauri(): void {
-  if (typeof window === 'undefined' || !(window as any).__TAURI__) {
+  if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) {
     throw new Error(TAURI_ERROR)
   }
 }
 
 async function loadTauriFs() {
   ensureTauri()
-  return import('@tauri-apps/api/fs')
+  return import('@tauri-apps/plugin-fs')
 }
 
 async function loadTauriDialog() {
   ensureTauri()
-  return import('@tauri-apps/api/dialog')
+  return import('@tauri-apps/plugin-dialog')
 }
 
 export async function listLocalFiles(dirPath: string): Promise<FileItem[]> {
   const { readDir } = await loadTauriFs()
   const entries = await readDir(dirPath)
   const items: FileItem[] = []
+  const sep = dirPath.includes('\\') ? '\\' : '/'
 
   for (const entry of entries) {
-    const name = entry.name || entry.path.split(/[/\\]/).pop() || ''
+    const name = entry.name || ''
+    const fullPath = `${dirPath}${sep}${name}`
     let type: FileItem['type'] = 'file'
-    try {
-      await readDir(entry.path)
+    if (entry.isDirectory) {
       type = 'directory'
-    } catch {
-      type = 'file'
+    } else if (entry.isSymlink) {
+      type = 'symlink'
     }
 
     items.push({
       name,
-      path: entry.path,
+      path: fullPath,
       type,
       size: 0,
       permissions: '',
@@ -60,18 +61,18 @@ export async function writeLocalFile(filePath: string, content: string): Promise
 }
 
 export async function createLocalDir(dirPath: string): Promise<void> {
-  const { createDir } = await loadTauriFs()
-  await createDir(dirPath, { recursive: true })
+  const { mkdir } = await loadTauriFs()
+  await mkdir(dirPath, { recursive: true })
 }
 
 export async function removeLocalFile(filePath: string): Promise<void> {
-  const { removeFile } = await loadTauriFs()
-  await removeFile(filePath)
+  const { remove } = await loadTauriFs()
+  await remove(filePath)
 }
 
 export async function renameLocalFile(oldPath: string, newPath: string): Promise<void> {
-  const { renameFile } = await loadTauriFs()
-  await renameFile(oldPath, newPath)
+  const { rename } = await loadTauriFs()
+  await rename(oldPath, newPath)
 }
 
 export async function localFileExists(filePath: string): Promise<boolean> {
@@ -110,5 +111,5 @@ export async function saveFilePicker(defaultName?: string): Promise<string | nul
 }
 
 export function isTauriAvailable(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).__TAURI__
+  return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
 }

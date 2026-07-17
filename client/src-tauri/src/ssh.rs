@@ -12,7 +12,7 @@ pub struct SSHConfig {
     pub private_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SSHSession {
     pub id: String,
     pub host: String,
