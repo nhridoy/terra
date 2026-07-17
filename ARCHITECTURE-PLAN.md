@@ -1249,7 +1249,7 @@ pub struct AppState {
 
 ---
 
-## Phase 4: Sync Engine [ ]
+## Phase 4: Sync Engine [x]
 
 **Goal**: Synchronize data between local DB and server.
 
@@ -1265,7 +1265,7 @@ pub struct AppState {
 | `client/src-tauri/src/lib.rs` | Register sync commands |
 | `client/src/components/settings/SyncSettings.tsx` | **NEW** — Sync UI |
 
-### Task 4.1 — Add sync tables to server DB [ ]
+### Task 4.1 — Add sync tables to server DB [x]
 
 File: `server/internal/db/models.go`
 
@@ -1292,7 +1292,7 @@ type SyncTracking struct {
 
 Add to `db.go` AutoMigrate.
 
-### Task 4.2 — Create sync API endpoints [ ]
+### Task 4.2 — Create sync API endpoints [x]
 
 File: `server/internal/api/sync.go` (NEW)
 
@@ -1531,7 +1531,7 @@ func fetchFullRecord(tableName, recordID, userID string) string {
 }
 ```
 
-### Task 4.3 — Add sync routes to main.go [ ]
+### Task 4.3 — Add sync routes to main.go [x]
 
 File: `server/cmd/termvault-server/main.go`
 
@@ -1559,7 +1559,7 @@ db.DB.AutoMigrate(
 )
 ```
 
-### Task 4.4 — Create client sync engine [ ]
+### Task 4.4 — Create client sync engine [x]
 
 File: `client/src-tauri/src/sync.rs` (NEW)
 

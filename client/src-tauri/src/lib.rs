@@ -4,6 +4,7 @@ mod ssh;
 mod vault;
 mod db;
 mod crud;
+mod sync;
 
 use std::sync::Mutex;
 use ssh::SSHState;
@@ -144,6 +145,9 @@ pub fn run() {
             crud::end_session_log,
             crud::log_command,
             crud::list_command_logs,
+            sync::sync_push,
+            sync::sync_pull,
+            sync::sync_full,
         ])
         .run(tauri::generate_context!())
         .expect("error while running TermVault");
