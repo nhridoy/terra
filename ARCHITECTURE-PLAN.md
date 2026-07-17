@@ -1826,7 +1826,7 @@ export function SyncSettings() {
 
 ---
 
-## Phase 5: Server Cleanup [ ]
+## Phase 5: Server Cleanup [x]
 
 **Goal**: Remove all SSH proxy code. Server is sync + CRUD only.
 
@@ -1840,7 +1840,7 @@ export function SyncSettings() {
 | `server/internal/api/websocket.go` | Delete — SSH WebSocket proxy + WS sync stub |
 | `server/cmd/termvault-server/main.go` | Remove SSH imports, proxy routes, WS routes |
 
-### Task 5.1 — Remove SSH proxy files [ ]
+### Task 5.1 — Remove SSH proxy files [x]
 
 Delete these files:
 - `server/internal/ssh/client.go`
@@ -1852,7 +1852,7 @@ Delete these files:
 
 **Verify**: `go build ./...` still works after removals (need to update imports).
 
-### Task 5.2 — Remove proxy endpoint handlers from main.go [ ]
+### Task 5.2 — Remove proxy endpoint handlers from main.go [x]
 
 File: `server/cmd/termvault-server/main.go`
 
@@ -1867,7 +1867,7 @@ Remove:
 
 **Verify**: `go build ./...` succeeds.
 
-### Task 5.3 — Update go.mod [ ]
+### Task 5.3 — Update go.mod [x]
 
 ```bash
 cd server
