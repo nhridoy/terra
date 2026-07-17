@@ -300,203 +300,109 @@ class ApiClient {
     })
   }
 
-  // SFTP
-  private directQuery(hostId: string, direct?: { host?: string; port?: number; username?: string }): string {
-    if (!hostId.startsWith('direct_') || !direct) return ''
-    const params = new URLSearchParams()
-    if (direct.host) params.set('host', direct.host)
-    if (direct.port) params.set('port', String(direct.port))
-    if (direct.username) params.set('username', direct.username)
-    const qs = params.toString()
-    return qs ? `&${qs}` : ''
+  // SFTP — all operations go through Tauri invoke (direct SSH from Rust backend)
+
+  async listFiles(hostId: string, path: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const files = await invoke<any[]>('sftp_list', { sessionId: hostId, path })
+    return { files }
   }
 
-  async listFiles(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
-    return this.request<{ files: any[] }>(
-      `/sftp/${hostId}/list?path=${encodeURIComponent(path)}${this.directQuery(hostId, direct)}`,
-    )
+  async readFile(hostId: string, path: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const content = await invoke<string>('sftp_read', { sessionId: hostId, path })
+    return { content }
   }
 
-  async readFile(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
-    return this.request<{ content: string }>(
-      `/sftp/${hostId}/read?path=${encodeURIComponent(path)}${this.directQuery(hostId, direct)}`,
-    )
+  async writeFile(hostId: string, path: string, content: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_write', { sessionId: hostId, path, content })
   }
 
-  async writeFile(hostId: string, path: string, content: string, direct?: { host?: string; port?: number; username?: string }) {
-    return this.request(`/sftp/${hostId}/write${this.directQuery(hostId, direct).replace('&', '?')}`, {
-      method: 'POST',
-      body: JSON.stringify({ path, content }),
-    })
+  async uploadFile(hostId: string, remotePath: string, fileName: string, content: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const fullPath = remotePath.endsWith('/') ? `${remotePath}${fileName}` : `${remotePath}/${fileName}`
+    await invoke('sftp_write', { sessionId: hostId, path: fullPath, content })
   }
 
-  async uploadFile(
-    hostId: string,
-    remotePath: string,
-    fileName: string,
-    content: string,
-    direct?: { host?: string; port?: number; username?: string },
-  ) {
-    return this.request(`/sftp/${hostId}/upload${this.directQuery(hostId, direct).replace('&', '?')}`, {
-      method: 'POST',
-      body: JSON.stringify({ remotePath, fileName, content }),
-    })
-  }
-
-  uploadFileWithProgress(
+  async uploadFileWithProgress(
     hostId: string,
     remotePath: string,
     file: File,
     onProgress?: (loaded: number, total: number) => void,
-    direct?: { host?: string; port?: number; username?: string },
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const { token } = this.getTokens()
-      const xhr = new XMLHttpRequest()
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('path', remotePath)
+    const { invoke } = await import('@tauri-apps/api/core')
+    const total = file.size
+    if (onProgress) onProgress(0, total)
 
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && onProgress) {
-          onProgress(e.loaded, e.total)
-        }
-      })
+    const content = await file.text()
+    const fullPath = remotePath.endsWith('/') ? `${remotePath}${file.name}` : `${remotePath}/${file.name}`
+    await invoke('sftp_write', { sessionId: hostId, path: fullPath, content })
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve()
-        } else {
-          try {
-            const data = JSON.parse(xhr.responseText)
-            reject(new Error(data.error || 'Upload failed'))
-          } catch {
-            reject(new Error('Upload failed'))
-          }
-        }
-      })
-
-      xhr.addEventListener('error', () => reject(new Error('Network error')))
-      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')))
-
-      const qs = this.directQuery(hostId, direct)
-      const sep = qs ? (hostId.startsWith('direct_') ? '&' : '?') : ''
-      xhr.open('POST', `${API_BASE}/sftp/${hostId}/upload${sep}${qs.replace('&', '')}`)
-      if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-      }
-      xhr.send(formData)
-    })
+    if (onProgress) onProgress(total, total)
   }
 
-  downloadFileBlob(
-    hostId: string,
-    path: string,
-    fileName: string,
-    direct?: { host?: string; port?: number; username?: string },
-  ): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const result = await this.readFile(hostId, path, direct)
-        // Server returns content as string — decode to binary
-        const bytes = Uint8Array.from(result.content, (c) => c.charCodeAt(0))
-        const ext = fileName.split('.').pop()?.toLowerCase() || ''
-        const mime = mimeTypes[ext] || 'application/octet-stream'
-        const blob = new Blob([bytes], { type: mime })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = fileName
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        resolve()
-      } catch (err) {
-        reject(err)
-      }
-    })
+  async downloadFileBlob(hostId: string, path: string, fileName: string): Promise<void> {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const content = await invoke<string>('sftp_read', { sessionId: hostId, path })
+    const bytes = new TextEncoder().encode(content)
+    const ext = fileName.split('.').pop()?.toLowerCase() || ''
+    const mime = mimeTypes[ext] || 'application/octet-stream'
+    const blob = new Blob([bytes], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
-  async deleteFile(hostId: string, path: string, direct?: { host?: string; port?: number; username?: string }) {
-    const qs = this.directQuery(hostId, direct)
-    return this.request(
-      `/sftp/${hostId}/delete?path=${encodeURIComponent(path)}${qs}`,
-      {
-        method: 'DELETE',
-      },
-    )
+  async deleteFile(hostId: string, path: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_delete', { sessionId: hostId, path })
   }
 
-  async moveFile(hostId: string, oldPath: string, newPath: string, direct?: { host?: string; port?: number; username?: string }) {
-    const qs = this.directQuery(hostId, direct)
-    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
-    return this.request(`/sftp/${hostId}/move${sep}${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ oldPath, newPath }),
-    })
+  async moveFile(hostId: string, oldPath: string, newPath: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_rename', { sessionId: hostId, oldPath, newPath })
   }
 
-  async createDirectory(hostId: string, parentPath: string, name: string, direct?: { host?: string; port?: number; username?: string }) {
-    const qs = this.directQuery(hostId, direct)
-    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
-    return this.request(`/sftp/${hostId}/mkdir${sep}${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ parentPath, name }),
-    })
+  async createDirectory(hostId: string, parentPath: string, name: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const fullPath = parentPath.endsWith('/') ? `${parentPath}${name}` : `${parentPath}/${name}`
+    await invoke('sftp_mkdir', { sessionId: hostId, path: fullPath })
   }
 
-  async copyFile(hostId: string, srcPath: string, dstPath: string, direct?: { host?: string; port?: number; username?: string }) {
-    const qs = this.directQuery(hostId, direct)
-    const sep = qs && hostId.startsWith('direct_') ? '?' : ''
-    return this.request(`/sftp/${hostId}/copy${sep}${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ srcPath, dstPath }),
-    })
-  }
-
-  private crossDirectQuery(
-    srcHostId: string, srcDirect?: { host?: string; port?: number; username?: string },
-    dstHostId?: string, dstDirect?: { host?: string; port?: number; username?: string },
-  ): string {
-    const params = new URLSearchParams()
-    if (srcHostId.startsWith('direct_') && srcDirect) {
-      if (srcDirect.host) params.set('src_host', srcDirect.host)
-      if (srcDirect.port) params.set('src_port', String(srcDirect.port))
-      if (srcDirect.username) params.set('src_username', srcDirect.username)
-    }
-    if (dstHostId?.startsWith('direct_') && dstDirect) {
-      if (dstDirect.host) params.set('dst_host', dstDirect.host)
-      if (dstDirect.port) params.set('dst_port', String(dstDirect.port))
-      if (dstDirect.username) params.set('dst_username', dstDirect.username)
-    }
-    const qs = params.toString()
-    return qs ? `?${qs}` : ''
+  async copyFile(hostId: string, srcPath: string, dstPath: string) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_copy', { sessionId: hostId, srcPath, dstPath })
   }
 
   async crossHostCopy(
     srcHostId: string, srcPath: string,
     dstHostId: string, dstPath: string,
-    srcDirect?: { host?: string; port?: number; username?: string },
-    dstDirect?: { host?: string; port?: number; username?: string },
   ) {
-    const qs = this.crossDirectQuery(srcHostId, srcDirect, dstHostId, dstDirect)
-    return this.request(`/sftp/cross-copy${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ srcHostId, srcPath, dstHostId, dstPath }),
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_cross_copy', {
+      srcSessionId: srcHostId,
+      srcPath,
+      dstSessionId: dstHostId,
+      dstPath,
     })
   }
 
   async crossHostMove(
     srcHostId: string, srcPath: string,
     dstHostId: string, dstPath: string,
-    srcDirect?: { host?: string; port?: number; username?: string },
-    dstDirect?: { host?: string; port?: number; username?: string },
   ) {
-    const qs = this.crossDirectQuery(srcHostId, srcDirect, dstHostId, dstDirect)
-    return this.request(`/sftp/cross-move${qs}`, {
-      method: 'POST',
-      body: JSON.stringify({ srcHostId, srcPath, dstHostId, dstPath }),
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('sftp_cross_copy', {
+      srcSessionId: srcHostId,
+      srcPath,
+      dstSessionId: dstHostId,
+      dstPath,
     })
   }
 

@@ -76,7 +76,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     setIsLoading(true)
     setError(null)
     try {
-      const result = await api.listFiles(hostId, path, hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined)
+      const result = await api.listFiles(hostId, path)
       setFiles(result.files)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load directory')
@@ -324,7 +324,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
 
     // Check for name conflicts by listing the destination directory
     try {
-      const destResult = await api.listFiles(destHostId, destDirPath, destHostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined)
+      const destResult = await api.listFiles(destHostId, destDirPath)
       const destNames = new Set(destResult.files.map((f: FileItem) => f.name))
       const conflicts = dragFiles.filter((f) => destNames.has(f.name))
 
@@ -393,8 +393,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
           await api.crossHostCopy(
             sourceHostId, file.path,
             destHostId, dstPath,
-            sourceDirect,
-            destHostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
           )
         } else {
           await api.copyFile(sourceHostId, file.path, dstPath)
@@ -516,8 +514,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
             await api.crossHostCopy(
               clipboard.hostId, srcPath,
               hostId, dstPath,
-              clipboard.sourceDirect,
-              hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
             )
           } else {
             await api.copyFile(clipboard.hostId, srcPath, dstPath)
@@ -527,8 +523,6 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
             await api.crossHostMove(
               clipboard.hostId, srcPath,
               hostId, dstPath,
-              clipboard.sourceDirect,
-              hostId.startsWith('direct_') ? { host: hostAddress, port: hostPort, username: hostUsername } : undefined,
             )
           } else {
             await api.moveFile(clipboard.hostId, srcPath, dstPath)

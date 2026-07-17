@@ -264,8 +264,8 @@ New content:
   "mainBinaryName": "TermVault",
   "identifier": "com.termvault.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -411,7 +411,7 @@ Migration steps:
 - Keep `@tauri-apps/plugin-process` (already at v2 — verify version compatibility)
 - Keep `@tauri-apps/plugin-updater` (already at v2 — verify version compatibility)
 
-**Verify**: `npm install` succeeds. `npx tsc --noEmit` passes.
+**Verify**: `pnpm install` succeeds. `npx tsc --noEmit` passes.
 
 ### Task 0.7 — Update localFs.ts [x]
 
@@ -507,20 +507,20 @@ fn main() {
 
 ```bash
 cd client/src-tauri && cargo build
-cd client && npm install && npx tsc --noEmit
-npm run tauri dev  # Launch and verify app works
+cd client && pnpm install && npx tsc --noEmit
+pnpm tauri dev  # Launch and verify app works
 ```
 
 - [x] `cargo build` succeeds
 - [x] `npx tsc --noEmit` passes
-- [ ] `npm run tauri dev` launches without errors
+- [ ] `pnpm tauri dev` launches without errors
 - [ ] App window appears with title "TermVault"
 - [ ] File system operations work (localFs.ts)
 - [ ] Update checker works (updateStore.ts)
 
 ---
 
-## Phase 1: Rust SSH/SFTP Core [ ]
+## Phase 1: Rust SSH/SFTP Core [x]
 
 **Goal**: Replace Go server SSH proxy with direct SSH/SFTP from Tauri Rust backend.
 
@@ -534,7 +534,7 @@ npm run tauri dev  # Launch and verify app works
 | `client/src/lib/api.ts` | Replace SFTP HTTP calls with Tauri invoke |
 | `client/src/hooks/useSFTP.ts` | Fix to call new API |
 
-### Task 1.1 — Rewrite ssh.rs with real SSH2 [ ]
+### Task 1.1 — Rewrite ssh.rs with real SSH2 [x]
 
 File: `client/src-tauri/src/ssh.rs`
 
@@ -573,7 +573,7 @@ pub struct SSHState {
 
 **Verify**: `cargo build` succeeds. Can call `connect` and `disconnect` from frontend.
 
-### Task 1.2 — Add SFTP commands to ssh.rs [ ]
+### Task 1.2 — Add SFTP commands to ssh.rs [x]
 
 Add to `client/src-tauri/src/ssh.rs`:
 
@@ -590,7 +590,7 @@ Add to `client/src-tauri/src/ssh.rs`:
 
 **Verify**: `cargo build` succeeds.
 
-### Task 1.3 — Register SSH/SFTP commands in lib.rs [ ]
+### Task 1.3 — Register SSH/SFTP commands in lib.rs [x]
 
 File: `client/src-tauri/src/lib.rs`
 
@@ -622,7 +622,7 @@ Add `SSHState` management:
 
 **Verify**: `cargo build` succeeds.
 
-### Task 1.4 — Update sessionManager.ts [ ]
+### Task 1.4 — Update sessionManager.ts [x]
 
 File: `client/src/components/terminal/sessionManager.ts`
 
@@ -655,7 +655,7 @@ Key changes to function signatures:
 
 **Verify**: `npx tsc --noEmit` passes.
 
-### Task 1.5 — Update api.ts SFTP methods [ ]
+### Task 1.5 — Update api.ts SFTP methods [x]
 
 File: `client/src/lib/api.ts`
 
@@ -680,7 +680,7 @@ Also need to add `getSFTPClient(sessionId)` helper that returns a wrapper object
 
 **Verify**: `npx tsc --noEmit` passes.
 
-### Task 1.6 — Fix useSFTP.ts hook [ ]
+### Task 1.6 — Fix useSFTP.ts hook [x]
 
 File: `client/src/hooks/useSFTP.ts`
 
@@ -688,11 +688,11 @@ Read this file and update to use new invoke-based SFTP methods. The hook likely 
 
 **Verify**: `npx tsc --noEmit` passes.
 
-### Task 1.7 — Build verification [ ]
+### Task 1.7 — Build verification [x]
 
 - [ ] `cd client/src-tauri && cargo build` succeeds
 - [ ] `cd client && npx tsc --noEmit` passes
-- [ ] `npm run tauri dev` starts without errors
+- [ ] `pnpm tauri dev` starts without errors
 - [ ] Can connect to SSH host
 - [ ] Terminal output displays in xterm.js
 - [ ] Can list files via SFTP
@@ -1914,7 +1914,7 @@ Removes removed dependencies (`github.com/pkg/sftp`, `github.com/gorilla/websock
 
 ```bash
 cd client
-npm run tauri android init
+pnpm tauri android init
 ```
 
 This creates `src-tauri/gen/android/` with the Android project structure (Gradle, Kotlin, AndroidManifest.xml, etc.).
@@ -1923,7 +1923,7 @@ This creates `src-tauri/gen/android/` with the Android project structure (Gradle
 
 ```bash
 cd client
-npm run tauri ios init
+pnpm tauri ios init
 ```
 
 This creates `src-tauri/gen/ios/` with the iOS project structure (Xcode project, Swift files, Info.plist, etc.).
@@ -2010,10 +2010,10 @@ cargo build --target aarch64-linux-android  # from client/src-tauri
 
 ### Task 6.7 — Build verification [ ]
 
-- [ ] `npm run tauri android dev` — app runs on Android emulator
-- [ ] `npm run tauri android build` — APK/AAB produced
-- [ ] (macOS only) `npm run tauri ios dev` — app runs on iOS simulator
-- [ ] (macOS only) `npm run tauri ios build` — IPA produced
+- [ ] `pnpm tauri android dev` — app runs on Android emulator
+- [ ] `pnpm tauri android build` — APK/AAB produced
+- [ ] (macOS only) `pnpm tauri ios dev` — app runs on iOS simulator
+- [ ] (macOS only) `pnpm tauri ios build` — IPA produced
 - [ ] Terminal works on mobile (touch input)
 - [ ] SFTP file browser works on mobile (touch)
 - [ ] Keychain works
@@ -2326,7 +2326,7 @@ After each phase, run these commands and confirm no errors:
 ### Phase 0 — Tauri v2 Migration
 - [ ] `cd client/src-tauri && cargo build` succeeds
 - [ ] `cd client && npx tsc --noEmit` passes
-- [ ] `npm run tauri dev` launches without errors
+- [ ] `pnpm tauri dev` launches without errors
 - [ ] App window appears with correct title "TermVault"
 - [ ] File system operations work (localFs.ts)
 - [ ] Update checker works (updateStore.ts)
@@ -2334,7 +2334,7 @@ After each phase, run these commands and confirm no errors:
 ### Phase 1 — SSH/SFTP Core
 - [ ] `cd client/src-tauri && cargo build` succeeds
 - [ ] `cd client && npx tsc --noEmit` passes
-- [ ] `npm run tauri dev` starts without errors
+- [ ] `pnpm tauri dev` starts without errors
 - [ ] Can connect to SSH host
 - [ ] Terminal output displays in xterm.js
 - [ ] Can list files via SFTP

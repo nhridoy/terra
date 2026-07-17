@@ -19,9 +19,9 @@ export interface Session {
   xterm: XTerminal
   fitAddon: FitAddon
   container: HTMLDivElement
-  ws: WebSocket | null
   opened: boolean
   resizeObserver: ResizeObserver | null
+  unlisten: (() => void) | null
 }
 
 const sessions = new Map<string, Session>()
@@ -72,27 +72,18 @@ function createSession(params: SessionParams): Session {
     xterm,
     fitAddon,
     container,
-    ws: null,
     opened: false,
     resizeObserver: null,
+    unlisten: null,
   }
-
-  xterm.onData((data) => {
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.send(JSON.stringify({ type: 'input', payload: data }))
-    }
-  })
-
-  xterm.onResize(({ cols, rows }) => {
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.send(JSON.stringify({ type: 'resize', payload: { cols, rows } }))
-    }
-  })
 
   return session
 }
 
-function connectWs(session: Session) {
+async function connectViaTauri(session: Session) {
+  const { invoke } = await import('@tauri-apps/api/core')
+  const { listen } = await import('@tauri-apps/api/event')
+
   const { params, xterm } = session
   const cols = xterm.cols
   const rows = xterm.rows
@@ -105,47 +96,75 @@ function connectWs(session: Session) {
   const update = useTerminalStore.getState().updatePaneConnectionStatus
   update(params.tabId, params.paneId, 'connecting')
 
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  let wsUrl = `${protocol}://localhost:8080/ws/ssh?hostId=${params.hostId}&cols=${cols}&rows=${rows}`
-  if (params.hostAddress) {
-    wsUrl += `&host=${encodeURIComponent(params.hostAddress)}&port=${params.hostPort || 22}&username=${encodeURIComponent(params.hostUsername || 'root')}`
-  }
-
-  const socket = new WebSocket(wsUrl)
-  session.ws = socket
-
-  socket.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data)
-      if (msg.type === 'connected') {
-        update(session.params.tabId, session.params.paneId, 'connected')
-      } else if (msg.type === 'output') {
-        xterm.write(msg.payload)
-      } else if (msg.type === 'disconnected') {
-        xterm.writeln(`\r\n\x1b[31mDisconnected: ${msg.payload}\x1b[0m`)
-        update(session.params.tabId, session.params.paneId, 'disconnected')
-      } else if (msg.type === 'error') {
-        xterm.writeln(`\r\n\x1b[31mError: ${msg.payload}\x1b[0m`)
-        update(session.params.tabId, session.params.paneId, 'error')
-      }
-    } catch {
-      xterm.write(event.data)
+  try {
+    const config = {
+      host: params.hostAddress || '',
+      port: params.hostPort || 22,
+      username: params.hostUsername || 'root',
+      password: null,
+      privateKey: null,
+      passphrase: null,
     }
-  }
 
-  socket.onerror = () => {
-    xterm.writeln(`\r\n\x1b[31mFailed to connect to SSH server\x1b[0m`)
-    update(session.params.tabId, session.params.paneId, 'error')
-  }
+    await invoke('connect', { sessionId: params.paneId, config })
 
-  socket.onclose = () => {
-    xterm.writeln(`\r\n\x1b[33mConnection closed\x1b[0m`)
-    update(session.params.tabId, session.params.paneId, 'disconnected')
+    // Listen for SSH output events
+    const unlisten = await listen<{
+      sessionId: string
+      type: string
+      data: string
+    }>('ssh-output', (event) => {
+      const { sessionId, type, data } = event.payload
+      if (sessionId !== params.paneId) return
+
+      switch (type) {
+        case 'connected':
+          update(params.tabId, params.paneId, 'connected')
+          break
+        case 'output':
+          xterm.write(data)
+          break
+        case 'disconnected':
+          xterm.writeln(`\r\n\x1b[33mConnection closed\x1b[0m`)
+          update(params.tabId, params.paneId, 'disconnected')
+          break
+        case 'error':
+          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`)
+          update(params.tabId, params.paneId, 'error')
+          break
+      }
+    })
+
+    session.unlisten = unlisten
+
+    // Wire up xterm input → Tauri invoke
+    xterm.onData(async (data) => {
+      try {
+        await invoke('send_input', { sessionId: params.paneId, data })
+      } catch {
+        // Session may have been closed
+      }
+    })
+
+    xterm.onResize(async ({ cols: _cols, rows: _rows }) => {
+      try {
+        await invoke('resize', {
+          sessionId: params.paneId,
+          cols,
+          rows,
+        })
+      } catch {
+        // Session may have been closed
+      }
+    })
+  } catch (err) {
+    xterm.writeln(`\r\n\x1b[31mFailed to connect: ${err}\x1b[0m`)
+    update(params.tabId, params.paneId, 'error')
   }
 }
 
 // Open the xterm instance into its persistent container (first time only),
-// establish the WebSocket, and mount the persistent container into the
+// establish the Tauri connection, and mount the persistent container into the
 // React-provided element. Because the container is moved (not recreated),
 // the session survives React unmount/remount across tab moves.
 export function attachSession(session: Session, reactEl: HTMLElement) {
@@ -158,7 +177,7 @@ export function attachSession(session: Session, reactEl: HTMLElement) {
     } catch {
       /* container may not be sized yet */
     }
-    connectWs(session)
+    connectViaTauri(session)
   }
 
   const ro = new ResizeObserver(() => {
@@ -202,15 +221,22 @@ export function fitSession(paneId: string) {
   }
 }
 
-export function destroySession(paneId: string) {
+export async function destroySession(paneId: string) {
   const session = sessions.get(paneId)
   if (!session) return
   session.resizeObserver?.disconnect()
+
+  // Unlisten from events
+  session.unlisten?.()
+
+  // Disconnect from Rust backend
   try {
-    session.ws?.close()
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('disconnect', { sessionId: paneId })
   } catch {
-    /* ignore */
+    // Ignore — session may already be closed
   }
+
   session.xterm.dispose()
   sessions.delete(paneId)
 }

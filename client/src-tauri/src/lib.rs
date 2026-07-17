@@ -3,6 +3,8 @@
 mod ssh;
 mod vault;
 
+use std::sync::Mutex;
+use ssh::SSHState;
 use tauri::Manager;
 
 #[tauri::command]
@@ -24,12 +26,22 @@ pub fn run() {
             window.set_title("TermVault")?;
             Ok(())
         })
+        .manage(Mutex::new(SSHState::default()))
         .invoke_handler(tauri::generate_handler![
             greet,
             ssh::connect,
             ssh::disconnect,
             ssh::send_input,
             ssh::resize,
+            ssh::sftp_list,
+            ssh::sftp_read,
+            ssh::sftp_write,
+            ssh::sftp_delete,
+            ssh::sftp_mkdir,
+            ssh::sftp_rename,
+            ssh::sftp_chmod,
+            ssh::sftp_copy,
+            ssh::sftp_cross_copy,
             vault::derive_key,
             vault::encrypt,
             vault::decrypt,
