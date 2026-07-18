@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 
 interface Key {
   id: string
@@ -70,6 +71,7 @@ export const useKeyStore = create<KeyState>((set, get) => ({
         keys: [...get().keys, result],
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -92,6 +94,7 @@ export const useKeyStore = create<KeyState>((set, get) => ({
         keys: [...get().keys, result],
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -107,6 +110,7 @@ export const useKeyStore = create<KeyState>((set, get) => ({
         selectedKey: get().selectedKey?.id === id ? null : get().selectedKey,
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 import type { PaneNode } from './terminalStore'
 import { useTerminalStore } from './terminalStore'
 
@@ -61,6 +62,7 @@ export const useTabGroupStore = create<{
       set({
         tabGroups: [result, ...get().tabGroups],
       })
+      triggerSync()
       return result
     } catch (e) {
       console.error('Failed to create tab group:', e)
@@ -85,6 +87,7 @@ export const useTabGroupStore = create<{
       set({
         tabGroups: get().tabGroups.map((g) => (g.id === id ? { ...g, name } : g)),
       })
+      triggerSync()
     } catch (e) {
       console.error('Failed to rename tab group:', e)
     }
@@ -95,6 +98,7 @@ export const useTabGroupStore = create<{
       const deviceId = await getDeviceId()
       await invoke('delete_tab_group', { id, deviceId })
       set({ tabGroups: get().tabGroups.filter((g) => g.id !== id) })
+      triggerSync()
       const { tabs } = useTerminalStore.getState()
       if (tabs.some((t) => t.activePresetId === id)) {
         useTerminalStore.setState({

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 
 function normalizeTags(tags: unknown): string[] {
   if (!tags) return []
@@ -114,6 +115,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         deviceId,
       })
       set({ hosts: [...get().hosts, normalizeHost(result)], isLoading: false })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -142,6 +144,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         hosts: get().hosts.map((h) => (h.id === id ? normalizeHost(result) : h)),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -156,6 +159,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         hosts: get().hosts.filter((h) => h.id !== id),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -177,6 +181,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         deviceId,
       })
       set({ groups: [...get().groups, result], isLoading: false })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -200,6 +205,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         groups: get().groups.map((g) => (g.id === id ? result : g)),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -214,6 +220,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         groups: get().groups.filter((g) => g.id !== id),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }

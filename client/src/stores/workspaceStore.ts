@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 
 interface Workspace {
   id: string
@@ -63,6 +64,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         deviceId,
       })
       set({ workspaces: [...get().workspaces, result], isLoading: false })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
       throw error
@@ -89,6 +91,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspaces: get().workspaces.map((w) => (w.id === id ? result : w)),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
       throw error
@@ -104,6 +107,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspaces: get().workspaces.filter((w) => w.id !== id),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
       throw error

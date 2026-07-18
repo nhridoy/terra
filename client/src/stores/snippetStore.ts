@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 
 interface Snippet {
   id: string
@@ -88,6 +89,7 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
         snippets: [...get().snippets, { ...result, tags: normalizeTags(result.tags) }],
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -112,6 +114,7 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
         snippets: get().snippets.map((s) => (s.id === id ? { ...result, tags: normalizeTags(result.tags) } : s)),
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -128,6 +131,7 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
           get().selectedSnippet?.id === id ? null : get().selectedSnippet,
         isLoading: false,
       })
+      triggerSync()
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }

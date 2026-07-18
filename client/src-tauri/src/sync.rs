@@ -11,12 +11,13 @@ struct SyncRecord {
     table_name: String,
     #[serde(rename = "recordId")]
     record_id: String,
-    data: String,
-    #[serde(rename = "updatedAt")]
+    #[serde(default)]
+    data: serde_json::Value,
+    #[serde(rename = "updatedAt", default)]
     updated_at: String,
-    #[serde(rename = "deviceId")]
+    #[serde(rename = "deviceId", default)]
     device_id: String,
-    #[serde(rename = "isDeleted")]
+    #[serde(rename = "isDeleted", default)]
     is_deleted: bool,
 }
 
@@ -71,16 +72,16 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
             let mut stmt = conn.prepare(
                 "SELECT table_name, record_id, updated_at, device_id, is_deleted
                  FROM sync_tracking
-                 WHERE updated_at > ?1 AND user_id = ?2",
+                 WHERE updated_at > ?1",
             )
             .map_err(|e| e.to_string())?;
 
             let rows = stmt
-                .query_map(params![since, user_id], |row| {
+                .query_map(params![since], |row| {
                     Ok(SyncRecord {
                         table_name: row.get(0)?,
                         record_id: row.get(1)?,
-                        data: String::new(),
+                        data: serde_json::Value::Null,
                         updated_at: row.get(2)?,
                         device_id: row.get(3)?,
                         is_deleted: row.get::<_, i32>(4)? != 0,
@@ -97,17 +98,16 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
         } else {
             let mut stmt = conn.prepare(
                 "SELECT table_name, record_id, updated_at, device_id, is_deleted
-                 FROM sync_tracking
-                 WHERE user_id = ?1",
+                 FROM sync_tracking",
             )
             .map_err(|e| e.to_string())?;
 
             let rows = stmt
-                .query_map(params![user_id], |row| {
+                .query_map([], |row| {
                     Ok(SyncRecord {
                         table_name: row.get(0)?,
                         record_id: row.get(1)?,
-                        data: String::new(),
+                        data: serde_json::Value::Null,
                         updated_at: row.get(2)?,
                         device_id: row.get(3)?,
                         is_deleted: row.get::<_, i32>(4)? != 0,
@@ -250,7 +250,9 @@ pub async fn sync_bootstrap(state: tauri::State<'_, AppState>) -> Result<i32, St
         .map_err(|e| e.to_string())?;
 
     if resp.status().is_success() {
-        let result: SyncPullResponse = resp.json().await.map_err(|e| e.to_string())?;
+        let body = resp.text().await.map_err(|e| format!("Failed to read body: {}", e))?;
+        let result: SyncPullResponse = serde_json::from_str(&body)
+            .map_err(|e| format!("Decode error: {} | body: {}", e, &body[..body.len().min(500)]))?;
         let count = result.records.len() as i32;
 
         for record in &result.records {
@@ -280,13 +282,20 @@ fn fetch_record_data(
     table_name: &str,
     record_id: &str,
     _user_id: &str,
-) -> Result<String, String> {
-    let sql = format!("SELECT json_group_array(json_object(*)) FROM (SELECT * FROM {} WHERE id = ?1 LIMIT 1)", table_name);
+) -> Result<serde_json::Value, String> {
+    let allowed = ["hosts", "groups", "vaults", "snippets", "workspaces", "tab_groups", "keychain"];
+    if !allowed.contains(&table_name) {
+        return Ok(serde_json::json!({}));
+    }
+    let sql = format!(
+        "SELECT json_object(*) FROM {} WHERE id = ?1 LIMIT 1",
+        table_name
+    );
     let result: Result<String, _> =
         conn.query_row(&sql, params![record_id], |row| row.get(0));
     match result {
-        Ok(val) => Ok(val),
-        Err(_) => Ok("{}".to_string()),
+        Ok(val) => serde_json::from_str(&val).map_err(|e| e.to_string()),
+        Err(_) => Ok(serde_json::json!({})),
     }
 }
 
@@ -298,10 +307,8 @@ fn apply_remote_record(record: &SyncRecord) -> Result<(), String> {
         let sql = format!("DELETE FROM {} WHERE id = ?1", record.table_name);
         conn.execute(&sql, params![record.record_id])
             .map_err(|e| e.to_string())?;
-    } else if !record.data.is_empty() && record.data != "{}" {
-        let data: serde_json::Value =
-            serde_json::from_str(&record.data).map_err(|e| e.to_string())?;
-        let obj = data.as_object().ok_or("Record data is not an object")?;
+    } else if !record.data.is_null() && record.data != serde_json::json!({}) {
+        let obj = record.data.as_object().ok_or("Record data is not an object")?;
 
         let columns: Vec<String> = obj.keys().cloned().collect();
         let placeholders: Vec<String> = columns.iter().map(|_| "?".to_string()).collect();

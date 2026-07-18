@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useTabGroupStore } from '../../stores/tabGroupStore'
 import { useDragStore, type DropSide } from '../../stores/dragStore'
 import { getDeviceId } from '../../lib/device'
+import { startPeriodicSync, stopPeriodicSync } from '../../lib/sync'
 import Modal from '../ui/Modal'
 import HostForm from '../hosts/HostForm'
 import GroupForm from '../groups/GroupForm'
@@ -274,6 +275,22 @@ export default function Layout() {
       useWorkspaceStore.getState().fetchWorkspaces(currentVaultId || undefined)
     }
   }, [isAuthenticated, currentVaultId, fetchHosts, fetchGroups, fetchVaults])
+
+  // Periodic sync: pull remote changes every 10 seconds
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    startPeriodicSync(10000, () => {
+      const { currentVaultId: vid } = useVaultStore.getState()
+      fetchHosts(vid || undefined)
+      fetchGroups(vid || undefined)
+      fetchSnippets(vid || undefined)
+      useWorkspaceStore.getState().fetchWorkspaces(vid || undefined)
+      useTabGroupStore.getState().fetchTabGroups(vid || undefined)
+    })
+
+    return () => stopPeriodicSync()
+  }, [isAuthenticated, fetchHosts, fetchGroups])
 
   const handleEditHost = (host: any) => {
     setEditingHost(host)

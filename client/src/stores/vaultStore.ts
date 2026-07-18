@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { getDeviceId } from '../lib/device'
 import { useAuthStore } from './authStore'
+import { triggerSync } from '../lib/sync'
 
 interface VaultItem {
   id: string
@@ -79,6 +80,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       })
       set({ vaults: [...get().vaults, vault], isLoading: false })
       get().switchVault(vault.id)
+      triggerSync()
     } catch (error) {
       set({ isLoading: false })
       throw error
@@ -98,6 +100,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         vaults: get().vaults.map((v) => (v.id === id ? updated : v)),
         isLoading: false,
       })
+      triggerSync()
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })
     }
@@ -125,6 +128,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       if (newCurrentVaultId) {
         get().switchVault(newCurrentVaultId)
       }
+      triggerSync()
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false })
     }
