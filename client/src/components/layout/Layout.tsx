@@ -59,7 +59,7 @@ export default function Layout() {
   } = useHostStore()
   const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane, movePane, activeWorkspaceId, isDirty, activeWorkspaceName } = useTerminalStore()
   const { logout: logoutAuth } = useAuthStore()
-  const { currentVaultId } = useVaultStore()
+  const { currentVaultId, fetchVaults } = useVaultStore()
   const setDropPane = useDragStore((s) => s.setDropPane)
   const setSourcePane = useDragStore((s) => s.setSourcePane)
 
@@ -267,12 +267,13 @@ export default function Layout() {
   // Fetch data on mount and whenever the selected vault changes
   useEffect(() => {
     if (isAuthenticated) {
+      fetchVaults()
       fetchHosts(currentVaultId || undefined)
       fetchGroups(currentVaultId || undefined)
       fetchSnippets(currentVaultId || undefined)
       useWorkspaceStore.getState().fetchWorkspaces(currentVaultId || undefined)
     }
-  }, [isAuthenticated, currentVaultId, fetchHosts, fetchGroups])
+  }, [isAuthenticated, currentVaultId, fetchHosts, fetchGroups, fetchVaults])
 
   const handleEditHost = (host: any) => {
     setEditingHost(host)
