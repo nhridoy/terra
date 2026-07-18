@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useHostStore } from '../../stores/hostStore'
 import { useVaultStore } from '../../stores/vaultStore'
-import api from '../../lib/api'
 import Modal from '../ui/Modal'
 
 interface HostData {
@@ -63,7 +63,7 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
   const [keys, setKeys] = useState<Key[]>([])
 
   useEffect(() => {
-    api.listKeys(currentVaultId || undefined).then((res) => setKeys(res.keys)).catch(() => {})
+    invoke<any[]>('list_keys', { userId: '', vaultId: currentVaultId || null }).then((result) => setKeys(result || [])).catch(() => {})
   }, [currentVaultId])
 
   useEffect(() => {

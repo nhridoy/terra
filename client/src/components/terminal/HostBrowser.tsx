@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { useHostStore } from '../../stores/hostStore'
 import { useVaultStore } from '../../stores/vaultStore'
@@ -195,7 +196,7 @@ export default function HostBrowser({ onConnect, onRestorePreset }: HostBrowserP
                         </svg>
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); if (confirm('Delete this preset?')) deleteTabGroup(g.id) }}
+                        onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm('Delete this preset?', { title: 'Delete Preset', kind: 'warning' })) deleteTabGroup(g.id) }}
                         className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
                         title="Delete preset"
                       >

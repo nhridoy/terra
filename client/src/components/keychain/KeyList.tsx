@@ -1,7 +1,10 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState, useEffect, useRef } from 'react'
-import api from '../../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../../lib/device'
 import { useVaultStore } from '../../stores/vaultStore'
 import Modal from '../ui/Modal'
+import { triggerSync } from '../../lib/sync'
 import { parsePpk } from '../../../../shared/utils/ppkParser'
 
 interface Key {
@@ -23,8 +26,8 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
 
   const fetchKeys = async () => {
     try {
-      const result = await api.listKeys(currentVaultId || undefined)
-      setKeys(result.keys)
+      const result = await invoke<any[]>('list_keys', { userId: '', vaultId: currentVaultId || null })
+      setKeys(result || [])
     } catch (error) {
       console.error('Failed to fetch keys:', error)
     }
@@ -35,9 +38,11 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
   }, [currentVaultId])
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this key?')) {
+    if (await tauriConfirm('Are you sure you want to delete this key?', { title: 'Delete Key', kind: 'warning' })) {
       try {
-        await api.deleteKey(id)
+        const deviceId = await getDeviceId()
+        await invoke('delete_key', { id, deviceId })
+        await triggerSync()
         setKeys(keys.filter((k) => k.id !== id))
         if (selectedKey?.id === id) {
           setSelectedKey(null)
@@ -174,8 +179,9 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
         <ImportKeyModal
           onClose={() => setShowImportModal(false)}
           onImport={async (key) => {
-            const result = await api.importKey({ ...key, vaultId: currentVaultId || undefined })
-            setKeys((prev) => [...prev, result.key])
+            const deviceId = await getDeviceId()
+            const result = await invoke<any>('create_key', { key: { userId: '', vaultId: currentVaultId || null, name: key.name, keyType: key.keyType || 'ed25519', publicKey: key.publicKey || '', encryptedPrivateKey: key.privateKey || null, fingerprint: key.fingerprint || null, description: key.description || '' }, deviceId })
+            setKeys((prev) => [...prev, result])
             setShowImportModal(false)
             onMutation?.()
           }}
@@ -461,7 +467,7 @@ function ImportKeyModal({
 }
 
 function GenerateKeyModal({
-  vaultId,
+  vaultId: _vaultId,
   onClose,
 }: {
   vaultId?: string
@@ -472,8 +478,8 @@ function GenerateKeyModal({
   const [keyType, setKeyType] = useState('ed25519')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [generatedPrivKey, setGeneratedPrivKey] = useState<string | null>(null)
-  const [savedKey, setSavedKey] = useState<Key | null>(null)
+  const [generatedPrivKey, _setGeneratedPrivKey] = useState<string | null>(null)
+  const [savedKey, _setSavedKey] = useState<Key | null>(null)
   const [copied, setCopied] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -481,9 +487,8 @@ function GenerateKeyModal({
     setIsLoading(true)
     setError(null)
     try {
-      const result = await api.generateKey({ name, description, keyType, vaultId })
-      setSavedKey(result.key)
-      setGeneratedPrivKey(result.privateKey)
+      setError('Key generation is not available in sync-only mode. Use import instead.')
+      setIsLoading(false)
     } catch (err: any) {
       setError(err.message || 'Failed to generate key')
     } finally {

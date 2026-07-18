@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 // ── Data types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HostData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -50,6 +51,7 @@ pub struct Host {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GroupData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -72,11 +74,13 @@ pub struct Group {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultData {
     pub user_id: String,
     pub name: String,
     pub description: Option<String>,
     pub is_default: Option<bool>,
+    pub is_system: Option<bool>,
     pub encrypted_data: Option<String>,
 }
 
@@ -88,12 +92,14 @@ pub struct Vault {
     pub name: String,
     pub description: Option<String>,
     pub is_default: bool,
+    pub is_system: bool,
     pub encrypted_data: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KeyData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -122,6 +128,7 @@ pub struct Key {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SnippetData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -146,6 +153,7 @@ pub struct Snippet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -168,6 +176,7 @@ pub struct Workspace {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TabGroupData {
     pub user_id: String,
     pub vault_id: Option<String>,
@@ -188,6 +197,7 @@ pub struct TabGroup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SettingsData {
     pub theme: Option<String>,
     pub font_family: Option<String>,
@@ -211,6 +221,7 @@ pub struct Settings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionLogData {
     pub user_id: String,
     pub host_id: Option<String>,
@@ -233,6 +244,7 @@ pub struct SessionLog {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommandLogData {
     pub session_id: Option<String>,
     pub command: String,
@@ -273,11 +285,11 @@ where
     f(conn)
 }
 
-fn update_sync(conn: &Connection, table: &str, record_id: &str, device_id: &str) {
+fn update_sync(conn: &Connection, table: &str, record_id: &str, device_id: &str, is_deleted: bool) {
     let t = now();
     let _ = conn.execute(
-        "INSERT OR REPLACE INTO sync_tracking (table_name, record_id, updated_at, device_id) VALUES (?1, ?2, ?3, ?4)",
-        params![table, record_id, t, device_id],
+        "INSERT OR REPLACE INTO sync_tracking (table_name, record_id, updated_at, device_id, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![table, record_id, t, device_id, is_deleted as i32],
     );
 }
 
@@ -327,7 +339,7 @@ pub fn create_host(host: HostData, device_id: String) -> Result<Host, String> {
             "INSERT INTO hosts (id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, password, private_key, passphrase, auth_method, tags, host.color, host.icon, sort_order, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "hosts", &id, &device_id);
+        update_sync(conn, "hosts", &id, &device_id, false);
         Ok(Host { id, user_id: host.user_id, vault_id: host.vault_id, group_id: host.group_id, name: host.name, hostname: host.hostname, address: host.address, port, username: host.username, password: host.password, private_key: host.private_key, passphrase: host.passphrase, auth_method, tags, color: host.color, icon: host.icon, sort_order, created_at: now.clone(), updated_at: now })
     })
 }
@@ -408,7 +420,7 @@ pub fn update_host(id: String, host: HostData, device_id: String) -> Result<Host
             "UPDATE hosts SET user_id=?2, vault_id=?3, group_id=?4, name=?5, hostname=?6, address=?7, port=?8, username=?9, password=?10, private_key=?11, passphrase=?12, auth_method=?13, tags=?14, color=?15, icon=?16, sort_order=?17, updated_at=?18 WHERE id=?1",
             params![id, host.user_id, host.vault_id, host.group_id, host.name, host.hostname, host.address, port, host.username, password, private_key, passphrase, auth_method, tags, host.color, host.icon, sort_order, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "hosts", &id, &device_id);
+        update_sync(conn, "hosts", &id, &device_id, false);
         let h = conn.query_row("SELECT id, user_id, vault_id, group_id, name, hostname, address, port, username, password, private_key, passphrase, auth_method, tags, color, icon, sort_order, created_at, updated_at FROM hosts WHERE id = ?1", params![id], |row| {
             Ok(Host { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, group_id: row.get(3)?, name: row.get(4)?, hostname: row.get(5)?, address: row.get(6)?, port: row.get(7)?, username: row.get(8)?, password: row.get(9)?, private_key: row.get(10)?, passphrase: row.get(11)?, auth_method: row.get(12)?, tags: row.get(13)?, color: row.get(14)?, icon: row.get(15)?, sort_order: row.get(16)?, created_at: row.get(17)?, updated_at: row.get(18)? })
         }).map_err(|e| e.to_string())?;
@@ -425,7 +437,7 @@ pub fn update_host(id: String, host: HostData, device_id: String) -> Result<Host
 pub fn delete_host(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM hosts WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "hosts", &id, &device_id);
+        update_sync(conn, "hosts", &id, &device_id, true);
         Ok(())
     })
 }
@@ -442,7 +454,7 @@ pub fn create_group(group: GroupData, device_id: String) -> Result<Group, String
             "INSERT INTO groups (id, user_id, vault_id, parent_id, name, sort_order, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
             params![id, group.user_id, group.vault_id, group.parent_id, group.name, sort_order, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "groups", &id, &device_id);
+        update_sync(conn, "groups", &id, &device_id, false);
         Ok(Group { id, user_id: group.user_id, vault_id: group.vault_id, parent_id: group.parent_id, name: group.name, sort_order, created_at: now.clone(), updated_at: now })
     })
 }
@@ -475,7 +487,7 @@ pub fn update_group(id: String, group: GroupData, device_id: String) -> Result<G
             "UPDATE groups SET user_id=?2, vault_id=?3, parent_id=?4, name=?5, sort_order=?6, updated_at=?7 WHERE id=?1",
             params![id, group.user_id, group.vault_id, group.parent_id, group.name, sort_order, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "groups", &id, &device_id);
+        update_sync(conn, "groups", &id, &device_id, false);
         conn.query_row("SELECT id, user_id, vault_id, parent_id, name, sort_order, created_at, updated_at FROM groups WHERE id = ?1", params![id], |row| {
             Ok(Group { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, parent_id: row.get(3)?, name: row.get(4)?, sort_order: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
         }).map_err(|e| e.to_string())
@@ -486,7 +498,7 @@ pub fn update_group(id: String, group: GroupData, device_id: String) -> Result<G
 pub fn delete_group(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM groups WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "groups", &id, &device_id);
+        update_sync(conn, "groups", &id, &device_id, true);
         Ok(())
     })
 }
@@ -500,11 +512,11 @@ pub fn create_vault(vault: VaultData, device_id: String) -> Result<Vault, String
         let now = now();
         let is_default = vault.is_default.unwrap_or(false) as i32;
         conn.execute(
-            "INSERT INTO vaults (id, user_id, name, description, is_default, encrypted_data, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![id, vault.user_id, vault.name, vault.description, is_default, vault.encrypted_data, now, now],
+            "INSERT INTO vaults (id, user_id, name, description, is_default, is_system, encrypted_data, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![id, vault.user_id, vault.name, vault.description, is_default, vault.is_system.unwrap_or(false) as i32, vault.encrypted_data, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "vaults", &id, &device_id);
-        Ok(Vault { id, user_id: vault.user_id, name: vault.name, description: vault.description, is_default: is_default != 0, encrypted_data: vault.encrypted_data, created_at: now.clone(), updated_at: now })
+        update_sync(conn, "vaults", &id, &device_id, false);
+        Ok(Vault { id, user_id: vault.user_id, name: vault.name, description: vault.description, is_default: is_default != 0, is_system: vault.is_system.unwrap_or(false), encrypted_data: vault.encrypted_data, created_at: now.clone(), updated_at: now })
     })
 }
 
@@ -515,11 +527,11 @@ pub fn create_default_vaults(user_id: String) -> Result<(), String> {
         let personal_id = new_id();
         let team_id = new_id();
         conn.execute(
-            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, created_at, updated_at) VALUES (?1,?2,'Personal',1,?3,?3)",
+            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, is_system, created_at, updated_at) VALUES (?1,?2,'Personal',1,1,?3,?3)",
             params![personal_id, user_id, now],
         ).map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, created_at, updated_at) VALUES (?1,?2,'Team',1,?3,?3)",
+            "INSERT OR IGNORE INTO vaults (id, user_id, name, is_default, is_system, created_at, updated_at) VALUES (?1,?2,'Team',1,1,?3,?3)",
             params![team_id, user_id, now],
         ).map_err(|e| e.to_string())?;
         Ok(())
@@ -529,9 +541,9 @@ pub fn create_default_vaults(user_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn list_vaults(user_id: String) -> Result<Vec<Vault>, String> {
     with_conn(|conn| {
-        let mut stmt = conn.prepare("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE user_id = ?1 ORDER BY is_default DESC, name").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT id, user_id, name, description, is_default, is_system, encrypted_data, created_at, updated_at FROM vaults WHERE user_id = ?1 ORDER BY is_default DESC, name").map_err(|e| e.to_string())?;
         let rows = stmt.query_map(params![user_id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, is_system: row.get::<_, i32>(5)? != 0, encrypted_data: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
         }).map_err(|e| e.to_string())?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     })
@@ -540,20 +552,20 @@ pub fn list_vaults(user_id: String) -> Result<Vec<Vault>, String> {
 #[tauri::command]
 pub fn update_vault(id: String, vault: VaultData, device_id: String) -> Result<Vault, String> {
     with_conn(|conn| {
-        let existing: Vault = conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+        let existing: Vault = conn.query_row("SELECT id, user_id, name, description, is_default, is_system, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, is_system: row.get::<_, i32>(5)? != 0, encrypted_data: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
         }).map_err(|e| e.to_string())?;
-        if existing.is_default {
-            return Err("Cannot edit default vault".to_string());
+        if existing.is_system {
+            return Err("Cannot edit system vault".to_string());
         }
         let now = now();
         conn.execute(
             "UPDATE vaults SET user_id=?2, name=?3, description=?4, encrypted_data=?5, updated_at=?6 WHERE id=?1",
             params![id, vault.user_id, vault.name, vault.description, vault.encrypted_data, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "vaults", &id, &device_id);
-        conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+        update_sync(conn, "vaults", &id, &device_id, false);
+        conn.query_row("SELECT id, user_id, name, description, is_default, is_system, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, is_system: row.get::<_, i32>(5)? != 0, encrypted_data: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
         }).map_err(|e| e.to_string())
     })
 }
@@ -561,12 +573,12 @@ pub fn update_vault(id: String, vault: VaultData, device_id: String) -> Result<V
 #[tauri::command]
 pub fn delete_vault(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
-        let is_default: i32 = conn.query_row("SELECT is_default FROM vaults WHERE id = ?1", params![id], |row| row.get(0)).map_err(|e| e.to_string())?;
-        if is_default != 0 {
-            return Err("Cannot delete default vault".to_string());
+        let is_system: i32 = conn.query_row("SELECT is_system FROM vaults WHERE id = ?1", params![id], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if is_system != 0 {
+            return Err("Cannot delete system vault".to_string());
         }
         conn.execute("DELETE FROM vaults WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "vaults", &id, &device_id);
+        update_sync(conn, "vaults", &id, &device_id, true);
         Ok(())
     })
 }
@@ -574,8 +586,8 @@ pub fn delete_vault(id: String, device_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_vault_data(id: String) -> Result<Vault, String> {
     with_conn(|conn| {
-        conn.query_row("SELECT id, user_id, name, description, is_default, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
-            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, encrypted_data: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
+        conn.query_row("SELECT id, user_id, name, description, is_default, is_system, encrypted_data, created_at, updated_at FROM vaults WHERE id = ?1", params![id], |row| {
+            Ok(Vault { id: row.get(0)?, user_id: row.get(1)?, name: row.get(2)?, description: row.get(3)?, is_default: row.get::<_, i32>(4)? != 0, is_system: row.get::<_, i32>(5)? != 0, encrypted_data: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
         }).map_err(|e| e.to_string())
     })
 }
@@ -592,7 +604,7 @@ pub fn create_key(key: KeyData, device_id: String) -> Result<Key, String> {
             "INSERT INTO keychain (id, user_id, vault_id, name, description, key_type, public_key, encrypted_private_key, fingerprint, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![id, key.user_id, key.vault_id, key.name, key.description, key.key_type, key.public_key, enc_pk, key.fingerprint, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "keychain", &id, &device_id);
+        update_sync(conn, "keychain", &id, &device_id, false);
         Ok(Key { id, user_id: key.user_id, vault_id: key.vault_id, name: key.name, description: key.description, key_type: key.key_type, public_key: key.public_key, encrypted_private_key: key.encrypted_private_key, fingerprint: key.fingerprint, created_at: now.clone(), updated_at: now })
     })
 }
@@ -639,7 +651,7 @@ pub fn get_key(id: String) -> Result<Key, String> {
 pub fn delete_key(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM keychain WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "keychain", &id, &device_id);
+        update_sync(conn, "keychain", &id, &device_id, true);
         Ok(())
     })
 }
@@ -656,7 +668,7 @@ pub fn create_snippet(snippet: SnippetData, device_id: String) -> Result<Snippet
             "INSERT INTO snippets (id, user_id, vault_id, name, command, description, tags, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![id, snippet.user_id, snippet.vault_id, snippet.name, snippet.command, snippet.description, tags, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "snippets", &id, &device_id);
+        update_sync(conn, "snippets", &id, &device_id, false);
         Ok(Snippet { id, user_id: snippet.user_id, vault_id: snippet.vault_id, name: snippet.name, command: snippet.command, description: snippet.description, tags, created_at: now.clone(), updated_at: now })
     })
 }
@@ -689,7 +701,7 @@ pub fn update_snippet(id: String, snippet: SnippetData, device_id: String) -> Re
             "UPDATE snippets SET user_id=?2, vault_id=?3, name=?4, command=?5, description=?6, tags=?7, updated_at=?8 WHERE id=?1",
             params![id, snippet.user_id, snippet.vault_id, snippet.name, snippet.command, snippet.description, tags, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "snippets", &id, &device_id);
+        update_sync(conn, "snippets", &id, &device_id, false);
         conn.query_row("SELECT id, user_id, vault_id, name, command, description, tags, created_at, updated_at FROM snippets WHERE id = ?1", params![id], |row| {
             Ok(Snippet { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, command: row.get(4)?, description: row.get(5)?, tags: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)? })
         }).map_err(|e| e.to_string())
@@ -700,7 +712,7 @@ pub fn update_snippet(id: String, snippet: SnippetData, device_id: String) -> Re
 pub fn delete_snippet(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "snippets", &id, &device_id);
+        update_sync(conn, "snippets", &id, &device_id, true);
         Ok(())
     })
 }
@@ -729,7 +741,7 @@ pub fn create_workspace(ws: WorkspaceData, device_id: String) -> Result<Workspac
             "INSERT INTO workspaces (id, user_id, vault_id, name, layout, host_ids, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
             params![id, ws.user_id, ws.vault_id, ws.name, ws.layout, host_ids, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "workspaces", &id, &device_id);
+        update_sync(conn, "workspaces", &id, &device_id, false);
         Ok(Workspace { id, user_id: ws.user_id, vault_id: ws.vault_id, name: ws.name, layout: ws.layout, host_ids, created_at: now.clone(), updated_at: now })
     })
 }
@@ -762,7 +774,7 @@ pub fn update_workspace(id: String, ws: WorkspaceData, device_id: String) -> Res
             "UPDATE workspaces SET user_id=?2, vault_id=?3, name=?4, layout=?5, host_ids=?6, updated_at=?7 WHERE id=?1",
             params![id, ws.user_id, ws.vault_id, ws.name, ws.layout, host_ids, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "workspaces", &id, &device_id);
+        update_sync(conn, "workspaces", &id, &device_id, false);
         conn.query_row("SELECT id, user_id, vault_id, name, layout, host_ids, created_at, updated_at FROM workspaces WHERE id = ?1", params![id], |row| {
             Ok(Workspace { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, host_ids: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)? })
         }).map_err(|e| e.to_string())
@@ -773,7 +785,7 @@ pub fn update_workspace(id: String, ws: WorkspaceData, device_id: String) -> Res
 pub fn delete_workspace(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM workspaces WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "workspaces", &id, &device_id);
+        update_sync(conn, "workspaces", &id, &device_id, true);
         Ok(())
     })
 }
@@ -789,7 +801,7 @@ pub fn create_tab_group(tg: TabGroupData, device_id: String) -> Result<TabGroup,
             "INSERT INTO tab_groups (id, user_id, vault_id, name, layout, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![id, tg.user_id, tg.vault_id, tg.name, tg.layout, now, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "tab_groups", &id, &device_id);
+        update_sync(conn, "tab_groups", &id, &device_id, false);
         Ok(TabGroup { id, user_id: tg.user_id, vault_id: tg.vault_id, name: tg.name, layout: tg.layout, created_at: now.clone(), updated_at: now })
     })
 }
@@ -821,7 +833,7 @@ pub fn update_tab_group(id: String, tg: TabGroupData, device_id: String) -> Resu
             "UPDATE tab_groups SET user_id=?2, vault_id=?3, name=?4, layout=?5, updated_at=?6 WHERE id=?1",
             params![id, tg.user_id, tg.vault_id, tg.name, tg.layout, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "tab_groups", &id, &device_id);
+        update_sync(conn, "tab_groups", &id, &device_id, false);
         conn.query_row("SELECT id, user_id, vault_id, name, layout, created_at, updated_at FROM tab_groups WHERE id = ?1", params![id], |row| {
             Ok(TabGroup { id: row.get(0)?, user_id: row.get(1)?, vault_id: row.get(2)?, name: row.get(3)?, layout: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)? })
         }).map_err(|e| e.to_string())
@@ -832,7 +844,7 @@ pub fn update_tab_group(id: String, tg: TabGroupData, device_id: String) -> Resu
 pub fn delete_tab_group(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM tab_groups WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "tab_groups", &id, &device_id);
+        update_sync(conn, "tab_groups", &id, &device_id, true);
         Ok(())
     })
 }
@@ -879,7 +891,7 @@ pub fn update_settings(user_id: String, settings: SettingsData, device_id: Strin
             "UPDATE settings SET theme=?2, font_family=?3, font_size=?4, cursor_style=?5, keybindings=?6, updated_at=?7 WHERE id=?1",
             params![existing.id, theme, font_family, font_size, cursor_style, keybindings, now],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "settings", &existing.id, &device_id);
+        update_sync(conn, "settings", &existing.id, &device_id, false);
         Ok(Settings { id: existing.id, user_id, theme, font_family, font_size, cursor_style, keybindings, created_at: existing.created_at, updated_at: now })
     })
 }
@@ -896,7 +908,7 @@ pub fn create_session_log(log: SessionLogData, device_id: String) -> Result<Sess
             "INSERT INTO session_logs (id, user_id, host_id, started_at, data, size_bytes, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![id, log.user_id, log.host_id, log.started_at, log.data, size_bytes, created_at],
         ).map_err(|e| e.to_string())?;
-        update_sync(conn, "session_logs", &id, &device_id);
+        update_sync(conn, "session_logs", &id, &device_id, false);
         Ok(SessionLog { id, user_id: log.user_id, host_id: log.host_id, started_at: log.started_at, ended_at: None, data: log.data, size_bytes, created_at })
     })
 }
@@ -925,7 +937,7 @@ pub fn get_session_log(id: String) -> Result<SessionLog, String> {
 pub fn delete_session_log(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM session_logs WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-        update_sync(conn, "session_logs", &id, &device_id);
+        update_sync(conn, "session_logs", &id, &device_id, true);
         Ok(())
     })
 }

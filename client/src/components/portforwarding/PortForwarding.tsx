@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 
@@ -66,7 +67,7 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this port forward?')) {
+    if (await tauriConfirm('Delete this port forward?', { title: 'Delete Port Forward', kind: 'warning' })) {
       try {
         // TODO: Implement API call
         setForwards(forwards.filter((f) => f.id !== id))

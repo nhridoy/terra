@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   listLocalFiles,
@@ -101,6 +102,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   }
 
   const handleDelete = async (file: FileItem) => {
+    if (!await tauriConfirm(`Delete "${file.name}"?`, { title: 'Delete File', kind: 'warning' })) return
     try {
       await removeLocalFile(file.path)
       toast(`Deleted ${file.name}`, 'success')

@@ -71,6 +71,7 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
             name TEXT NOT NULL,
             description TEXT,
             is_default INTEGER DEFAULT 0,
+            is_system INTEGER DEFAULT 0,
             encrypted_data TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -186,6 +187,7 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     let alter_statements = [
         "ALTER TABLE vaults ADD COLUMN is_default INTEGER DEFAULT 0",
         "ALTER TABLE vaults ADD COLUMN encrypted_data TEXT",
+        "ALTER TABLE vaults ADD COLUMN is_system INTEGER DEFAULT 0",
         "ALTER TABLE keychain ADD COLUMN updated_at TEXT DEFAULT ''",
         "ALTER TABLE groups ADD COLUMN updated_at TEXT DEFAULT ''",
     ];

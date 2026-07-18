@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import api from '../../lib/api'
+import { invoke } from '@tauri-apps/api/core'
 import Modal from '../ui/Modal'
 
 interface FilePreviewProps {
@@ -29,9 +29,11 @@ export default function FilePreview({
     setIsLoading(true)
     setError(null)
     try {
-      const result = await api.readFile(hostId, filePath)
-      setContent(result.content)
-      setEditContent(result.content)
+      const result = await invoke<number[]>('sftp_read', { hostId, path: filePath })
+      const decoder = new TextDecoder()
+      const text = decoder.decode(new Uint8Array(result))
+      setContent(text)
+      setEditContent(text)
     } catch (err: any) {
       setError(err.message || 'Failed to read file')
     } finally {
@@ -42,7 +44,9 @@ export default function FilePreview({
   const handleSave = async () => {
     setIsLoading(true)
     try {
-      await api.writeFile(hostId, filePath, editContent)
+      const encoder = new TextEncoder()
+      const data = Array.from(encoder.encode(editContent))
+      await invoke('sftp_write', { hostId, path: filePath, data })
       setContent(editContent)
       setIsEditing(false)
     } catch (err: any) {

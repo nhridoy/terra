@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useVaultStore } from '../../stores/vaultStore'
@@ -75,8 +76,8 @@ export function VaultSelector() {
   }
 
   const handleDelete = async (vault: any) => {
-    if (vault.isDefault) return
-    if (!window.confirm(`Delete vault "${vault.name}"? All hosts, keys, groups, snippets, and history in this vault will be permanently removed.`)) {
+    if (vault.isSystem) return
+    if (!await tauriConfirm(`Delete vault "${vault.name}"? All hosts, keys, groups, snippets, and history in this vault will be permanently removed.`, { title: 'Delete Vault', kind: 'warning' })) {
       return
     }
     try {
@@ -219,7 +220,7 @@ export function VaultSelector() {
                         <p className="text-xs text-dark-500 truncate mt-0.5">{vault.description}</p>
                       )}
                     </div>
-                    {vault.isDefault ? (
+                    {vault.isSystem ? (
                       <span className="w-4 flex-shrink-0" />
                     ) : (
                       <div className="flex items-center gap-0.5 flex-shrink-0">

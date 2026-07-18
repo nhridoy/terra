@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useEffect, useState } from 'react'
 import { useTeamStore } from '../../stores/teamStore'
 import Modal from '../ui/Modal'
@@ -48,7 +49,7 @@ export default function TeamManager() {
   }
 
   const handleRemoveMember = async (userId: string) => {
-    if (selectedTeam && confirm('Remove this member?')) {
+    if (selectedTeam && await tauriConfirm('Remove this member?', { title: 'Remove Member', kind: 'warning' })) {
       await removeMember(selectedTeam.id, userId)
     }
   }
@@ -149,7 +150,7 @@ export default function TeamManager() {
                   </button>
                   <button
                     onClick={async () => {
-                      if (confirm('Delete this team?')) {
+                      if (await tauriConfirm('Delete this team?', { title: 'Delete Team', kind: 'warning' })) {
                         await deleteTeam(selectedTeam.id)
                       }
                     }}

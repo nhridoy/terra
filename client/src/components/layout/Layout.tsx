@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent } from '@dnd-kit/react'
@@ -329,10 +330,10 @@ export default function Layout() {
   }
 
   // Returns false if the user chose to keep their unsaved changes.
-  const confirmDiscardUnsaved = (): boolean => {
+  const confirmDiscardUnsaved = async (): Promise<boolean> => {
     const { isDirty, activeWorkspaceId } = useTerminalStore.getState()
     if (isDirty && activeWorkspaceId) {
-      return window.confirm('This workspace has unsaved changes. Discard them?')
+      return await tauriConfirm('This workspace has unsaved changes. Discard them?', { title: 'Unsaved Changes', kind: 'warning' })
     }
     return true
   }
@@ -369,8 +370,8 @@ export default function Layout() {
     useTerminalStore.getState().saveCurrentPreset(tabId)
   }
 
-  const handleLogout = () => {
-    if (!confirmDiscardUnsaved()) return
+  const handleLogout = async () => {
+    if (!await confirmDiscardUnsaved()) return
     logoutAuth()
     closeAllTabs()
   }
@@ -442,8 +443,8 @@ export default function Layout() {
         return (
           <WorkspaceList
             onSaveNew={handleSaveWorkspace}
-            onLaunch={(tabId) => {
-              if (!confirmDiscardUnsaved()) return
+            onLaunch={async (tabId) => {
+              if (!await confirmDiscardUnsaved()) return
               setActiveTab(tabId)
               setActiveView(tabId)
             }}
@@ -516,7 +517,7 @@ export default function Layout() {
                         </svg>
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); if (confirm('Delete this snippet?')) getDeviceId().then(deviceId => invoke('delete_snippet', { id: snippet.id, deviceId })).then(() => fetchSnippets(currentVaultId || undefined)) }}
+                        onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm('Delete this snippet?', { title: 'Delete Snippet', kind: 'warning' })) { const deviceId = await getDeviceId(); await invoke('delete_snippet', { id: snippet.id, deviceId }); fetchSnippets(currentVaultId || undefined) } }}
                         className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
                         title="Delete snippet"
                       >

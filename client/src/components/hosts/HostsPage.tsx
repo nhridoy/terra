@@ -1,5 +1,6 @@
 import { useDraggable, useDroppable } from '@dnd-kit/react'
 import { useHostStore, type Host, type Group } from '../../stores/hostStore'
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 
 function getChildren(groups: Group[], parentId: string): Group[] {
   return groups.filter((g) => g.parentId === parentId)
@@ -83,7 +84,7 @@ function DraggableHostCard({
           </svg>
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete host "${host.name}"?`)) onDelete(host.id) }}
+          onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm(`Delete host "${host.name}"?`, { title: 'Delete Host', kind: 'warning' })) onDelete(host.id) }}
           className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
           title="Delete host"
         >
@@ -158,7 +159,7 @@ function DroppableGroupCard({
           </svg>
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete group "${group.name}"?`)) onDelete(group.id) }}
+          onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm(`Delete group "${group.name}"?`, { title: 'Delete Group', kind: 'warning' })) onDelete(group.id) }}
           className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
           title="Delete group"
         >

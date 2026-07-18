@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import api from '../lib/api'
 
 interface TeamMember {
   id: string
@@ -33,157 +32,41 @@ interface TeamState {
   selectTeam: (team: Team | null) => void
   addMember: (teamId: string, email: string, role: string) => Promise<void>
   removeMember: (teamId: string, userId: string) => Promise<void>
-  updateMemberRole: (
-    teamId: string,
-    userId: string,
-    role: string,
-  ) => Promise<void>
+  updateMemberRole: (teamId: string, userId: string, role: string) => Promise<void>
   leaveTeam: (teamId: string) => Promise<void>
   clearError: () => void
 }
 
-export const useTeamStore = create<TeamState>((set, get) => ({
+export const useTeamStore = create<TeamState>((set) => ({
   teams: [],
   selectedTeam: null,
   isLoading: false,
-  error: null,
+  error: 'Teams feature is not available in sync-only mode',
 
   fetchTeams: async () => {
-    set({ isLoading: true, error: null })
-    try {
-      const result = await api.listTeams()
-      set({ teams: result.teams, isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+    set({ isLoading: false })
   },
-
-  createTeam: async (team) => {
-    set({ isLoading: true, error: null })
-    try {
-      const result = await api.createTeam(team)
-      set({
-        teams: [...get().teams, result.team],
-        isLoading: false,
-      })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  createTeam: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
-  updateTeam: async (id, team) => {
-    set({ isLoading: true, error: null })
-    try {
-      const result = await api.updateTeam(id, team)
-      set({
-        teams: get().teams.map((t) => (t.id === id ? result.team : t)),
-        selectedTeam:
-          get().selectedTeam?.id === id ? result.team : get().selectedTeam,
-        isLoading: false,
-      })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  updateTeam: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
-  deleteTeam: async (id) => {
-    set({ isLoading: true, error: null })
-    try {
-      await api.deleteTeam(id)
-      set({
-        teams: get().teams.filter((t) => t.id !== id),
-        selectedTeam: get().selectedTeam?.id === id ? null : get().selectedTeam,
-        isLoading: false,
-      })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  deleteTeam: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
   selectTeam: (team) => set({ selectedTeam: team }),
-
-  addMember: async (teamId, email, role) => {
-    set({ isLoading: true, error: null })
-    try {
-      const result = await api.addTeamMember(teamId, { email, role })
-      const updatedTeam = get().teams.find((t) => t.id === teamId)
-      if (updatedTeam) {
-        const newTeam = {
-          ...updatedTeam,
-          members: [...updatedTeam.members, result.member],
-        }
-        set({
-          teams: get().teams.map((t) => (t.id === teamId ? newTeam : t)),
-          selectedTeam:
-            get().selectedTeam?.id === teamId ? newTeam : get().selectedTeam,
-          isLoading: false,
-        })
-      }
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  addMember: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
-  removeMember: async (teamId, userId) => {
-    set({ isLoading: true, error: null })
-    try {
-      await api.removeTeamMember(teamId, userId)
-      const updatedTeam = get().teams.find((t) => t.id === teamId)
-      if (updatedTeam) {
-        const newTeam = {
-          ...updatedTeam,
-          members: updatedTeam.members.filter((m) => m.userId !== userId),
-        }
-        set({
-          teams: get().teams.map((t) => (t.id === teamId ? newTeam : t)),
-          selectedTeam:
-            get().selectedTeam?.id === teamId ? newTeam : get().selectedTeam,
-          isLoading: false,
-        })
-      }
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  removeMember: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
-  updateMemberRole: async (teamId, userId, role) => {
-    set({ isLoading: true, error: null })
-    try {
-      await api.updateTeamMemberRole(teamId, userId, role)
-      const updatedTeam = get().teams.find((t) => t.id === teamId)
-      if (updatedTeam) {
-        const newTeam: Team = {
-          ...updatedTeam,
-          members: updatedTeam.members.map((m) =>
-            m.userId === userId ? { ...m, role: role as 'owner' | 'admin' | 'member' } : m,
-          ),
-        }
-        set({
-          teams: get().teams.map((t) => (t.id === teamId ? newTeam : t)),
-          selectedTeam:
-            get().selectedTeam?.id === teamId ? newTeam : get().selectedTeam,
-          isLoading: false,
-        })
-      }
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  updateMemberRole: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
-  leaveTeam: async (teamId) => {
-    set({ isLoading: true, error: null })
-    try {
-      await api.leaveTeam(teamId)
-      set({
-        teams: get().teams.filter((t) => t.id !== teamId),
-        selectedTeam:
-          get().selectedTeam?.id === teamId ? null : get().selectedTeam,
-        isLoading: false,
-      })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
-    }
+  leaveTeam: async () => {
+    set({ error: 'Teams feature is not available in sync-only mode' })
   },
-
   clearError: () => set({ error: null }),
 }))

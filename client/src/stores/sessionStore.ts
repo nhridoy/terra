@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
+import { triggerSync } from '../lib/sync'
 
 interface SessionLogEntry {
   id: string
@@ -52,11 +54,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   error: null,
   isRecording: false,
 
-  fetchSessions: async (hostId) => {
+  fetchSessions: async (_hostId?) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.listSessionLogs({ hostId })
-      set({ sessions: result.logs, isLoading: false })
+      const result = await invoke<any[]>('list_session_logs', { userId: '' })
+      set({ sessions: result || [], isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -65,8 +67,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   fetchSessionLogs: async (sessionId) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await api.getSessionLog(sessionId)
-      set({ logs: result.log ? [result.log] : [], isLoading: false })
+      const result = await invoke<any>('get_session_log', { id: sessionId })
+      set({ logs: result ? [result] : [], isLoading: false })
     } catch (error: any) {
       set({ error: error.message, isLoading: false })
     }
@@ -129,7 +131,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deleteSession: async (id) => {
     set({ isLoading: true, error: null })
     try {
-      await api.deleteSessionLog(id)
+      const deviceId = await getDeviceId()
+      await invoke('delete_session_log', { id, deviceId })
+      await triggerSync()
       set({
         sessions: get().sessions.filter((s) => s.id !== id),
         isLoading: false,

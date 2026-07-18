@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useHostStore } from '../../stores/hostStore'
 
 interface HostDetailsProps {
@@ -14,9 +15,9 @@ export default function HostDetails({ host, onConnect, onEdit, onDelete }: HostD
     e.stopPropagation()
   }
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (window.confirm(`Delete host "${host.name}"?`)) {
+    if (await tauriConfirm(`Delete host "${host.name}"?`, { title: 'Delete Host', kind: 'warning' })) {
       onDelete(host.id)
     }
   }

@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState } from 'react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useTerminalStore } from '../../stores/terminalStore'
@@ -74,8 +75,8 @@ export default function WorkspaceList({ onLaunch, onSaveNew }: WorkspaceListProp
     setRenamingId(null)
   }
 
-  const handleDelete = (id: string) => {
-    if (!confirm('Delete this workspace? This cannot be undone.')) return
+  const handleDelete = async (id: string) => {
+    if (!await tauriConfirm('Delete this workspace? This cannot be undone.', { title: 'Delete Workspace', kind: 'warning' })) return
     const activeId = useTerminalStore.getState().activeWorkspaceId
     deleteWorkspace(id)
     // If we just deleted the workspace that is currently open, drop the

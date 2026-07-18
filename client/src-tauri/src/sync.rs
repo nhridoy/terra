@@ -91,8 +91,10 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
 
             for row in rows {
                 let mut record = row.map_err(|e| e.to_string())?;
-                record.data =
-                    fetch_record_data(conn, &record.table_name, &record.record_id, &user_id)?;
+                if !record.is_deleted {
+                    record.data =
+                        fetch_record_data(conn, &record.table_name, &record.record_id, &user_id)?;
+                }
                 records.push(record);
             }
         } else {
@@ -117,8 +119,10 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
 
             for row in rows {
                 let mut record = row.map_err(|e| e.to_string())?;
-                record.data =
-                    fetch_record_data(conn, &record.table_name, &record.record_id, &user_id)?;
+                if !record.is_deleted {
+                    record.data =
+                        fetch_record_data(conn, &record.table_name, &record.record_id, &user_id)?;
+                }
                 records.push(record);
             }
         }
@@ -169,73 +173,9 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
 }
 
 #[tauri::command]
-pub async fn sync_pull(state: tauri::State<'_, AppState>) -> Result<i32, String> {
-    let device_id = state.device_id.clone();
-    let _user_id = {
-        let guard = state.user_id.lock().map_err(|e| e.to_string())?;
-        guard.clone().ok_or("Not logged in")?
-    };
-
-    let last_sync = {
-        let conn_guard = db::conn()?;
-        let conn = conn_guard.as_ref().ok_or("DB not initialized")?;
-        conn.query_row(
-            "SELECT last_sync_at FROM sync_state WHERE device_id = ?1",
-            params![device_id],
-            |row| row.get::<_, String>(0),
-        )
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
-    };
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(format!("{}/api/sync/pull", SERVER_URL))
-        .header("Authorization", format!("Bearer {}", {
-            let guard = state.token.lock().map_err(|e| e.to_string())?;
-            guard.clone().ok_or("Not logged in")?
-        }))
-        .query(&[
-            ("since", last_sync.as_str()),
-            ("deviceId", device_id.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if resp.status().is_success() {
-        let result: SyncPullResponse = resp.json().await.map_err(|e| e.to_string())?;
-        let count = result.records.len() as i32;
-
-        for record in &result.records {
-            apply_remote_record(record)?;
-        }
-
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
-        let conn_guard = db::conn()?;
-        let conn = conn_guard.as_ref().ok_or("DB not initialized")?;
-        conn.execute(
-            "INSERT OR REPLACE INTO sync_state (id, device_id, last_sync_at, updated_at) VALUES (?1, ?1, ?2, ?2)",
-            params![device_id, now],
-        )
-        .map_err(|e| e.to_string())?;
-
-        Ok(count)
-    } else {
-        Err(format!("Sync pull failed: {}", resp.status()))
-    }
-}
-
-#[tauri::command]
 pub async fn sync_full(state: tauri::State<'_, AppState>) -> Result<String, String> {
     sync_push(state.clone()).await?;
-    sync_pull(state).await?;
-    Ok("synced".to_string())
-}
 
-#[tauri::command]
-pub async fn sync_bootstrap(state: tauri::State<'_, AppState>) -> Result<i32, String> {
     let token = {
         let guard = state.token.lock().map_err(|e| e.to_string())?;
         guard.clone().ok_or("Not logged in")?
@@ -253,7 +193,6 @@ pub async fn sync_bootstrap(state: tauri::State<'_, AppState>) -> Result<i32, St
         let body = resp.text().await.map_err(|e| format!("Failed to read body: {}", e))?;
         let result: SyncPullResponse = serde_json::from_str(&body)
             .map_err(|e| format!("Decode error: {} | body: {}", e, &body[..body.len().min(500)]))?;
-        let count = result.records.len() as i32;
 
         for record in &result.records {
             apply_remote_record(record)?;
@@ -271,9 +210,9 @@ pub async fn sync_bootstrap(state: tauri::State<'_, AppState>) -> Result<i32, St
         )
         .map_err(|e| e.to_string())?;
 
-        Ok(count)
+        Ok("synced".to_string())
     } else {
-        Err(format!("Sync bootstrap failed: {}", resp.status()))
+        Err(format!("Sync full failed: {}", resp.status()))
     }
 }
 
@@ -283,7 +222,7 @@ fn fetch_record_data(
     record_id: &str,
     _user_id: &str,
 ) -> Result<serde_json::Value, String> {
-    let allowed = ["hosts", "groups", "vaults", "snippets", "workspaces", "tab_groups", "keychain"];
+    let allowed = ["hosts", "groups", "vaults", "snippets", "workspaces", "tab_groups", "keychain", "settings", "session_logs"];
     if !allowed.contains(&table_name) {
         return Ok(serde_json::json!({}));
     }

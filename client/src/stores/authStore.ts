@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import api from '../lib/api'
 import { setUserId } from '../lib/device'
+import { stopPeriodicSync } from '../lib/sync'
 
 interface User {
   id: string
@@ -69,7 +70,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       saveUser(user)
       await setUserId(result.userId)
       await invoke('set_token', { token: result.token })
-      await invoke('sync_bootstrap')
+      await invoke('sync_full')
       set({
         user,
         isAuthenticated: true,
@@ -89,7 +90,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       saveUser(user)
       await setUserId(result.userId)
       await invoke('set_token', { token: result.token })
-      await invoke('sync_bootstrap')
+      await invoke('sync_full')
       set({
         user,
         isAuthenticated: true,
@@ -103,6 +104,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     api.clearTokens()
     saveUser(null)
+    stopPeriodicSync()
+    invoke('clear_auth').catch(() => {})
+    invoke('clear_local_db').catch(() => {})
     set({ user: null, isAuthenticated: false })
   },
 

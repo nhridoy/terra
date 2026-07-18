@@ -1,6 +1,16 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../lib/device'
 import { useWorkspaceStore } from './workspaceStore'
+import { triggerSync } from '../lib/sync'
+
+function getUserId(): string {
+  try {
+    const raw = localStorage.getItem('user')
+    if (raw) return JSON.parse(raw).id || ''
+  } catch {}
+  return ''
+}
 
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
@@ -430,9 +440,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const tab = tabs.find((t) => t.id === tabId)
     if (!tab || !tab.activePresetId) return
     try {
-      await api.updateTabGroup(tab.activePresetId, {
-        layout: JSON.stringify(stripVolatile(tab.root)),
+      const deviceId = await getDeviceId()
+      await invoke('update_tab_group', {
+        id: tab.activePresetId,
+        tg: { userId: getUserId(), name: '', layout: JSON.stringify(stripVolatile(tab.root)) },
+        deviceId,
       })
+      await triggerSync()
       set({
         tabs: tabs.map((t) =>
           t.id === tabId
@@ -810,10 +824,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const payload = serializeWorkspaceLayout(tabs)
     if (payload.tabs.length === 0) return
     try {
-      await api.updateWorkspace(activeWorkspaceId, {
-        layout: JSON.stringify({ tabs: payload.tabs }),
-        hostIds: payload.hostIds,
+      const deviceId = await getDeviceId()
+      await invoke('update_workspace', {
+        id: activeWorkspaceId,
+        workspace: { userId: getUserId(), name: '', layout: JSON.stringify({ tabs: payload.tabs }), hostIds: payload.hostIds },
+        deviceId,
       })
+      await triggerSync()
       set({ isDirty: false, savedSnapshot: computeSnapshot(tabs) })
     } catch (e) {
       console.error('Failed to save workspace:', e)
@@ -825,14 +842,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const payload = serializeWorkspaceLayout(tabs)
     if (payload.tabs.length === 0) return
     try {
-      const result = await api.createWorkspace({
-        name,
-        layout: JSON.stringify({ tabs: payload.tabs }),
-        hostIds: payload.hostIds,
-        vaultId,
+      const deviceId = await getDeviceId()
+      const result = await invoke<any>('create_workspace', {
+        workspace: { userId: getUserId(), name, layout: JSON.stringify({ tabs: payload.tabs }), hostIds: payload.hostIds, vaultId },
+        deviceId,
       })
+      await triggerSync()
       set({
-        activeWorkspaceId: result.workspace.id,
+        activeWorkspaceId: result.id,
         activeWorkspaceName: name,
         isDirty: false,
         savedSnapshot: computeSnapshot(tabs),

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDraggable, useDroppable, useDragDropMonitor } from '@dnd-kit/react'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { CollisionPriority } from '@dnd-kit/abstract'
-import api from '../../lib/api'
+import { invoke } from '@tauri-apps/api/core'
 import type { FileItem, FileSortDirection, FileSortField, FileViewMode } from '../../lib/sftpTypes'
 import { useSftpStore, findAllLeaves } from '../../stores/sftpStore'
 import ContextMenu, { type ContextMenuItem } from '../ui/ContextMenu'
@@ -76,8 +76,8 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     setIsLoading(true)
     setError(null)
     try {
-      const result = await api.listFiles(hostId, path)
-      setFiles(result.files)
+      const result = await invoke<FileItem[]>('sftp_list', { hostId, path })
+      setFiles(result)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load directory')
     } finally {
@@ -144,10 +144,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
         transferred: 0,
       })
       try {
-        await api.uploadFileWithProgress(hostId, currentPath, file, (loaded) => {
-          const pct = file.size > 0 ? Math.round((loaded / file.size) * 100) : 0
-          updateTransfer(transferId, { progress: pct, transferred: loaded })
-        })
+        throw new Error('Upload not available in sync-only mode')
         updateTransfer(transferId, { status: 'complete', progress: 100 })
         completed++
       } catch (err: unknown) {
@@ -175,7 +172,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
       transferred: 0,
     })
     try {
-      await api.downloadFileBlob(hostId, file.path, file.name)
+      throw new Error('Download not available in sync-only mode')
       updateTransfer(transferId, { status: 'complete', progress: 100, transferred: file.size })
       toast(`Downloaded ${file.name}`, 'success')
     } catch (err: unknown) {
@@ -208,7 +205,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     let failed = 0
     for (const file of toDelete) {
       try {
-        await api.deleteFile(hostId, file.path)
+        await invoke('sftp_delete', { hostId, path: file.path })
       } catch {
         failed++
       }
@@ -250,7 +247,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     setRenamingPath(null)
 
     try {
-      await api.moveFile(hostId, file.path, newPath)
+      await invoke('sftp_rename', { hostId, oldPath: file.path, newPath })
       toast(`Renamed to ${newName}`, 'success')
     } catch (err: unknown) {
       // Revert optimistic update
@@ -278,7 +275,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     }])
 
     try {
-      await api.createDirectory(hostId, currentPath, name)
+      await invoke('sftp_mkdir', { hostId, path: newPath })
       toast(`Created folder ${name}`, 'success')
     } catch (err: unknown) {
       // Revert optimistic update
@@ -306,7 +303,7 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
     }])
 
     try {
-      await api.writeFile(hostId, filePath, '')
+      await invoke('sftp_write', { hostId, path: filePath, data: '' })
       toast(`Created file ${name}`, 'success')
     } catch (err: unknown) {
       // Revert optimistic update
@@ -324,8 +321,8 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
 
     // Check for name conflicts by listing the destination directory
     try {
-      const destResult = await api.listFiles(destHostId, destDirPath)
-      const destNames = new Set(destResult.files.map((f: FileItem) => f.name))
+      const destResult = await invoke<FileItem[]>('sftp_list', { hostId: destHostId, path: destDirPath })
+      const destNames = new Set(destResult.map((f: FileItem) => f.name))
       const conflicts = dragFiles.filter((f) => destNames.has(f.name))
 
       if (conflicts.length > 0) {
@@ -387,15 +384,11 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
 
       try {
         if (isMove) {
-          await api.moveFile(sourceHostId, file.path, dstPath)
+          await invoke('sftp_rename', { hostId: sourceHostId, oldPath: file.path, newPath: dstPath })
         } else if (sourceHostId !== destHostId) {
-          // Cross-host: stream from source to destination
-          await api.crossHostCopy(
-            sourceHostId, file.path,
-            destHostId, dstPath,
-          )
+          throw new Error('Cross-host copy not available in sync-only mode')
         } else {
-          await api.copyFile(sourceHostId, file.path, dstPath)
+          await invoke('sftp_copy', { hostId: sourceHostId, srcPath: file.path, dstPath })
         }
         successCount++
       } catch (e) {
@@ -511,21 +504,15 @@ export default function FileBrowser({ paneId = 'standalone', hostId, hostAddress
         const isCrossHost = clipboard.hostId !== hostId
         if (clipboardMode === 'copy') {
           if (isCrossHost) {
-            await api.crossHostCopy(
-              clipboard.hostId, srcPath,
-              hostId, dstPath,
-            )
+            throw new Error('Cross-host copy not available in sync-only mode')
           } else {
-            await api.copyFile(clipboard.hostId, srcPath, dstPath)
+            await invoke('sftp_copy', { hostId: clipboard.hostId, srcPath, dstPath })
           }
         } else {
           if (isCrossHost) {
-            await api.crossHostMove(
-              clipboard.hostId, srcPath,
-              hostId, dstPath,
-            )
+            throw new Error('Cross-host move not available in sync-only mode')
           } else {
-            await api.moveFile(clipboard.hostId, srcPath, dstPath)
+            await invoke('sftp_rename', { hostId: clipboard.hostId, oldPath: srcPath, newPath: dstPath })
           }
         }
         successCount++

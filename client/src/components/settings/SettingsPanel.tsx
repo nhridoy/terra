@@ -1,3 +1,4 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useThemeStore, themes, type Theme } from '../../stores/themeStore'
@@ -128,8 +129,8 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   }
 
-  const handleClearAllSessions = () => {
-    if (window.confirm('Are you sure you want to close all active terminal sessions?')) {
+  const handleClearAllSessions = async () => {
+    if (await tauriConfirm('Are you sure you want to close all active terminal sessions?', { title: 'Close Sessions', kind: 'warning' })) {
       closeAllTabs()
     }
   }
@@ -494,8 +495,8 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
               <h3 className="text-lg font-semibold text-white mb-4">Danger Zone</h3>
               <div className="space-y-4">
                 <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to delete all data? This cannot be undone.')) {
+                  onClick={async () => {
+                    if (await tauriConfirm('Are you sure you want to delete all data? This cannot be undone.', { title: 'Delete All Data', kind: 'warning' })) {
                       // TODO: Implement data deletion
                     }
                   }}

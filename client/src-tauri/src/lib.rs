@@ -48,6 +48,33 @@ fn set_token(token: String, state: tauri::State<'_, AppState>) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+fn clear_auth(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    *state.user_id.lock().map_err(|e| e.to_string())? = None;
+    *state.encryption_key.lock().map_err(|e| e.to_string())? = None;
+    *state.token.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_local_db() -> Result<(), String> {
+    let conn = db::conn()?;
+    let conn = conn.as_ref().ok_or("DB not initialized")?;
+    conn.execute_batch(
+        "DELETE FROM hosts;
+         DELETE FROM groups;
+         DELETE FROM vaults;
+         DELETE FROM keychain;
+         DELETE FROM snippets;
+         DELETE FROM workspaces;
+         DELETE FROM tab_groups;
+         DELETE FROM settings;
+         DELETE FROM session_logs;
+         DELETE FROM command_logs;
+         DELETE FROM sync_tracking;"
+    ).map_err(|e| e.to_string())
+}
+
 fn get_or_create_device_id() -> String {
     let dirs = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let path = dirs.join("termvault").join("device_id");
@@ -157,9 +184,9 @@ pub fn run() {
             crud::log_command,
             crud::list_command_logs,
             sync::sync_push,
-            sync::sync_pull,
             sync::sync_full,
-            sync::sync_bootstrap,
+            clear_auth,
+            clear_local_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running TermVault");

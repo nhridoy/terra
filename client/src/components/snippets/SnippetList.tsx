@@ -1,7 +1,10 @@
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useState, useEffect } from 'react'
-import api from '../../lib/api'
+import { invoke } from '@tauri-apps/api/core'
+import { getDeviceId } from '../../lib/device'
 import { useVaultStore } from '../../stores/vaultStore'
 import Modal from '../ui/Modal'
+import { triggerSync } from '../../lib/sync'
 
 interface Snippet {
   id: string
@@ -21,8 +24,8 @@ export default function SnippetList({ onMutation }: { onMutation?: () => void })
 
   const fetchSnippets = async () => {
     try {
-      const result = await api.listSnippets(currentVaultId || undefined)
-      setSnippets(result.snippets)
+      const result = await invoke<any[]>('list_snippets', { userId: '', vaultId: currentVaultId || null })
+      setSnippets(result || [])
     } catch (error) {
       console.error('Failed to fetch snippets:', error)
     }
@@ -33,9 +36,11 @@ export default function SnippetList({ onMutation }: { onMutation?: () => void })
   }, [currentVaultId])
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this snippet?')) {
+    if (await tauriConfirm('Are you sure you want to delete this snippet?', { title: 'Delete Snippet', kind: 'warning' })) {
       try {
-        await api.deleteSnippet(id)
+        const deviceId = await getDeviceId()
+        await invoke('delete_snippet', { id, deviceId })
+        await triggerSync()
         setSnippets(snippets.filter((s) => s.id !== id))
         if (selectedSnippet?.id === id) {
           setSelectedSnippet(null)
@@ -185,8 +190,13 @@ export default function SnippetList({ onMutation }: { onMutation?: () => void })
         <CreateSnippetModal
           onClose={() => setShowCreateModal(false)}
           onCreate={async (snippet) => {
-            const result = await api.createSnippet({ ...snippet, vaultId: currentVaultId || undefined })
-            setSnippets((prev) => [...prev, result.snippet])
+            const deviceId = await getDeviceId()
+            const result = await invoke<any>('create_snippet', {
+              snippet: { userId: '', vaultId: currentVaultId || null, name: snippet.name, command: snippet.command, description: snippet.description, tags: JSON.stringify(snippet.tags || []) },
+              deviceId,
+            })
+            await triggerSync()
+            setSnippets((prev) => [...prev, result])
             setShowCreateModal(false)
             onMutation?.()
           }}

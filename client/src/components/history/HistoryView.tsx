@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import api from '../../lib/api'
+import { invoke } from '@tauri-apps/api/core'
 import { useVaultStore } from '../../stores/vaultStore'
 
 interface SessionLog {
@@ -27,8 +27,8 @@ export default function HistoryView() {
   const fetchHistory = async () => {
     setIsLoading(true)
     try {
-      const res = await api.listSessionLogs({ vaultId: currentVaultId || undefined })
-      setLogs(res.logs || [])
+      const result = await invoke<any[]>('list_session_logs', { userId: '' })
+      setLogs(result || [])
     } catch (e) {
       console.error('Failed to fetch history:', e)
     } finally {

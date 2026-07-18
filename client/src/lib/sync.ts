@@ -2,16 +2,15 @@ import { invoke } from '@tauri-apps/api/core'
 
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
-export function triggerSync() {
-  invoke('sync_push').catch(() => {})
+export async function triggerSync() {
+  await invoke('sync_full').catch(() => {})
 }
 
-export function startPeriodicSync(intervalMs = 10000, onPull?: () => void) {
+export function startPeriodicSync(intervalMs = 10000, onSync?: () => void) {
   stopPeriodicSync()
-  syncTimer = setInterval(() => {
-    invoke('sync_pull')
-      .then(() => onPull?.())
-      .catch(() => {})
+  syncTimer = setInterval(async () => {
+    await invoke('sync_full')
+    onSync?.()
   }, intervalMs)
 }
 

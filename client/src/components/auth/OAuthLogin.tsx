@@ -1,26 +1,18 @@
 import { useState } from 'react'
-import api from '../../lib/api'
 
 interface OAuthLoginProps {
   onSuccess: (user: { id: string; email: string; username?: string }) => void
 }
 
-export default function OAuthLogin({ onSuccess }: OAuthLoginProps) {
+export default function OAuthLogin({ onSuccess: _onSuccess }: OAuthLoginProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleOAuthLogin = async (provider: 'github' | 'google') => {
     setIsLoading(true)
     setError(null)
-
-    try {
-      const result = await api.oauthLogin(provider, 'mock_code')
-      onSuccess(result.user)
-    } catch (err) {
-      setError((err as Error).message || 'OAuth login failed')
-    } finally {
-      setIsLoading(false)
-    }
+    setError(`OAuth with ${provider} is not yet available`)
+    setIsLoading(false)
   }
 
   return (
