@@ -132,6 +132,10 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/api/sync/push", SERVER_URL))
+        .header("Authorization", format!("Bearer {}", {
+            let guard = state.token.lock().map_err(|e| e.to_string())?;
+            guard.clone().ok_or("Not logged in")?
+        }))
         .json(&SyncPushRequest {
             records,
             device_id: device_id.clone(),
@@ -186,6 +190,10 @@ pub async fn sync_pull(state: tauri::State<'_, AppState>) -> Result<i32, String>
     let client = reqwest::Client::new();
     let resp = client
         .get(format!("{}/api/sync/pull", SERVER_URL))
+        .header("Authorization", format!("Bearer {}", {
+            let guard = state.token.lock().map_err(|e| e.to_string())?;
+            guard.clone().ok_or("Not logged in")?
+        }))
         .query(&[
             ("since", last_sync.as_str()),
             ("deviceId", device_id.as_str()),
@@ -224,6 +232,47 @@ pub async fn sync_full(state: tauri::State<'_, AppState>) -> Result<String, Stri
     sync_push(state.clone()).await?;
     sync_pull(state).await?;
     Ok("synced".to_string())
+}
+
+#[tauri::command]
+pub async fn sync_bootstrap(state: tauri::State<'_, AppState>) -> Result<i32, String> {
+    let token = {
+        let guard = state.token.lock().map_err(|e| e.to_string())?;
+        guard.clone().ok_or("Not logged in")?
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{}/api/sync/full", SERVER_URL))
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status().is_success() {
+        let result: SyncPullResponse = resp.json().await.map_err(|e| e.to_string())?;
+        let count = result.records.len() as i32;
+
+        for record in &result.records {
+            apply_remote_record(record)?;
+        }
+
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        let device_id = state.device_id.clone();
+        let conn_guard = db::conn()?;
+        let conn = conn_guard.as_ref().ok_or("DB not initialized")?;
+        conn.execute(
+            "INSERT OR REPLACE INTO sync_state (id, device_id, last_sync_at, updated_at) VALUES (?1, ?1, ?2, ?2)",
+            params![device_id, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(count)
+    } else {
+        Err(format!("Sync bootstrap failed: {}", resp.status()))
+    }
 }
 
 fn fetch_record_data(

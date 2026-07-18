@@ -1,4 +1,14 @@
 {
+  "name": "termvault",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
   "dependencies": {
     "@dnd-kit/abstract": "^0.5.0",
     "@dnd-kit/collision": "^0.5.0",

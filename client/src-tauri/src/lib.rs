@@ -14,6 +14,7 @@ pub struct AppState {
     pub device_id: String,
     pub user_id: Mutex<Option<String>>,
     pub encryption_key: Mutex<Option<String>>,
+    pub token: Mutex<Option<String>>,
 }
 
 #[tauri::command]
@@ -37,6 +38,13 @@ fn set_user_id(user_id: String, state: tauri::State<'_, AppState>) -> Result<(),
 fn set_encryption_key(key: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut guard = state.encryption_key.lock().map_err(|e| e.to_string())?;
     *guard = Some(key);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_token(token: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.token.lock().map_err(|e| e.to_string())?;
+    *guard = Some(token);
     Ok(())
 }
 
@@ -78,12 +86,14 @@ pub fn run() {
             device_id: get_or_create_device_id(),
             user_id: Mutex::new(None),
             encryption_key: Mutex::new(None),
+            token: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_device_id,
             set_user_id,
             set_encryption_key,
+            set_token,
             vault::generate_salt,
             vault::derive_key,
             vault::encrypt,
@@ -149,6 +159,7 @@ pub fn run() {
             sync::sync_push,
             sync::sync_pull,
             sync::sync_full,
+            sync::sync_bootstrap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running TermVault");

@@ -68,6 +68,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = { id: result.userId, email, username: email.split('@')[0] }
       saveUser(user)
       await setUserId(result.userId)
+      await invoke('set_token', { token: result.token })
+      await invoke('sync_bootstrap')
       set({
         user,
         isAuthenticated: true,
@@ -86,7 +88,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = { id: result.userId, email, username }
       saveUser(user)
       await setUserId(result.userId)
-      await invoke('create_default_vaults', { userId: result.userId })
+      await invoke('set_token', { token: result.token })
+      await invoke('sync_bootstrap')
       set({
         user,
         isAuthenticated: true,
@@ -134,6 +137,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { token } = api.getTokens()
     if (user && token) {
       setUserId(user.id).catch(() => {})
+      invoke('set_token', { token }).catch(() => {})
       set({ user, isAuthenticated: true })
     } else {
       api.clearTokens()
