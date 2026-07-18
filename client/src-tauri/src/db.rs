@@ -182,5 +182,16 @@ fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
         INSERT OR IGNORE INTO schema_version (version) VALUES (1);
         ",
     )?;
+
+    let alter_statements = [
+        "ALTER TABLE vaults ADD COLUMN is_default INTEGER DEFAULT 0",
+        "ALTER TABLE vaults ADD COLUMN encrypted_data TEXT",
+        "ALTER TABLE keychain ADD COLUMN updated_at TEXT DEFAULT ''",
+        "ALTER TABLE groups ADD COLUMN updated_at TEXT DEFAULT ''",
+    ];
+    for sql in &alter_statements {
+        let _ = conn.execute(sql, []);
+    }
+
     Ok(())
 }
