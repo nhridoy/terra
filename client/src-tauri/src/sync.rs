@@ -287,8 +287,28 @@ fn fetch_record_data(
     if !allowed.contains(&table_name) {
         return Ok(serde_json::json!({}));
     }
+
+    // Get column names from the table so json_object('col1', col1, 'col2', col2, ...)
+    // uses real column names as JSON keys.
+    let pragma = format!("PRAGMA table_info({})", table_name);
+    let mut stmt = conn.prepare(&pragma).map_err(|e| e.to_string())?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if columns.is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+
+    let pairs: Vec<String> = columns
+        .iter()
+        .flat_map(|c| vec![format!("'{}'", c), c.clone()])
+        .collect();
     let sql = format!(
-        "SELECT json_object(*) FROM {} WHERE id = ?1 LIMIT 1",
+        "SELECT json_object({}) FROM {} WHERE id = ?1 LIMIT 1",
+        pairs.join(", "),
         table_name
     );
     let result: Result<String, _> =
