@@ -216,8 +216,13 @@ export const useHostStore = create<HostState>((set, get) => ({
     try {
       const deviceId = await getDeviceId()
       await invoke('delete_group', { id, deviceId })
+      const [groups, hosts] = await Promise.all([
+        invoke<Group[]>('list_groups', { userId: getUserId(), vaultId: null }),
+        invoke<any[]>('list_hosts', { userId: getUserId(), vaultId: null }),
+      ])
       set({
-        groups: get().groups.filter((g) => g.id !== id),
+        groups,
+        hosts: hosts.map(normalizeHost),
         isLoading: false,
       })
       triggerSync()

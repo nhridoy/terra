@@ -497,6 +497,36 @@ pub fn update_group(id: String, group: GroupData, device_id: String) -> Result<G
 #[tauri::command]
 pub fn delete_group(id: String, device_id: String) -> Result<(), String> {
     with_conn(|conn| {
+        let now = now();
+        // Unlink child groups
+        let mut stmt = conn.prepare("SELECT id FROM groups WHERE parent_id = ?1").map_err(|e| e.to_string())?;
+        let child_ids: Vec<String> = stmt.query_map(params![id], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        for child_id in &child_ids {
+            conn.execute(
+                "UPDATE groups SET parent_id = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, child_id],
+            ).map_err(|e| e.to_string())?;
+            update_sync(conn, "groups", child_id, &device_id, false);
+        }
+
+        // Unlink hosts in this group
+        let mut stmt = conn.prepare("SELECT id FROM hosts WHERE group_id = ?1").map_err(|e| e.to_string())?;
+        let host_ids: Vec<String> = stmt.query_map(params![id], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        for host_id in &host_ids {
+            conn.execute(
+                "UPDATE hosts SET group_id = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, host_id],
+            ).map_err(|e| e.to_string())?;
+            update_sync(conn, "hosts", host_id, &device_id, false);
+        }
+
+        // Delete the group itself
         conn.execute("DELETE FROM groups WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
         update_sync(conn, "groups", &id, &device_id, true);
         Ok(())
