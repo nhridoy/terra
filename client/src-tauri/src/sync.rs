@@ -133,6 +133,13 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
         return Ok(0);
     }
 
+    let max_updated = records
+        .iter()
+        .map(|r| r.updated_at.as_str())
+        .max()
+        .unwrap()
+        .to_string();
+
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/api/sync/push", SERVER_URL))
@@ -155,14 +162,11 @@ pub async fn sync_push(state: tauri::State<'_, AppState>) -> Result<i32, String>
             apply_remote_record(conflict)?;
         }
 
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
         let conn_guard = db::conn()?;
         let conn = conn_guard.as_ref().ok_or("DB not initialized")?;
         conn.execute(
             "INSERT OR REPLACE INTO sync_state (id, device_id, last_sync_at, updated_at) VALUES (?1, ?1, ?2, ?2)",
-            params![device_id, now],
+            params![device_id, max_updated],
         )
         .map_err(|e| e.to_string())?;
 
