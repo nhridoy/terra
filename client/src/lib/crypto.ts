@@ -1,8 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
+import api from './api'
 
 let masterKey: string | null = null
 let masterSalt: string | null = null
 let currentUserId: string | null = null
+
+const VERIFICATION_TEXT = 'termvault-ok'
 
 function saltKey(userId: string): string {
   return `masterSalt:${userId}`
@@ -20,6 +23,12 @@ export async function setupMasterPassword(password: string): Promise<string> {
   if (currentUserId) {
     localStorage.setItem(saltKey(currentUserId), salt)
   }
+  // Encrypt verification blob and send to server
+  const encrypted = await invoke<{ ciphertext: string; nonce: string }>(
+    'encrypt',
+    { plaintext: VERIFICATION_TEXT, keyHex: key },
+  )
+  await api.setMasterPassword(encrypted.ciphertext, encrypted.nonce)
   return key
 }
 
@@ -28,11 +37,30 @@ export async function unlockMasterPassword(
   saltHex: string,
 ): Promise<string> {
   const key = await invoke<string>('derive_key', { password, saltHex })
+
+  // Fetch verification blob from server and decrypt to verify password
+  try {
+    const stored = await api.getMasterPassword()
+    const decrypted = await invoke<string>('decrypt', {
+      ciphertextHex: stored.ciphertext,
+      nonceHex: stored.nonce,
+      keyHex: key,
+    })
+    if (decrypted !== VERIFICATION_TEXT) {
+      throw new Error('wrong password')
+    }
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.includes('Invalid master password')
+    ) {
+      throw err
+    }
+    throw new Error('Invalid master password')
+  }
+
   masterKey = key
   masterSalt = saltHex
-  if (currentUserId) {
-    localStorage.setItem(saltKey(currentUserId), saltHex)
-  }
   return key
 }
 
@@ -147,5 +175,17 @@ export async function recoverFromKit(
   kitJson: string,
   password: string,
 ): Promise<string> {
-  return invoke<string>('recover_from_kit', { kitJson, password })
+  const recoveredKey = await invoke<string>('recover_from_kit', {
+    kitJson,
+    password,
+  })
+
+  // Save new verification blob on server
+  const encrypted = await invoke<{ ciphertext: string; nonce: string }>(
+    'encrypt',
+    { plaintext: VERIFICATION_TEXT, keyHex: recoveredKey },
+  )
+  await api.setMasterPassword(encrypted.ciphertext, encrypted.nonce)
+
+  return recoveredKey
 }

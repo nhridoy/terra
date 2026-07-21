@@ -134,10 +134,17 @@ class ApiClient {
     await clearTokens()
   }
 
-  async setMasterPassword() {
+  async setMasterPassword(ciphertext: string, nonce: string) {
     return this.request<{ message: string }>('/auth/master-password', {
       method: 'POST',
+      body: JSON.stringify({ ciphertext, nonce }),
     })
+  }
+
+  async getMasterPassword() {
+    return this.request<{ ciphertext: string; nonce: string }>(
+      '/auth/master-password',
+    )
   }
 
   async changePassword(currentPassword: string, newPassword: string) {
