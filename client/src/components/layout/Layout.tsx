@@ -1,33 +1,59 @@
-import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
-import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { DragDropProvider, DragOverlay, DragOverEvent, DragEndEvent } from '@dnd-kit/react'
-import { isSortable } from '@dnd-kit/react/sortable'
+import { PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { move } from '@dnd-kit/helpers'
-import { PointerSensor, PointerActivationConstraints } from '@dnd-kit/dom'
-import { useHostStore, type Group } from '../../stores/hostStore'
-import { useTerminalStore, findLeaf, serializeWorkspaceLayout } from '../../stores/terminalStore'
+import {
+  DragDropProvider,
+  type DragEndEvent,
+  type DragOverEvent,
+  DragOverlay,
+  type DragStartEvent,
+} from '@dnd-kit/react'
+import { isSortable } from '@dnd-kit/react/sortable'
+import {
+  ClockCounterClockwise,
+  DesktopTower,
+  FileText,
+  FloppyDisk,
+  Folder,
+  FolderOpen,
+  GearSix,
+  Key,
+  List,
+  PencilSimple,
+  Plus,
+  SignOut,
+  Terminal,
+  Trash,
+  User,
+} from '@phosphor-icons/react'
+import { invoke } from '@tauri-apps/api/core'
+import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
+import { useCallback, useEffect, useState } from 'react'
+import { getDeviceId } from '../../lib/device'
 import { useAuthStore } from '../../stores/authStore'
+import { type DropSide, useDragStore } from '../../stores/dragStore'
+import { type Group, type Host, useHostStore } from '../../stores/hostStore'
+import { useTabGroupStore } from '../../stores/tabGroupStore'
+import {
+  findLeaf,
+  serializeWorkspaceLayout,
+  useTerminalStore,
+} from '../../stores/terminalStore'
 import { useVaultStore } from '../../stores/vaultStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
-import { useTabGroupStore } from '../../stores/tabGroupStore'
-import { useDragStore, type DropSide } from '../../stores/dragStore'
-import { getDeviceId } from '../../lib/device'
-import { startPeriodicSync, stopPeriodicSync } from '../../lib/sync'
-import Modal from '../ui/Modal'
-import HostForm from '../hosts/HostForm'
 import GroupForm from '../groups/GroupForm'
-import SnippetForm from '../snippets/SnippetForm'
-import KeyList from '../keychain/KeyList'
 import HistoryView from '../history/HistoryView'
-import SettingsPanel from '../settings/SettingsPanel'
-import TerminalView from '../terminal/TerminalView'
-import VaultSelector from './VaultSelector'
-import SortableTab, { TabPreview } from './SortableTab'
-import WorkspaceList from '../workspace/WorkspaceList'
-import WorkspaceForm from '../workspace/WorkspaceForm'
+import HostForm, { type HostData } from '../hosts/HostForm'
 import HostsPage from '../hosts/HostsPage'
+import KeyList from '../keychain/KeyList'
+import SettingsPanel from '../settings/SettingsPanel'
 import SftpLayout from '../sftp/SftpLayout'
+import SnippetForm from '../snippets/SnippetForm'
+import TerminalView from '../terminal/TerminalView'
+import Modal from '../ui/Modal'
+import WorkspaceForm from '../workspace/WorkspaceForm'
+import WorkspaceList from '../workspace/WorkspaceList'
+import SortableTab, { TabPreview } from './SortableTab'
+import VaultSelector from './VaultSelector'
 
 type SidebarItem =
   | 'hosts'
@@ -37,15 +63,39 @@ type SidebarItem =
   | 'history'
   | 'settings'
 
-function isDescendant(groups: Group[], groupId: string, potentialAncestorId: string): boolean {
+interface Snippet {
+  id: string
+  name: string
+  command: string
+  description?: string
+  tags: string[]
+  vaultId?: string
+  createdAt: string
+}
+
+interface KeyItem {
+  id: string
+  name: string
+  description?: string
+  keyType: string
+  publicKey: string
+  encryptedPrivateKey: string
+  fingerprint?: string
+  createdAt: string
+}
+
+function isDescendant(
+  groups: Group[],
+  groupId: string,
+  potentialAncestorId: string,
+): boolean {
   let current = groups.find((g) => g.id === groupId)
   while (current?.parentId) {
     if (current.parentId === potentialAncestorId) return true
-    current = groups.find((g) => g.id === current!.parentId)
+    current = groups.find((g) => g.id === current?.parentId)
   }
   return false
 }
-
 
 export default function Layout() {
   const { isAuthenticated, user } = useAuthStore()
@@ -59,18 +109,34 @@ export default function Layout() {
     deleteHost,
     deleteGroup,
   } = useHostStore()
-  const { tabs, addTab, addEmptyTab, removeTab, setActiveTab, closeAllTabs, setTabOrder, mergeTabIntoPane, movePane, activeWorkspaceId, isDirty, activeWorkspaceName } = useTerminalStore()
+  const {
+    tabs,
+    addTab,
+    addEmptyTab,
+    removeTab,
+    setActiveTab,
+    closeAllTabs,
+    setTabOrder,
+    mergeTabIntoPane,
+    movePane,
+    activeWorkspaceId,
+    isDirty,
+    activeWorkspaceName,
+  } = useTerminalStore()
   const { logout: logoutAuth } = useAuthStore()
   const { currentVaultId, fetchVaults } = useVaultStore()
   const setDropPane = useDragStore((s) => s.setDropPane)
   const setSourcePane = useDragStore((s) => s.setSourcePane)
 
-  const [activeSidebarItem, setActiveSidebarItem] = useState<SidebarItem>('hosts')
+  const [activeSidebarItem, setActiveSidebarItem] =
+    useState<SidebarItem>('hosts')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
-  const [activeView, setActiveView] = useState<'vault' | 'sftp' | string>('vault')
+  const [activeView, setActiveView] = useState<'vault' | 'sftp' | string>(
+    'vault',
+  )
 
-  const handleDragStart = (event: any) => {
+  const handleDragStart = (event: DragStartEvent) => {
     const { source } = event.operation
     if (source?.data?.type === 'pane-source') {
       setSourcePane(String(source.data.paneId), String(source.data.tabId))
@@ -93,7 +159,10 @@ export default function Layout() {
     }
 
     // Group → group drag
-    if (sourceType === 'group-source' && target?.data?.type === 'group-target') {
+    if (
+      sourceType === 'group-source' &&
+      target?.data?.type === 'group-target'
+    ) {
       return
     }
 
@@ -136,7 +205,10 @@ export default function Layout() {
     }
 
     // Host → group drop (including breadcrumb segments).
-    if (source.data?.type === 'host-source' && target?.data?.type === 'group-target') {
+    if (
+      source.data?.type === 'host-source' &&
+      target?.data?.type === 'group-target'
+    ) {
       const hostId = String(source.data.hostId)
       const groupId = String(target.data.groupId)
       updateHost(hostId, { groupId })
@@ -146,7 +218,10 @@ export default function Layout() {
     }
 
     // Host → root drop (ungroup host).
-    if (source.data?.type === 'host-source' && target?.data?.type === 'root-target') {
+    if (
+      source.data?.type === 'host-source' &&
+      target?.data?.type === 'root-target'
+    ) {
       const hostId = String(source.data.hostId)
       updateHost(hostId, { groupId: '' })
       setDropPane(null)
@@ -155,10 +230,16 @@ export default function Layout() {
     }
 
     // Group → group drop (reparent), including breadcrumb segments.
-    if (source.data?.type === 'group-source' && target?.data?.type === 'group-target') {
+    if (
+      source.data?.type === 'group-source' &&
+      target?.data?.type === 'group-target'
+    ) {
       const sourceGroupId = String(source.data.groupId)
       const targetGroupId = String(target.data.groupId)
-      if (sourceGroupId !== targetGroupId && !isDescendant(groups, targetGroupId, sourceGroupId)) {
+      if (
+        sourceGroupId !== targetGroupId &&
+        !isDescendant(groups, targetGroupId, sourceGroupId)
+      ) {
         updateGroup(sourceGroupId, { parentId: targetGroupId })
       }
       setDropPane(null)
@@ -167,10 +248,13 @@ export default function Layout() {
     }
 
     // Group → root drop zone (move to root).
-    if (source.data?.type === 'group-source' && target?.data?.type === 'root-target') {
+    if (
+      source.data?.type === 'group-source' &&
+      target?.data?.type === 'root-target'
+    ) {
       const sourceGroupId = String(source.data.groupId)
       const group = groups.find((g) => g.id === sourceGroupId)
-      if (group && group.parentId) {
+      if (group?.parentId) {
         updateGroup(sourceGroupId, { parentId: '' })
       }
       setDropPane(null)
@@ -225,19 +309,21 @@ export default function Layout() {
   }
 
   const [showHostForm, setShowHostForm] = useState(false)
-  const [editingHost, setEditingHost] = useState<any>(null)
+  const [editingHost, setEditingHost] = useState<Host | null>(null)
   const [defaultGroupId, setDefaultGroupId] = useState<string | undefined>()
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [showGroupForm, setShowGroupForm] = useState(false)
-  const [editingGroup, setEditingGroup] = useState<any>(null)
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null)
   const [newGroupParentId, setNewGroupParentId] = useState<string | null>(null)
   const [showSnippetForm, setShowSnippetForm] = useState(false)
-  const [editingSnippet, setEditingSnippet] = useState<any>(null)
+  const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null)
   const [showSettings, setShowSettings] = useState(false)
-  const [snippets, setSnippets] = useState<any[]>([])
+  const [snippets, setSnippets] = useState<Snippet[]>([])
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false)
   const [showPresetForm, setShowPresetForm] = useState(false)
-  const [presetTargetTabId, setPresetTargetTabId] = useState<string | null>(null)
+  const [presetTargetTabId, setPresetTargetTabId] = useState<string | null>(
+    null,
+  )
 
   // Handle mobile breakpoint
   useEffect(() => {
@@ -247,18 +333,24 @@ export default function Layout() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  const fetchSnippets = async (vaultId?: string) => {
+  const fetchSnippets = useCallback(async (vaultId?: string) => {
     try {
-      const result = await invoke<any[]>('list_snippets', { userId: useAuthStore.getState().user?.id || '', vaultId: vaultId || null })
+      const result = await invoke<Snippet[]>('list_snippets', {
+        userId: useAuthStore.getState().user?.id || '',
+        vaultId: vaultId || null,
+      })
       setSnippets(result || [])
     } catch (e) {
       console.error('Failed to fetch snippets:', e)
     }
-  }
+  }, [])
 
   const fetchKeys = async (vaultId?: string) => {
     try {
-      const result = await invoke<any[]>('list_keys', { userId: useAuthStore.getState().user?.id || '', vaultId: vaultId || null })
+      const result = await invoke<KeyItem[]>('list_keys', {
+        userId: useAuthStore.getState().user?.id || '',
+        vaultId: vaultId || null,
+      })
       return result || []
     } catch (e) {
       console.error('Failed to fetch keys:', e)
@@ -275,25 +367,16 @@ export default function Layout() {
       fetchSnippets(currentVaultId || undefined)
       useWorkspaceStore.getState().fetchWorkspaces(currentVaultId || undefined)
     }
-  }, [isAuthenticated, currentVaultId, fetchHosts, fetchGroups, fetchVaults])
+  }, [
+    isAuthenticated,
+    currentVaultId,
+    fetchHosts,
+    fetchGroups,
+    fetchVaults,
+    fetchSnippets,
+  ])
 
-  // Periodic sync: pull remote changes every 10 seconds
-  useEffect(() => {
-    if (!isAuthenticated) return
-
-    startPeriodicSync(10000, () => {
-      const { currentVaultId: vid } = useVaultStore.getState()
-      fetchHosts(vid || undefined)
-      fetchGroups(vid || undefined)
-      fetchSnippets(vid || undefined)
-      useWorkspaceStore.getState().fetchWorkspaces(vid || undefined)
-      useTabGroupStore.getState().fetchTabGroups(vid || undefined)
-    })
-
-    return () => stopPeriodicSync()
-  }, [isAuthenticated, fetchHosts, fetchGroups])
-
-  const handleEditHost = (host: any) => {
+  const handleEditHost = (host: Host) => {
     setEditingHost(host)
     setShowHostForm(true)
   }
@@ -308,13 +391,19 @@ export default function Layout() {
     setShowSnippetForm(true)
   }
 
-  const handleEditSnippet = (snippet: any) => {
+  const handleEditSnippet = (snippet: Snippet) => {
     setEditingSnippet(snippet)
     setShowSnippetForm(true)
   }
 
-  const handleConnect = (host: any) => {
-    addTab(host.id, host.name, host)
+  const handleConnect = (host: Host) => {
+    addTab(host.id, host.name, {
+      hostAddress: host.address,
+      hostPort: host.port,
+      hostUsername: host.username,
+      authType: host.authType,
+      keyId: host.keyId,
+    })
     if (isMobile) setSidebarOpen(false)
   }
 
@@ -333,7 +422,10 @@ export default function Layout() {
   const confirmDiscardUnsaved = async (): Promise<boolean> => {
     const { isDirty, activeWorkspaceId } = useTerminalStore.getState()
     if (isDirty && activeWorkspaceId) {
-      return await tauriConfirm('This workspace has unsaved changes. Discard them?', { title: 'Unsaved Changes', kind: 'warning' })
+      return await tauriConfirm(
+        'This workspace has unsaved changes. Discard them?',
+        { title: 'Unsaved Changes', kind: 'warning' },
+      )
     }
     return true
   }
@@ -341,7 +433,9 @@ export default function Layout() {
   const handleWorkspaceFormSubmit = (name: string) => {
     // Use saveAsNewWorkspace so terminalStore tracks the new active workspace
     // (sets activeWorkspaceId, clears dirty state, refreshes the list).
-    useTerminalStore.getState().saveAsNewWorkspace(name, currentVaultId || undefined)
+    useTerminalStore
+      .getState()
+      .saveAsNewWorkspace(name, currentVaultId || undefined)
     setShowWorkspaceForm(false)
   }
 
@@ -352,13 +446,19 @@ export default function Layout() {
 
   const handlePresetFormSubmit = async (name: string) => {
     if (presetTargetTabId) {
-      const tab = useTerminalStore.getState().tabs.find((t) => t.id === presetTargetTabId)
+      const tab = useTerminalStore
+        .getState()
+        .tabs.find((t) => t.id === presetTargetTabId)
       if (tab) {
-        const created = await useTabGroupStore.getState().createTabGroup(name, tab.root, currentVaultId || undefined)
+        const created = await useTabGroupStore
+          .getState()
+          .createTabGroup(name, tab.root, currentVaultId || undefined)
         if (created) {
           // Associate this tab with the new preset so the "save as new" button
           // disappears and the per-tab dirty/save-changes UI takes over.
-          useTerminalStore.getState().setPresetForTab(presetTargetTabId, created.id, created.name)
+          useTerminalStore
+            .getState()
+            .setPresetForTab(presetTargetTabId, created.id, created.name)
         }
       }
     }
@@ -371,69 +471,47 @@ export default function Layout() {
   }
 
   const handleLogout = async () => {
-    if (!await confirmDiscardUnsaved()) return
+    if (!(await confirmDiscardUnsaved())) return
     logoutAuth()
     closeAllTabs()
   }
 
-  const sidebarItems: { id: SidebarItem; label: string; icon: React.ReactNode }[] = [
+  const sidebarItems: {
+    id: SidebarItem
+    label: string
+    icon: React.ReactNode
+  }[] = [
     {
       id: 'hosts',
       label: 'Hosts',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-        </svg>
-      ),
+      icon: <DesktopTower className="w-5 h-5" />,
     },
 
     {
       id: 'workspaces',
       label: 'Workspaces',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a2 2 0 012-2h8l6 6v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 3v5a1 1 0 001 1h5" />
-        </svg>
-      ),
+      icon: <FolderOpen className="w-5 h-5" />,
     },
 
     {
       id: 'snippets',
       label: 'Snippets',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      ),
+      icon: <FileText className="w-5 h-5" />,
     },
     {
       id: 'keys',
       label: 'Keys',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-        </svg>
-      ),
+      icon: <Key className="w-5 h-5" />,
     },
     {
       id: 'history',
       label: 'History',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
+      icon: <ClockCounterClockwise className="w-5 h-5" />,
     },
     {
       id: 'settings',
       label: 'Settings',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
+      icon: <GearSix className="w-5 h-5" />,
     },
   ]
 
@@ -444,7 +522,7 @@ export default function Layout() {
           <WorkspaceList
             onSaveNew={handleSaveWorkspace}
             onLaunch={async (tabId) => {
-              if (!await confirmDiscardUnsaved()) return
+              if (!(await confirmDiscardUnsaved())) return
               setActiveTab(tabId)
               setActiveView(tabId)
             }}
@@ -456,12 +534,23 @@ export default function Layout() {
           <HostsPage
             selectedGroupId={selectedGroupId}
             onSelectGroup={setSelectedGroupId}
-            onNewGroup={(parentId) => { setEditingGroup(null); setNewGroupParentId(parentId ?? null); setShowGroupForm(true) }}
-            onNewHost={(groupId) => { setEditingHost(null); setDefaultGroupId(groupId); setShowHostForm(true) }}
+            onNewGroup={(parentId) => {
+              setEditingGroup(null)
+              setNewGroupParentId(parentId ?? null)
+              setShowGroupForm(true)
+            }}
+            onNewHost={(groupId) => {
+              setEditingHost(null)
+              setDefaultGroupId(groupId)
+              setShowHostForm(true)
+            }}
             onEditGroup={handleEditGroup}
             onEditHost={handleEditHost}
             onConnect={handleConnect}
-            onDeleteGroup={(id) => { deleteGroup(id); if (selectedGroupId === id) setSelectedGroupId(null) }}
+            onDeleteGroup={(id) => {
+              deleteGroup(id)
+              if (selectedGroupId === id) setSelectedGroupId(null)
+            }}
             onDeleteHost={deleteHost}
           />
         )
@@ -472,26 +561,26 @@ export default function Layout() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">Snippets</h2>
               <button
+                type="button"
                 onClick={handleNewSnippet}
                 className="flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors rounded bg-dark-700 hover:bg-dark-600 text-dark-300"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                <Plus className="w-3 h-3" />
                 New Snippet
               </button>
             </div>
 
             {snippets.length === 0 ? (
-              <div
+              <button
+                type="button"
                 onClick={handleNewSnippet}
-                className="p-6 text-center transition-colors border-2 border-dashed rounded-lg cursor-pointer border-dark-600 hover:border-dark-500 hover:bg-dark-800/50"
+                className="p-6 text-center transition-colors border-2 border-dashed rounded-lg cursor-pointer border-dark-600 hover:border-dark-500 hover:bg-dark-800/50 w-full"
               >
-                <svg className="w-8 h-8 mx-auto mb-2 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p className="text-sm text-dark-400">No snippets yet — click to create one</p>
-              </div>
+                <FileText className="w-8 h-8 mx-auto mb-2 text-dark-600" />
+                <p className="text-sm text-dark-400">
+                  No snippets yet — click to create one
+                </p>
+              </button>
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 {snippets.map((snippet) => (
@@ -500,30 +589,48 @@ export default function Layout() {
                     className="relative p-3 transition-colors rounded-lg bg-dark-800/50 hover:bg-dark-800 group"
                   >
                     <div className="flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <span className="text-sm font-medium text-white truncate">{snippet.name}</span>
+                      <FileText className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                      <span className="text-sm font-medium text-white truncate">
+                        {snippet.name}
+                      </span>
                     </div>
-                    <p className="text-dark-500 text-xs mt-1 ml-[22px] truncate font-mono">{snippet.command}</p>
+                    <p className="text-dark-500 text-xs mt-1 ml-[22px] truncate font-mono">
+                      {snippet.command}
+                    </p>
                     <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleEditSnippet(snippet) }}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEditSnippet(snippet)
+                        }}
                         className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700"
                         title="Edit snippet"
                       >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
+                        <PencilSimple className="w-3 h-3" />
                       </button>
                       <button
-                        onClick={async (e) => { e.stopPropagation(); if (await tauriConfirm('Delete this snippet?', { title: 'Delete Snippet', kind: 'warning' })) { const deviceId = await getDeviceId(); await invoke('delete_snippet', { id: snippet.id, deviceId }); fetchSnippets(currentVaultId || undefined) } }}
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          if (
+                            await tauriConfirm('Delete this snippet?', {
+                              title: 'Delete Snippet',
+                              kind: 'warning',
+                            })
+                          ) {
+                            const deviceId = await getDeviceId()
+                            await invoke('delete_snippet', {
+                              id: snippet.id,
+                              deviceId,
+                            })
+                            fetchSnippets(currentVaultId || undefined)
+                          }
+                        }}
                         className="p-1 rounded text-dark-400 hover:text-red-500 hover:bg-dark-700"
                         title="Delete snippet"
                       >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
+                        <Trash className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
@@ -534,7 +641,9 @@ export default function Layout() {
         )
 
       case 'keys':
-        return <KeyList onMutation={() => fetchKeys(currentVaultId || undefined)} />
+        return (
+          <KeyList onMutation={() => fetchKeys(currentVaultId || undefined)} />
+        )
 
       case 'history':
         return <HistoryView />
@@ -566,9 +675,7 @@ export default function Layout() {
 
     return (
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex-1 overflow-hidden">
-          {renderSidebarContent()}
-        </div>
+        <div className="flex-1 overflow-hidden">{renderSidebarContent()}</div>
       </div>
     )
   }
@@ -582,7 +689,12 @@ export default function Layout() {
         PointerSensor.configure({
           activationConstraints: (event) => {
             if (event.pointerType === 'touch') {
-              return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })]
+              return [
+                new PointerActivationConstraints.Delay({
+                  value: 250,
+                  tolerance: 5,
+                }),
+              ]
             }
             return [new PointerActivationConstraints.Distance({ value: 5 })]
           },
@@ -597,16 +709,16 @@ export default function Layout() {
         <header className="fixed top-0 left-0 right-0 z-50 h-10 bg-dark-900 border-b border-dark-800 flex items-center px-2 gap-0.5">
           {/* Mobile menu toggle */}
           <button
+            type="button"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="lg:hidden p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0 mr-1"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <List className="w-4 h-4" />
           </button>
 
           {/* Vaults Tab */}
           <button
+            type="button"
             onClick={() => setActiveView('vault')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
               activeView === 'vault'
@@ -614,15 +726,14 @@ export default function Layout() {
                 : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
             }`}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <Folder className="w-3.5 h-3.5" />
             Vaults
             {activeView === 'vault' && <VaultSelector />}
           </button>
 
           {/* SFTP Tab */}
           <button
+            type="button"
             onClick={() => setActiveView('sftp')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors flex-shrink-0 ${
               activeView === 'sftp'
@@ -630,14 +741,14 @@ export default function Layout() {
                 : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
             }`}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <Folder className="w-3.5 h-3.5" />
             SFTP
           </button>
 
           {/* Separator */}
-          {tabs.length > 0 && <div className="flex-shrink-0 w-px h-4 mx-1 bg-dark-700" />}
+          {tabs.length > 0 && (
+            <div className="flex-shrink-0 w-px h-4 mx-1 bg-dark-700" />
+          )}
 
           {/* Real Tabs (sortable, powered by dnd-kit) */}
           <div className="flex items-center">
@@ -671,6 +782,7 @@ export default function Layout() {
 
           {/* New Tab Button */}
           <button
+            type="button"
             onClick={() => {
               const newTabId = addEmptyTab()
               setActiveView(newTabId)
@@ -678,9 +790,7 @@ export default function Layout() {
             className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0"
             title="New Tab"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="w-3.5 h-3.5" />
           </button>
 
           {/* Spacer */}
@@ -694,53 +804,59 @@ export default function Layout() {
                 <span className="flex items-center gap-1.5 max-w-[140px] px-2 py-0.5 text-xs text-dark-300 bg-dark-800 rounded">
                   <span className="truncate">{activeWorkspaceName}</span>
                   {isDirty && (
-                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" title="Unsaved changes" />
+                    <span
+                      className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500"
+                      title="Unsaved changes"
+                    />
                   )}
                 </span>
                 <button
+                  type="button"
                   onClick={handleSaveCurrentWorkspace}
                   disabled={!isDirty}
-                  title={isDirty ? 'Save workspace (overwrite)' : 'No unsaved changes'}
+                  title={
+                    isDirty
+                      ? 'Save workspace (overwrite)'
+                      : 'No unsaved changes'
+                  }
                   className={`p-1.5 rounded transition-colors ${
                     isDirty
                       ? 'text-primary-400 hover:text-white hover:bg-dark-800'
                       : 'text-dark-600 cursor-default'
                   }`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
-                  </svg>
+                  <FloppyDisk className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={handleSaveWorkspace}
                   disabled={!!activeWorkspaceId}
-                  title={activeWorkspaceId ? 'Delete the current workspace to create a new one' : 'Save as new workspace'}
+                  title={
+                    activeWorkspaceId
+                      ? 'Delete the current workspace to create a new one'
+                      : 'Save as new workspace'
+                  }
                   className={`p-1.5 rounded transition-colors ${
                     activeWorkspaceId
                       ? 'text-dark-600 cursor-default'
                       : 'text-dark-400 hover:text-white hover:bg-dark-800'
                   }`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                  </svg>
+                  <span className="relative">
+                    <FloppyDisk className="w-3.5 h-3.5" />
+                    <Plus className="w-2 h-2 absolute -bottom-0.5 -right-0.5" />
+                  </span>
                 </button>
               </div>
             )}
             {!activeWorkspaceId && tabs.length > 1 && (
               <button
+                type="button"
                 onClick={handleSaveWorkspace}
                 className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors flex-shrink-0"
                 title="Save workspace"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
-                </svg>
+                <FloppyDisk className="w-3.5 h-3.5" />
               </button>
             )}
 
@@ -749,14 +865,15 @@ export default function Layout() {
               <span>Connected</span>
             </div>
             <button
-              onClick={() => { setActiveSidebarItem('settings'); setShowSettings(true); }}
+              type="button"
+              onClick={() => {
+                setActiveSidebarItem('settings')
+                setShowSettings(true)
+              }}
               className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded transition-colors"
               title="Settings"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <GearSix className="w-4 h-4" />
             </button>
           </div>
         </header>
@@ -770,6 +887,7 @@ export default function Layout() {
             <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
               {sidebarItems.map((item) => (
                 <button
+                  type="button"
                   key={item.id}
                   onClick={() => {
                     setActiveSidebarItem(item.id)
@@ -781,7 +899,9 @@ export default function Layout() {
                       : 'text-dark-400 hover:text-white hover:bg-dark-800/50'
                   }`}
                 >
-                  <span className="flex items-center justify-center flex-shrink-0 w-5 h-5">{item.icon}</span>
+                  <span className="flex items-center justify-center flex-shrink-0 w-5 h-5">
+                    {item.icon}
+                  </span>
                   <span className="flex-1 text-left">{item.label}</span>
                 </button>
               ))}
@@ -791,24 +911,25 @@ export default function Layout() {
             <div className="p-3 space-y-2 border-t border-dark-800">
               <div className="flex items-center gap-3 p-2 rounded-lg bg-dark-800/50">
                 <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-full bg-primary-600/20">
-                  <svg className="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+                  <User className="w-4 h-4 text-primary-500" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{user?.username || 'User'}</p>
-                  <p className="text-xs truncate text-dark-400">{user?.email}</p>
+                  <p className="text-sm font-medium text-white truncate">
+                    {user?.username || 'User'}
+                  </p>
+                  <p className="text-xs truncate text-dark-400">
+                    {user?.email}
+                  </p>
                 </div>
               </div>
 
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={handleLogout}
                   className="flex items-center justify-center flex-1 gap-2 px-3 py-2 text-sm font-medium text-white transition-colors rounded-lg bg-dark-800 hover:bg-red-600"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
+                  <SignOut className="w-4 h-4" />
                   <span>Logout</span>
                 </button>
               </div>
@@ -818,42 +939,109 @@ export default function Layout() {
 
         {/* Mobile sidebar overlay */}
         {activeView === 'vault' && isMobile && sidebarOpen && (
-          <div
+          <button
+            type="button"
             className="fixed bottom-0 left-0 right-0 z-30 top-10 bg-black/50 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
         {/* Main Content (below header, right of sidebar when vault view) */}
-        <main className={`pt-10 h-screen flex flex-col ${activeView === 'vault' ? 'lg:ml-72' : ''} ${activeView === 'vault' && isMobile && sidebarOpen ? 'ml-72' : ''}`}>
+        <main
+          className={`pt-10 h-screen flex flex-col ${activeView === 'vault' ? 'lg:ml-72' : ''} ${activeView === 'vault' && isMobile && sidebarOpen ? 'ml-72' : ''}`}
+        >
           {renderMainContent()}
         </main>
 
         {/* Modals */}
-        <Modal open={showHostForm} onClose={() => { setShowHostForm(false); setEditingHost(null); setDefaultGroupId(undefined); }} title={editingHost ? 'Edit Host' : 'Add Host'} maxWidth="max-w-md">
+        <Modal
+          open={showHostForm}
+          onClose={() => {
+            setShowHostForm(false)
+            setEditingHost(null)
+            setDefaultGroupId(undefined)
+          }}
+          title={editingHost ? 'Edit Host' : 'Add Host'}
+          maxWidth="max-w-md"
+        >
           <HostForm
-            host={editingHost}
+            host={
+              editingHost
+                ? ({
+                    id: editingHost.id,
+                    name: editingHost.name,
+                    address: editingHost.address,
+                    port: editingHost.port,
+                    username: editingHost.username || 'root',
+                    authType: 'password',
+                    color: editingHost.color,
+                    groupId: editingHost.groupId || undefined,
+                    tags: editingHost.tags,
+                  } satisfies HostData)
+                : undefined
+            }
             defaultGroupId={defaultGroupId}
-            onClose={() => { setShowHostForm(false); setEditingHost(null); setDefaultGroupId(undefined); }}
+            onClose={() => {
+              setShowHostForm(false)
+              setEditingHost(null)
+              setDefaultGroupId(undefined)
+            }}
           />
         </Modal>
 
-        <Modal open={showGroupForm} onClose={() => { setShowGroupForm(false); setEditingGroup(null); setNewGroupParentId(null); }} title={editingGroup ? 'Edit Group' : 'New Group'} maxWidth="max-w-md">
+        <Modal
+          open={showGroupForm}
+          onClose={() => {
+            setShowGroupForm(false)
+            setEditingGroup(null)
+            setNewGroupParentId(null)
+          }}
+          title={editingGroup ? 'Edit Group' : 'New Group'}
+          maxWidth="max-w-md"
+        >
           <GroupForm
-            group={editingGroup}
+            group={
+              editingGroup
+                ? {
+                    ...editingGroup,
+                    parentId: editingGroup.parentId ?? undefined,
+                  }
+                : undefined
+            }
             defaultParentId={newGroupParentId || undefined}
-            onClose={() => { setShowGroupForm(false); setEditingGroup(null); setNewGroupParentId(null); }}
+            onClose={() => {
+              setShowGroupForm(false)
+              setEditingGroup(null)
+              setNewGroupParentId(null)
+            }}
           />
         </Modal>
 
-        <Modal open={showSnippetForm} onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); }} title={editingSnippet ? 'Edit Snippet' : 'New Snippet'} maxWidth="max-w-md">
+        <Modal
+          open={showSnippetForm}
+          onClose={() => {
+            setShowSnippetForm(false)
+            setEditingSnippet(null)
+          }}
+          title={editingSnippet ? 'Edit Snippet' : 'New Snippet'}
+          maxWidth="max-w-md"
+        >
           <SnippetForm
-            snippet={editingSnippet}
-            onClose={() => { setShowSnippetForm(false); setEditingSnippet(null); fetchSnippets(currentVaultId || undefined); }}
+            snippet={editingSnippet ?? undefined}
+            onClose={() => {
+              setShowSnippetForm(false)
+              setEditingSnippet(null)
+              fetchSnippets(currentVaultId || undefined)
+            }}
           />
         </Modal>
 
-        <Modal open={showSettings} onClose={() => setShowSettings(false)} title="Settings" maxWidth="max-w-2xl">
+        <Modal
+          open={showSettings}
+          onClose={() => setShowSettings(false)}
+          title="Settings"
+          maxWidth="max-w-2xl"
+        >
           <SettingsPanel onClose={() => setShowSettings(false)} />
         </Modal>
 
@@ -862,7 +1050,9 @@ export default function Layout() {
           title="Save Workspace"
           submitLabel="Save"
           onSubmit={handleWorkspaceFormSubmit}
-          onClose={() => { setShowWorkspaceForm(false) }}
+          onClose={() => {
+            setShowWorkspaceForm(false)
+          }}
         />
 
         <WorkspaceForm
@@ -882,17 +1072,21 @@ export default function Layout() {
             if (source.data?.type === 'pane-source') {
               const tab = tabs.find((t) => t.id === source.data.tabId)
               const pane = tab ? findLeaf(tab.root, source.data.paneId) : null
-              const statusClass = pane?.connectionStatus === 'connected' ? 'bg-green-500'
-                : pane?.connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse'
-                : pane?.connectionStatus === 'error' ? 'bg-red-500'
-                : 'bg-dark-500'
+              const statusClass =
+                pane?.connectionStatus === 'connected'
+                  ? 'bg-green-500'
+                  : pane?.connectionStatus === 'connecting'
+                    ? 'bg-yellow-500 animate-pulse'
+                    : pane?.connectionStatus === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-dark-500'
               return (
                 <div className="w-60 p-3 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusClass}`} />
-                    <svg className="w-4 h-4 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    <div
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${statusClass}`}
+                    />
+                    <Terminal className="w-4 h-4 text-primary-400 flex-shrink-0" />
                     <span className="text-sm font-medium text-white truncate">
                       {pane?.hostName || 'Empty pane'}
                     </span>
@@ -910,10 +1104,13 @@ export default function Layout() {
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: host.color || '#64748b' }}
                     />
-                    <span className="text-sm font-medium text-white truncate">{host.name}</span>
+                    <span className="text-sm font-medium text-white truncate">
+                      {host.name}
+                    </span>
                   </div>
                   <p className="text-dark-400 text-xs mt-1 ml-[18px] truncate">
-                    {host.username ? `${host.username}@` : ''}{host.address}:{host.port}
+                    {host.username ? `${host.username}@` : ''}
+                    {host.address}:{host.port}
                   </p>
                 </div>
               )
@@ -924,10 +1121,10 @@ export default function Layout() {
               return (
                 <div className="w-60 p-3 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
                   <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <span className="text-sm font-medium text-white truncate">{group.name}</span>
+                    <Folder className="w-4 h-4 text-primary-400 flex-shrink-0" />
+                    <span className="text-sm font-medium text-white truncate">
+                      {group.name}
+                    </span>
                   </div>
                 </div>
               )

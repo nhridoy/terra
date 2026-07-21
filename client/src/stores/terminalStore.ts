@@ -1,8 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useWorkspaceStore } from './workspaceStore'
 import { triggerSync } from '../lib/sync'
+import { useWorkspaceStore } from './workspaceStore'
 
 function getUserId(): string {
   try {
@@ -22,6 +22,10 @@ export interface LeafNode {
   hostAddress?: string
   hostPort?: number
   hostUsername?: string
+  authType?: 'password' | 'key'
+  keyId?: string
+  connectionType?: 'ssh' | 'local'
+  shell?: string
   title: string
   connectionStatus: ConnectionStatus
   lastConnected?: string
@@ -63,6 +67,10 @@ interface ConnectOptions {
   hostAddress?: string
   hostPort?: number
   hostUsername?: string
+  authType?: 'password' | 'key'
+  keyId?: string
+  connectionType?: 'ssh' | 'local'
+  shell?: string
 }
 
 interface TerminalState {
@@ -92,11 +100,19 @@ interface TerminalState {
     hostName: string,
     options?: ConnectOptions,
   ) => void
-  splitPane: (tabId: string, paneId: string, direction: 'horizontal' | 'vertical') => string
+  splitPane: (
+    tabId: string,
+    paneId: string,
+    direction: 'horizontal' | 'vertical',
+  ) => string
   removePane: (tabId: string, paneId: string) => void
   setActivePane: (tabId: string, paneId: string) => void
   setActiveTab: (id: string) => void
-  updatePaneConnectionStatus: (tabId: string, paneId: string, status: ConnectionStatus) => void
+  updatePaneConnectionStatus: (
+    tabId: string,
+    paneId: string,
+    status: ConnectionStatus,
+  ) => void
   updatePaneTitle: (tabId: string, paneId: string, title: string) => void
   setPaneSizes: (tabId: string, splitId: string, sizes: number[]) => void
   removeTab: (id: string) => void
@@ -116,9 +132,16 @@ interface TerminalState {
     side: 'left' | 'right' | 'top' | 'bottom',
   ) => void
   // Restore a saved workspace: rebuild every tab and reconnect to its hosts.
-  launchWorkspace: (layout: WorkspaceLayout, workspaceId?: string, workspaceName?: string) => void
+  launchWorkspace: (
+    layout: WorkspaceLayout,
+    workspaceId?: string,
+    workspaceName?: string,
+  ) => void
   // Restore a saved Quick Preset: replace a single tab's pane tree and reconnect hosts.
-  restorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
+  restorePreset: (
+    preset: { id?: string; name?: string; layout: string },
+    tabId: string,
+  ) => void
   // Persist the current tab's layout back onto its active preset (overwrite).
   saveCurrentPreset: (tabId: string) => Promise<void>
   // Mark a tab as belonging to a preset (used right after saving a new preset).
@@ -140,6 +163,10 @@ function makeLeaf(partial: Partial<LeafNode> & { id: string }): LeafNode {
     hostAddress: partial.hostAddress,
     hostPort: partial.hostPort,
     hostUsername: partial.hostUsername,
+    authType: partial.authType,
+    keyId: partial.keyId,
+    connectionType: partial.connectionType,
+    shell: partial.shell,
     title: partial.title ?? partial.hostName ?? 'New Pane',
     connectionStatus: partial.connectionStatus ?? 'disconnected',
     lastConnected: partial.lastConnected,
@@ -165,7 +192,11 @@ function mapLeaves(node: PaneNode, fn: (leaf: LeafNode) => LeafNode): PaneNode {
 }
 
 // Replace the node with the given id with `replacement`.
-function replaceNode(node: PaneNode, id: string, replacement: PaneNode): PaneNode {
+function replaceNode(
+  node: PaneNode,
+  id: string,
+  replacement: PaneNode,
+): PaneNode {
   if (node.id === id) return replacement
   if (node.type === 'split') {
     return {
@@ -238,10 +269,19 @@ function findSplit(node: PaneNode, splitId: string): SplitNode | null {
   return null
 }
 
-function mapSplitChildren(node: PaneNode, splitId: string, children: PaneNode[]): PaneNode {
+function mapSplitChildren(
+  node: PaneNode,
+  splitId: string,
+  children: PaneNode[],
+): PaneNode {
   if (node.type === 'split') {
     if (node.id === splitId) return { ...node, children }
-    return { ...node, children: node.children.map((c) => mapSplitChildren(c, splitId, children)) }
+    return {
+      ...node,
+      children: node.children.map((c) =>
+        mapSplitChildren(c, splitId, children),
+      ),
+    }
   }
   return node
 }
@@ -299,7 +339,9 @@ export interface WorkspaceSavePayload {
 // Build the serializable workspace payload from live tabs. A tab is included
 // only if it has at least one connected leaf (a fully-empty "New Tab" is
 // skipped). Volatile fields are stripped from every node.
-export function serializeWorkspaceLayout(tabs: TerminalTab[]): WorkspaceSavePayload {
+export function serializeWorkspaceLayout(
+  tabs: TerminalTab[],
+): WorkspaceSavePayload {
   const out: Array<{ title: string; root: PaneNode }> = []
   const hostIds: string[] = []
   tabs.forEach((t) => {
@@ -312,7 +354,8 @@ export function serializeWorkspaceLayout(tabs: TerminalTab[]): WorkspaceSavePayl
     out.push({ title: t.title, root: cleanRoot })
     const collect = (node: PaneNode) => {
       if (node.type === 'leaf') {
-        if (node.hostId && !hostIds.includes(node.hostId)) hostIds.push(node.hostId)
+        if (node.hostId && !hostIds.includes(node.hostId))
+          hostIds.push(node.hostId)
       } else {
         node.children.forEach(collect)
       }
@@ -353,6 +396,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       hostAddress: options?.hostAddress,
       hostPort: options?.hostPort,
       hostUsername: options?.hostUsername,
+      authType: options?.authType,
+      keyId: options?.keyId,
       title: hostName,
       connectionStatus: 'connecting',
     })
@@ -372,7 +417,11 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   addEmptyTab: () => {
-    const leaf = makeLeaf({ id: `pane_${Date.now()}`, hostName: 'New Pane', title: 'New Pane' })
+    const leaf = makeLeaf({
+      id: `pane_${Date.now()}`,
+      hostName: 'New Pane',
+      title: 'New Pane',
+    })
     const tab: TerminalTab = {
       id: `tab_${Date.now()}`,
       root: leaf,
@@ -430,6 +479,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           hostAddress: leaf.hostAddress,
           hostPort: leaf.hostPort,
           hostUsername: leaf.hostUsername,
+          authType: leaf.authType,
+          keyId: leaf.keyId,
+          connectionType: leaf.connectionType,
+          shell: leaf.shell,
         })
       }
     })
@@ -438,19 +491,27 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   saveCurrentPreset: async (tabId) => {
     const { tabs } = get()
     const tab = tabs.find((t) => t.id === tabId)
-    if (!tab || !tab.activePresetId) return
+    if (!tab?.activePresetId) return
     try {
       const deviceId = await getDeviceId()
       await invoke('update_tab_group', {
         id: tab.activePresetId,
-        tg: { userId: getUserId(), name: '', layout: JSON.stringify(stripVolatile(tab.root)) },
+        tg: {
+          userId: getUserId(),
+          name: '',
+          layout: JSON.stringify(stripVolatile(tab.root)),
+        },
         deviceId,
       })
       await triggerSync()
       set({
         tabs: tabs.map((t) =>
           t.id === tabId
-            ? { ...t, savedPresetSnapshot: computeTabSnapshot(t.root), presetDirty: false }
+            ? {
+                ...t,
+                savedPresetSnapshot: computeTabSnapshot(t.root),
+                presetDirty: false,
+              }
             : t,
         ),
       })
@@ -488,6 +549,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
                 hostAddress: options?.hostAddress,
                 hostPort: options?.hostPort,
                 hostUsername: options?.hostUsername,
+                authType: options?.authType,
+                keyId: options?.keyId,
+                connectionType: options?.connectionType,
+                shell: options?.shell,
                 title: hostName,
                 connectionStatus: 'connecting' as ConnectionStatus,
               }
@@ -500,13 +565,17 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   connectActivePane: (tabId, hostId, hostName, options) => {
     const tab = get().tabs.find((t) => t.id === tabId)
-    if (!tab || !tab.activePaneId) return
+    if (!tab?.activePaneId) return
     get().connectPane(tabId, tab.activePaneId, hostId, hostName, options)
   },
 
   splitPane: (tabId, paneId, direction) => {
     const newId = `pane_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-    const newLeaf = makeLeaf({ id: newId, hostName: 'New Pane', title: 'New Pane' })
+    const newLeaf = makeLeaf({
+      id: newId,
+      hostName: 'New Pane',
+      title: 'New Pane',
+    })
 
     let newTitle = ''
     set({
@@ -544,10 +613,16 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }
 
     const tree = removeLeaf(tab.root, paneId)
-    const newActive = tab.activePaneId === paneId ? firstLeafId(tree) : tab.activePaneId
+    const newActive =
+      tab.activePaneId === paneId ? firstLeafId(tree) : tab.activePaneId
     const newTabs = tabs.map((t) =>
       t.id === tabId
-        ? { ...t, root: tree, activePaneId: newActive, title: deriveTitle(tree) }
+        ? {
+            ...t,
+            root: tree,
+            activePaneId: newActive,
+            title: deriveTitle(tree),
+          }
         : t,
     )
 
@@ -579,7 +654,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
                 ...leaf,
                 connectionStatus: status,
                 lastConnected:
-                  status === 'connected' ? new Date().toISOString() : leaf.lastConnected,
+                  status === 'connected'
+                    ? new Date().toISOString()
+                    : leaf.lastConnected,
               }
             : leaf,
         )
@@ -592,7 +669,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({
       tabs: get().tabs.map((t) => {
         if (t.id !== tabId) return t
-        const root = mapLeaves(t.root, (leaf) => (leaf.id === paneId ? { ...leaf, title } : leaf))
+        const root = mapLeaves(t.root, (leaf) =>
+          leaf.id === paneId ? { ...leaf, title } : leaf,
+        )
         return { ...t, root, title: deriveTitle(root) }
       }),
     })
@@ -604,7 +683,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         if (t.id !== tabId) return t
         const split = findSplit(t.root, splitId)
         if (!split) return t
-        const children = split.children.map((c, i) => ({ ...c, size: sizes[i] ?? c.size }))
+        const children = split.children.map((c, i) => ({
+          ...c,
+          size: sizes[i] ?? c.size,
+        }))
         const root = mapSplitChildren(t.root, splitId, children)
         return { ...t, root }
       }),
@@ -616,14 +698,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const newTabs = tabs.filter((t) => t.id !== id)
     let newActiveTabId = activeTabId
     if (activeTabId === id) {
-      newActiveTabId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null
+      newActiveTabId =
+        newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null
     }
     set({
       tabs: newTabs,
       activeTabId: newActiveTabId,
       // Closing the last tab detaches from any loaded workspace.
       ...(newTabs.length === 0
-        ? { activeWorkspaceId: null, activeWorkspaceName: null, isDirty: false, savedSnapshot: '' }
+        ? {
+            activeWorkspaceId: null,
+            activeWorkspaceName: null,
+            isDirty: false,
+            savedSnapshot: '',
+          }
         : {}),
     })
   },
@@ -640,7 +728,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   setTabOrder: (ids) => {
     const byId = new Map(get().tabs.map((t) => [t.id, t]))
-    const ordered = ids.map((id) => byId.get(id)).filter((t): t is TerminalTab => Boolean(t))
+    const ordered = ids
+      .map((id) => byId.get(id))
+      .filter((t): t is TerminalTab => Boolean(t))
     if (ordered.length === get().tabs.length) set({ tabs: ordered })
   },
 
@@ -660,7 +750,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   mergeTabIntoPane: (sourceTabId, targetTabId, targetPaneId, side) => {
     if (sourceTabId === targetTabId) return
-    const direction = side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
+    const direction =
+      side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
     const source = get().tabs.find((t) => t.id === sourceTabId)
     if (!source) return
     const sourceRoot = JSON.parse(JSON.stringify(source.root)) as PaneNode
@@ -683,8 +774,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         direction,
         size: 1,
         children: sourceFirst
-          ? [{ ...sourceRoot, size: 1 }, { ...original, size: 1 }]
-          : [{ ...original, size: 1 }, { ...sourceRoot, size: 1 }],
+          ? [
+              { ...sourceRoot, size: 1 },
+              { ...original, size: 1 },
+            ]
+          : [
+              { ...original, size: 1 },
+              { ...sourceRoot, size: 1 },
+            ],
       }
       const root = replaceNode(t.root, targetPaneId, splitNode)
       return [
@@ -728,7 +825,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
       if (parentSplit && parentSplit.direction === desiredDirection) {
         // Same orientation: insert source into the existing split.
-        const targetIndex = parentSplit.children.findIndex((c) => c.id === targetPaneId)
+        const targetIndex = parentSplit.children.findIndex(
+          (c) => c.id === targetPaneId,
+        )
         const insertIndex = sourceFirst ? targetIndex : targetIndex + 1
         const newChildren = [...parentSplit.children]
         newChildren.splice(insertIndex, 0, { ...source, size: 1 })
@@ -746,15 +845,26 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           direction: desiredDirection,
           size: 1,
           children: sourceFirst
-            ? [{ ...source, size: 1 }, { ...target, size: 1 }]
-            : [{ ...target, size: 1 }, { ...source, size: 1 }],
+            ? [
+                { ...source, size: 1 },
+                { ...target, size: 1 },
+              ]
+            : [
+                { ...target, size: 1 },
+                { ...source, size: 1 },
+              ],
         }
         newRoot = replaceNode(treeWithoutSource, targetPaneId, newSplit)
       }
 
       const newTabs = state.tabs.map((t) =>
         t.id === tabId
-          ? { ...t, root: newRoot, activePaneId: sourcePaneId, title: deriveTitle(newRoot) }
+          ? {
+              ...t,
+              root: newRoot,
+              activePaneId: sourcePaneId,
+              title: deriveTitle(newRoot),
+            }
           : t,
       )
       return { tabs: newTabs }
@@ -763,9 +873,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   launchWorkspace: (layout, workspaceId, workspaceName) => {
     // Accept both the wrapped { tabs: [...] } form and a bare array (legacy).
-    const savedTabs = (Array.isArray(layout)
-      ? layout
-      : (layout as WorkspaceLayout).tabs) as Array<{ title: string; root: PaneNode }>
+    const savedTabs = (
+      Array.isArray(layout) ? layout : (layout as WorkspaceLayout).tabs
+    ) as Array<{ title: string; root: PaneNode }>
     const newTabs: TerminalTab[] = savedTabs.map((savedTab) => {
       const root = regenerateNodeIds(savedTab.root)
       return {
@@ -812,6 +922,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
             hostAddress: leaf.hostAddress,
             hostPort: leaf.hostPort,
             hostUsername: leaf.hostUsername,
+            authType: leaf.authType,
+            keyId: leaf.keyId,
+            connectionType: leaf.connectionType,
+            shell: leaf.shell,
           })
         }
       })
@@ -827,7 +941,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       const deviceId = await getDeviceId()
       await invoke('update_workspace', {
         id: activeWorkspaceId,
-        workspace: { userId: getUserId(), name: '', layout: JSON.stringify({ tabs: payload.tabs }), hostIds: payload.hostIds },
+        workspace: {
+          userId: getUserId(),
+          name: '',
+          layout: JSON.stringify({ tabs: payload.tabs }),
+          hostIds: payload.hostIds,
+        },
         deviceId,
       })
       await triggerSync()
@@ -843,8 +962,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     if (payload.tabs.length === 0) return
     try {
       const deviceId = await getDeviceId()
-      const result = await invoke<any>('create_workspace', {
-        workspace: { userId: getUserId(), name, layout: JSON.stringify({ tabs: payload.tabs }), hostIds: payload.hostIds, vaultId },
+      const result = await invoke<{ id: string }>('create_workspace', {
+        workspace: {
+          userId: getUserId(),
+          name,
+          layout: JSON.stringify({ tabs: payload.tabs }),
+          hostIds: payload.hostIds,
+          vaultId,
+        },
         deviceId,
       })
       await triggerSync()

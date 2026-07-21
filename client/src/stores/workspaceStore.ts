@@ -1,8 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import { useAuthStore } from './authStore'
 
 interface Workspace {
   id: string
@@ -22,7 +22,7 @@ interface WorkspaceState {
   fetchWorkspaces: (vaultId?: string) => Promise<void>
   createWorkspace: (
     name: string,
-    layout: any,
+    layout: Record<string, unknown>,
     vaultId?: string,
   ) => Promise<void>
   renameWorkspace: (id: string, name: string) => Promise<void>
@@ -42,10 +42,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   fetchWorkspaces: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const workspaces = await invoke<Workspace[]>('list_workspaces', { userId: getUserId(), vaultId: vaultId || null })
+      const workspaces = await invoke<Workspace[]>('list_workspaces', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({ workspaces, isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -65,8 +71,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       })
       set({ workspaces: [...get().workspaces, result], isLoading: false })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      set({ error: msg, isLoading: false })
       throw error
     }
   },
@@ -92,8 +99,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      set({ error: msg, isLoading: false })
       throw error
     }
   },
@@ -108,8 +116,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      set({ error: msg, isLoading: false })
       throw error
     }
   },

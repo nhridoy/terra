@@ -1,8 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import { useAuthStore } from './authStore'
 
 interface VaultItem {
   id: string
@@ -10,9 +10,6 @@ interface VaultItem {
   description?: string
   isDefault?: boolean
   isSystem?: boolean
-  salt?: string
-  encryptedData?: string
-  iv?: string
   createdAt: string
   updatedAt: string
 }
@@ -58,11 +55,14 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fetchVaults: async () => {
     set({ isLoading: true, error: null })
     try {
-      const vaults = await invoke<any[]>('list_vaults', { userId: getUserId() })
+      const vaults = await invoke<VaultItem[]>('list_vaults', {
+        userId: getUserId(),
+      })
       set({ vaults, isLoading: false })
       if (vaults.length > 0 && !get().currentVaultId) {
-        const personalVault = vaults.find((v: any) => v.name === 'Personal')
-        const defaultVault = personalVault || vaults.find((v: any) => v.isDefault) || vaults[0]
+        const personalVault = vaults.find((v) => v.name === 'Personal')
+        const defaultVault =
+          personalVault || vaults.find((v) => v.isDefault) || vaults[0]
         get().switchVault(defaultVault.id)
       }
     } catch (error) {
@@ -74,7 +74,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const vault = await invoke<any>('create_vault', {
+      const vault = await invoke<VaultItem>('create_vault', {
         vault: { userId: getUserId(), name, description },
         deviceId,
       })
@@ -91,9 +91,13 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const updated = await invoke<any>('update_vault', {
+      const updated = await invoke<VaultItem>('update_vault', {
         id,
-        vault: { userId: getUserId(), name: vault.name || '', description: vault.description },
+        vault: {
+          userId: getUserId(),
+          name: vault.name || '',
+          description: vault.description,
+        },
         deviceId,
       })
       set({
@@ -137,10 +141,10 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   switchVault: async (vaultId) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await invoke<any>('get_vault_data', { id: vaultId })
+      await invoke<VaultItem>('get_vault_data', { id: vaultId })
       set({
         currentVaultId: vaultId,
-        decryptedData: result.encryptedData ? JSON.parse(result.encryptedData) : null,
+        decryptedData: null,
         isLoading: false,
       })
     } catch (error) {
@@ -157,7 +161,8 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  lockVault: () => set({ isUnlocked: false, decryptedData: null, currentVaultId: null }),
+  lockVault: () =>
+    set({ isUnlocked: false, decryptedData: null, currentVaultId: null }),
 
   clearError: () => set({ error: null }),
 }))

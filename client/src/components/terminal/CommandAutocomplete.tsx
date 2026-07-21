@@ -1,3 +1,4 @@
+import { Terminal } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import { useSnippetStore } from '../../stores/snippetStore'
 
@@ -116,7 +117,7 @@ export default function CommandAutocomplete({
 
   useEffect(() => {
     setSelectedIndex(0)
-  }, [query])
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -138,26 +139,14 @@ export default function CommandAutocomplete({
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <button type="button" className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* Autocomplete panel */}
       <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl">
         <div className="bg-dark-900 rounded-xl shadow-2xl border border-dark-700 overflow-hidden">
           {/* Input */}
           <div className="flex items-center gap-3 p-3 border-b border-dark-700">
-            <svg
-              className="w-5 h-5 text-primary-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
+            <Terminal className="w-5 h-5 text-primary-500" />
             <input
               ref={inputRef}
               type="text"
@@ -181,7 +170,8 @@ export default function CommandAutocomplete({
             ) : (
               allCommands.slice(0, 10).map((cmd, index) => (
                 <button
-                  key={`${cmd.command}-${index}`}
+                  type="button"
+                  key={cmd.command}
                   onClick={() => {
                     onSelect(cmd.command)
                     onClose()

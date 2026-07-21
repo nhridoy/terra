@@ -22,7 +22,9 @@ export default function ToastContainer() {
 
   useEffect(() => {
     _addToast = addToast
-    return () => { _addToast = null }
+    return () => {
+      _addToast = null
+    }
   }, [addToast])
 
   const remove = useCallback((id: string) => {
@@ -40,20 +42,32 @@ export default function ToastContainer() {
   )
 }
 
-function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+function ToastItem({
+  toast: t,
+  onRemove,
+}: {
+  toast: Toast
+  onRemove: (id: string) => void
+}) {
   useEffect(() => {
     const timer = setTimeout(() => onRemove(t.id), 3000)
     return () => clearTimeout(timer)
   }, [t.id, onRemove])
 
-  const bg = t.type === 'success' ? 'bg-green-600' : t.type === 'error' ? 'bg-red-600' : 'bg-dark-700'
+  const bg =
+    t.type === 'success'
+      ? 'bg-green-600'
+      : t.type === 'error'
+        ? 'bg-red-600'
+        : 'bg-dark-700'
 
   return (
-    <div
+    <button
+      type="button"
       className={`${bg} text-white px-4 py-2 rounded-lg shadow-lg text-sm pointer-events-auto animate-in fade-in slide-in-from-bottom-2`}
       onClick={() => onRemove(t.id)}
     >
       {t.message}
-    </div>
+    </button>
   )
 }

@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useCallback, useState } from 'react'
 import type { FileItem } from '../lib/sftpTypes'
 
 interface TransferItem {
@@ -29,28 +29,30 @@ export function useSFTP(hostId: string) {
       setIsLoading(true)
       setError(null)
       try {
-        const result = await invoke<FileItem[]>('sftp_list', { hostId, path: dirPath })
+        const result = await invoke<FileItem[]>('sftp_list', {
+          hostId,
+          path: dirPath,
+        })
         setFiles(result || [])
         if (path) setCurrentPath(path)
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Failed to load directory')
+        setError(
+          err instanceof Error ? err.message : 'Failed to load directory',
+        )
       } finally {
         setIsLoading(false)
       }
     },
-    [hostId],
+    [hostId, currentPath],
   )
 
   const refresh = useCallback(() => {
     loadDirectory(currentPath)
   }, [loadDirectory, currentPath])
 
-  const uploadFile = useCallback(
-    async (_file: File, _targetPath?: string) => {
-      setError('Upload via Tauri not yet implemented in this hook')
-    },
-    [],
-  )
+  const uploadFile = useCallback(async (_file: File, _targetPath?: string) => {
+    setError('Upload via Tauri not yet implemented in this hook')
+  }, [])
 
   const uploadFiles = useCallback(
     async (fileList: FileList) => {
@@ -61,12 +63,9 @@ export function useSFTP(hostId: string) {
     [uploadFile],
   )
 
-  const downloadFile = useCallback(
-    async (_file: FileItem) => {
-      setError('Download via Tauri not yet implemented in this hook')
-    },
-    [],
-  )
+  const downloadFile = useCallback(async (_file: FileItem) => {
+    setError('Download via Tauri not yet implemented in this hook')
+  }, [])
 
   const deleteFile = useCallback(
     async (file: FileItem) => {
@@ -90,7 +89,7 @@ export function useSFTP(hostId: string) {
       setIsLoading(true)
       setError(null)
       try {
-        const newPath = currentPath + '/' + newName
+        const newPath = `${currentPath}/${newName}`
         await invoke('sftp_rename', { hostId, oldPath: file.path, newPath })
         loadDirectory(currentPath)
       } catch (err: unknown) {
@@ -107,7 +106,7 @@ export function useSFTP(hostId: string) {
       setIsLoading(true)
       setError(null)
       try {
-        await invoke('sftp_mkdir', { hostId, path: currentPath + '/' + name })
+        await invoke('sftp_mkdir', { hostId, path: `${currentPath}/${name}` })
         loadDirectory(currentPath)
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to create folder')
@@ -118,21 +117,15 @@ export function useSFTP(hostId: string) {
     [hostId, currentPath, loadDirectory],
   )
 
-  const readFile = useCallback(
-    async (_filePath: string) => {
-      setError('Read file via Tauri not yet implemented in this hook')
-      return null
-    },
-    [],
-  )
+  const readFile = useCallback(async (_filePath: string) => {
+    setError('Read file via Tauri not yet implemented in this hook')
+    return null
+  }, [])
 
-  const writeFile = useCallback(
-    async (_filePath: string, _content: string) => {
-      setError('Write file via Tauri not yet implemented in this hook')
-      return false
-    },
-    [],
-  )
+  const writeFile = useCallback(async (_filePath: string, _content: string) => {
+    setError('Write file via Tauri not yet implemented in this hook')
+    return false
+  }, [])
 
   return {
     files,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 
 interface WorkspaceFormProps {
@@ -34,10 +34,15 @@ export default function WorkspaceForm({
     <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-md">
       <div className="space-y-4">
         <div>
-          <label className="block mb-1 text-xs font-medium text-dark-400">Workspace name</label>
+          <label
+            htmlFor="workspace-name"
+            className="block mb-1 text-xs font-medium text-dark-400"
+          >
+            Workspace name
+          </label>
           <input
+            id="workspace-name"
             type="text"
-            autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
@@ -49,12 +54,14 @@ export default function WorkspaceForm({
         </div>
         <div className="flex justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium text-dark-300 bg-dark-800 rounded hover:bg-dark-700"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={!name.trim()}
             className="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"

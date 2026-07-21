@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
+import type { Host } from '../../stores/hostStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import CommandAutocomplete from './CommandAutocomplete'
 import FocusMode from './FocusMode'
@@ -64,22 +65,51 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
   }, [])
 
   const handleQuickConnectHost = useCallback(
-    (host: any) => {
+    (host: Host) => {
       const { activeTabId: atId } = useTerminalStore.getState()
       if (!atId) {
         const newTabId = useTerminalStore.getState().addEmptyTab()
         onSetActiveView?.(newTabId)
-        useTerminalStore.getState().connectActivePane(newTabId, host.id, host.name, {
-          hostAddress: host.address,
-          hostPort: host.port,
-          hostUsername: host.username,
-        })
+        useTerminalStore
+          .getState()
+          .connectActivePane(newTabId, host.id, host.name, {
+            hostAddress: host.address,
+            hostPort: host.port,
+            hostUsername: host.username,
+            authType: host.authType,
+            keyId: host.keyId,
+          })
         return
       }
       connectActivePane(atId, host.id, host.name, {
         hostAddress: host.address,
         hostPort: host.port,
         hostUsername: host.username,
+        authType: host.authType,
+        keyId: host.keyId,
+      })
+      onSetActiveView?.(atId)
+    },
+    [connectActivePane, onSetActiveView],
+  )
+
+  const handleQuickConnectLocal = useCallback(
+    (shell: string) => {
+      const { activeTabId: atId } = useTerminalStore.getState()
+      if (!atId) {
+        const newTabId = useTerminalStore.getState().addEmptyTab()
+        onSetActiveView?.(newTabId)
+        useTerminalStore
+          .getState()
+          .connectActivePane(newTabId, `local_${Date.now()}`, 'Local', {
+            connectionType: 'local',
+            shell,
+          })
+        return
+      }
+      connectActivePane(atId, `local_${Date.now()}`, 'Local', {
+        connectionType: 'local',
+        shell,
       })
       onSetActiveView?.(atId)
     },
@@ -88,9 +118,10 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
 
   const handleSplit = useCallback(
     (direction: 'horizontal' | 'vertical') => {
-      const { activeTabId: atId, tabs: currentTabs } = useTerminalStore.getState()
+      const { activeTabId: atId, tabs: currentTabs } =
+        useTerminalStore.getState()
       const tab = currentTabs.find((t) => t.id === atId)
-      if (!atId || !tab || !tab.activePaneId) return
+      if (!atId || !tab?.activePaneId) return
       splitPane(atId, tab.activePaneId, direction)
     },
     [splitPane],
@@ -99,7 +130,7 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
   const handleCloseTab = useCallback(() => {
     const { activeTabId: atId, tabs: currentTabs } = useTerminalStore.getState()
     const tab = currentTabs.find((t) => t.id === atId)
-    if (!atId || !tab || !tab.activePaneId) return
+    if (!atId || !tab?.activePaneId) return
     removePane(atId, tab.activePaneId)
   }, [removePane])
 
@@ -140,12 +171,21 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
               key={tab.id}
               className={`absolute inset-0 ${tab.id === activeTabId ? '' : 'opacity-0 pointer-events-none'}`}
             >
-              <PaneTree tabId={tab.id} node={tab.root} activePaneId={tab.activePaneId} isActiveTab={tab.id === activeTabId} onRestorePreset={handleRestorePreset} />
+              <PaneTree
+                tabId={tab.id}
+                node={tab.root}
+                activePaneId={tab.activePaneId}
+                isActiveTab={tab.id === activeTabId}
+                onRestorePreset={handleRestorePreset}
+              />
             </div>
           ))}
         </div>
 
-        <QuickConnect onConnect={handleQuickConnectHost} />
+        <QuickConnect
+          onConnect={handleQuickConnectHost}
+          onConnectLocal={handleQuickConnectLocal}
+        />
 
         <CommandAutocomplete
           isVisible={showCommandPalette}

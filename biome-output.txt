@@ -1,0 +1,244 @@
+src\components\sftp\FileBrowser.tsx:1177:7 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <section>
+  
+    1175 Γöé     <div
+    1176 Γöé       ref={setContainerRef}
+  > 1177 Γöé       role="region"
+         Γöé       ^^^^^^^^^^^^^
+    1178 Γöé       aria-label="File browser"
+    1179 Γöé       className="h-full flex flex-col bg-dark-900 relative"
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <section>
+  
+
+src\components\sftp\FileBrowser.tsx:1187:11 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <section>
+  
+    1185 Γöé       {isDragOver && !fileDragState && (
+    1186 Γöé         <div
+  > 1187 Γöé           role="region"
+         Γöé           ^^^^^^^^^^^^^
+    1188 Γöé           aria-label="Drop files to upload"
+    1189 Γöé           className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center"
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <section>
+  
+
+src\components\sftp\FileBrowser.tsx:1209:15 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <section>
+  
+    1207 Γöé           return (
+    1208 Γöé             <div
+  > 1209 Γöé               role="region"
+         Γöé               ^^^^^^^^^^^^^
+    1210 Γöé               aria-label="Drop target"
+    1211 Γöé               className={`absolute inset-0 z-50 ${isCrossHost ? 'bg-green-600/15 border-green-500' : 'bg-primary-600/15 border-primary-500'} border-2 border-dashed rounded-lg flex items-center justify-center`}
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <section>
+  
+
+src\components\sftp\FileBrowser.tsx:1373:11 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <button>
+  
+    1371 Γöé       {!isLoading && sortedFiles.length === 0 && (
+    1372 Γöé         <div
+  > 1373 Γöé           role="button"
+         Γöé           ^^^^^^^^^^^^^
+    1374 Γöé           tabIndex={0}
+    1375 Γöé           className="flex-1 flex flex-col items-center justify-center text-dark-400"
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <button>
+  
+
+src\components\sftp\FileBrowser.tsx:1391:11 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <button>
+  
+    1389 Γöé       {!isLoading && sortedFiles.length > 0 && (
+    1390 Γöé         <div
+  > 1391 Γöé           role="button"
+         Γöé           ^^^^^^^^^^^^^
+    1392 Γöé           tabIndex={0}
+    1393 Γöé           className="flex-1 overflow-y-auto"
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <button>
+  
+
+src\components\sftp\FileBrowser.tsx:2013:7 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <button>
+  
+    2011 Γöé     <div
+    2012 Γöé       ref={mergedRef}
+  > 2013 Γöé       role="button"
+         Γöé       ^^^^^^^^^^^^^
+    2014 Γöé       tabIndex={0}
+    2015 Γöé       onDoubleClick={onDoubleClick}
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <button>
+  
+
+src\components\terminal\Pane.tsx:153:7 lint/a11y/useSemanticElements ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! The elements with this role can be changed to the following elements:
+    <button>
+  
+    151 Γöé       data-pane-id={pane.id}
+    152 Γöé       data-tab-id={tabId}
+  > 153 Γöé       role="button"
+        Γöé       ^^^^^^^^^^^^^
+    154 Γöé       tabIndex={0}
+    155 Γöé       className={`flex flex-col h-full min-h-0 min-w-0 bg-dark-950 relative ${
+  
+  i For examples and more information, see WAI-ARIA Roles
+  
+  i Replace with one of these elements:
+  
+  - <button>
+  
+
+src\components\ui\ContextMenu.tsx:102:27 lint/suspicious/noArrayIndexKey ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! Avoid using the index of an array as key property in an element.
+  
+    100 Γöé           return (
+    101 Γöé             <div
+  > 102 Γöé               key={`sep-${index}`}
+        Γöé                           ^^^^^
+    103 Γöé               className="my-1 border-t border-dark-600"
+    104 Γöé             />
+  
+  i This is the source of the key value.
+  
+     96 Γöé       tabIndex={-1}
+     97 Γöé     >
+   > 98 Γöé       {items.map((item, index) => {
+        Γöé                         ^^^^^
+     99 Γöé         if ('type' in item) {
+    100 Γöé           return (
+  
+  i The order of the items may change, and this also affects performances and component state.
+  
+  i Check the React documentation. 
+  
+
+src\index.css:1:2 lint/suspicious/noUnknownAtRules ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! Unexpected unknown at-rule: tailwind 
+  
+  > 1 Γöé @tailwind base;
+      Γöé  ^^^^^^^^
+    2 Γöé @tailwind components;
+    3 Γöé @tailwind utilities;
+  
+  i tailwind is not a standard CSS at-rule, which may lead to unexpected styling results or failure to interpret the styles as intended.
+  
+  i See MDN web docs for a known list of at-rules.
+  
+  i To fix this issue, consider removing the unknown at-rule.
+  
+
+src\index.css:2:2 lint/suspicious/noUnknownAtRules ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! Unexpected unknown at-rule: tailwind 
+  
+    1 Γöé @tailwind base;
+  > 2 Γöé @tailwind components;
+      Γöé  ^^^^^^^^
+    3 Γöé @tailwind utilities;
+    4 Γöé 
+  
+  i tailwind is not a standard CSS at-rule, which may lead to unexpected styling results or failure to interpret the styles as intended.
+  
+  i See MDN web docs for a known list of at-rules.
+  
+  i To fix this issue, consider removing the unknown at-rule.
+  
+
+src\index.css:3:2 lint/suspicious/noUnknownAtRules ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ! Unexpected unknown at-rule: tailwind 
+  
+    1 Γöé @tailwind base;
+    2 Γöé @tailwind components;
+  > 3 Γöé @tailwind utilities;
+      Γöé  ^^^^^^^^
+    4 Γöé 
+    5 Γöé body {
+  
+  i tailwind is not a standard CSS at-rule, which may lead to unexpected styling results or failure to interpret the styles as intended.
+  
+  i See MDN web docs for a known list of at-rules.
+  
+  i To fix this issue, consider removing the unknown at-rule.
+  
+
+src\components\layout\VaultSelector.tsx:1:1 assist/source/organizeImports  FIXABLE  ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ├ù Sort the imported names.
+  
+   > 1 Γöé import {
+       Γöé ^^^^^^^^
+   > 2 Γöé   Check,
+   > 3 Γöé   CaretDown,
+   > 4 Γöé   MagnifyingGlass,
+        ...
+   > 9 Γöé   X,
+  > 10 Γöé } from '@phosphor-icons/react'
+       Γöé ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Checked 80 files in 754ms. No fixes applied.
+Found 1 error.
+Found 11 warnings.
+    11 Γöé import { invoke } from '@tauri-apps/api/core'
+    12 Γöé import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
+  
+  i Safe fix: Organize imports and exports (Biome)
+  
+      1   1 Γöé   import {
+      2     Γöé - ┬╖┬╖Check,
+      3     Γöé - ┬╖┬╖CaretDown,
+          2 Γöé + ┬╖┬╖CaretDown,
+          3 Γöé + ┬╖┬╖Check,
+      4   4 Γöé     MagnifyingGlass,
+      5   5 Γöé     PencilSimple,
+  
+
+check ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü
+
+  ├ù Some errors were emitted while running checks.
+  
+

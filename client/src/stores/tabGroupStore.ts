@@ -1,8 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import { useAuthStore } from './authStore'
 import type { PaneNode } from './terminalStore'
 import { useTerminalStore } from './terminalStore'
 
@@ -31,7 +31,11 @@ function getUserId(): string {
 export const useTabGroupStore = create<{
   tabGroups: TabGroup[]
   fetchTabGroups: (vaultId?: string) => Promise<void>
-  createTabGroup: (name: string, root: PaneNode, vaultId?: string) => Promise<TabGroup | null>
+  createTabGroup: (
+    name: string,
+    root: PaneNode,
+    vaultId?: string,
+  ) => Promise<TabGroup | null>
   renameTabGroup: (id: string, name: string) => Promise<void>
   deleteTabGroup: (id: string) => Promise<void>
 }>((set, get) => ({
@@ -39,7 +43,10 @@ export const useTabGroupStore = create<{
 
   fetchTabGroups: async (vaultId?: string) => {
     try {
-      const tabGroups = await invoke<TabGroup[]>('list_tab_groups', { userId: getUserId(), vaultId: vaultId || null })
+      const tabGroups = await invoke<TabGroup[]>('list_tab_groups', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({ tabGroups })
     } catch (e) {
       console.error('Failed to fetch tab groups:', e)
@@ -85,7 +92,9 @@ export const useTabGroupStore = create<{
         deviceId,
       })
       set({
-        tabGroups: get().tabGroups.map((g) => (g.id === id ? { ...g, name } : g)),
+        tabGroups: get().tabGroups.map((g) =>
+          g.id === id ? { ...g, name } : g,
+        ),
       })
       triggerSync()
     } catch (e) {
@@ -104,7 +113,13 @@ export const useTabGroupStore = create<{
         useTerminalStore.setState({
           tabs: tabs.map((t) =>
             t.activePresetId === id
-              ? { ...t, activePresetId: null, activePresetName: null, presetDirty: false, savedPresetSnapshot: '' }
+              ? {
+                  ...t,
+                  activePresetId: null,
+                  activePresetName: null,
+                  presetDirty: false,
+                  savedPresetSnapshot: '',
+                }
               : t,
           ),
         })

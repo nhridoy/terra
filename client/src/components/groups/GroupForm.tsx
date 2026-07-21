@@ -17,7 +17,11 @@ interface GroupFormProps {
   onClose: () => void
 }
 
-export default function GroupForm({ group, defaultParentId, onClose }: GroupFormProps) {
+export default function GroupForm({
+  group,
+  defaultParentId,
+  onClose,
+}: GroupFormProps) {
   const { createGroup, updateGroup } = useHostStore()
   const { currentVaultId } = useVaultStore()
   const [name, setName] = useState(group?.name || '')
@@ -37,13 +41,24 @@ export default function GroupForm({ group, defaultParentId, onClose }: GroupForm
 
     try {
       if (group) {
-        await updateGroup(group.id, { name: name.trim(), parentId: parentId || undefined })
+        await updateGroup(group.id, {
+          name: name.trim(),
+          parentId: parentId || undefined,
+        })
       } else {
-        await createGroup({ name: name.trim(), parentId: parentId || undefined, vaultId: currentVaultId || undefined })
+        await createGroup({
+          name: name.trim(),
+          parentId: parentId || undefined,
+          vaultId: currentVaultId || undefined,
+        })
       }
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save group')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to save group',
+      )
     } finally {
       setIsLoading(false)
     }
@@ -58,7 +73,10 @@ export default function GroupForm({ group, defaultParentId, onClose }: GroupForm
       )}
 
       <div>
-        <label htmlFor="group-name" className="block text-dark-300 text-sm mb-2">
+        <label
+          htmlFor="group-name"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Group Name
         </label>
         <input
@@ -69,7 +87,6 @@ export default function GroupForm({ group, defaultParentId, onClose }: GroupForm
           className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           placeholder="Group name"
           required
-          autoFocus
         />
       </div>
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getApiUrl, setApiUrl } from '../../lib/auth'
 import { useAuthStore } from '../../stores/authStore'
 import OAuthLogin from './OAuthLogin'
 
@@ -9,6 +10,21 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showServerConfig, setShowServerConfig] = useState(false)
+  const [serverUrl, setServerUrlState] = useState('')
+  const [serverUrlLoaded, setServerUrlLoaded] = useState(false)
+
+  const loadServerUrl = async () => {
+    if (!serverUrlLoaded) {
+      const url = await getApiUrl()
+      setServerUrlState(url)
+      setServerUrlLoaded(true)
+    }
+  }
+
+  if (showServerConfig && !serverUrlLoaded) {
+    loadServerUrl()
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -169,6 +185,53 @@ export default function LoginScreen() {
                 : "Don't have an account? Create one"}
             </button>
           </div>
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowServerConfig(!showServerConfig)}
+              className="text-dark-500 hover:text-dark-300 text-xs"
+            >
+              {showServerConfig
+                ? 'Hide server settings'
+                : 'Connect to custom server'}
+            </button>
+          </div>
+
+          {showServerConfig && (
+            <div className="mt-4 p-3 bg-dark-800 rounded-lg">
+              <label
+                htmlFor="server-url"
+                className="block text-dark-400 text-xs mb-2"
+              >
+                Server URL
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="server-url"
+                  type="url"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrlState(e.target.value)}
+                  className="flex-1 bg-dark-700 text-white px-3 py-2 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="http://localhost:8080"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await setApiUrl(serverUrl || 'http://localhost:8080')
+                    setServerUrlLoaded(false)
+                  }}
+                  className="px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm rounded transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+              <p className="text-dark-500 text-xs mt-2">
+                Leave empty for default server. Changes take effect on next
+                login.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

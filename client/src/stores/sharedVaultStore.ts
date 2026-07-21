@@ -1,56 +1,87 @@
 import { create } from 'zustand'
+import api from '../lib/api'
 
 interface SharedVault {
   id: string
   name: string
-  description?: string
   teamId: string
-  ownerId: string
-  memberCount: number
-  isUnlocked: boolean
+  vaultId: string
   createdAt: string
 }
 
 interface SharedVaultState {
   sharedVaults: SharedVault[]
   selectedSharedVault: SharedVault | null
-  isUnlocked: boolean
-  decryptedData: any
   isLoading: boolean
   error: string | null
 
   fetchSharedVaults: (teamId: string) => Promise<void>
-  createSharedVault: (vault: Partial<SharedVault>) => Promise<void>
-  updateSharedVault: (id: string, vault: Partial<SharedVault>) => Promise<void>
-  deleteSharedVault: (id: string) => Promise<void>
-  unlockSharedVault: (password: string) => Promise<void>
+  createSharedVault: (
+    teamId: string,
+    vaultId: string,
+    name?: string,
+  ) => Promise<void>
+  deleteSharedVault: (teamId: string, vaultId: string) => Promise<void>
   selectSharedVault: (vault: SharedVault | null) => void
   clearError: () => void
 }
 
-export const useSharedVaultStore = create<SharedVaultState>((set) => ({
+export const useSharedVaultStore = create<SharedVaultState>((set, get) => ({
   sharedVaults: [],
   selectedSharedVault: null,
-  isUnlocked: false,
-  decryptedData: null,
   isLoading: false,
-  error: 'Shared vaults feature is not available in sync-only mode',
+  error: null,
 
-  fetchSharedVaults: async () => {
-    set({ isLoading: false })
+  fetchSharedVaults: async (teamId) => {
+    set({ isLoading: true, error: null })
+    try {
+      const vaults = await api.get<SharedVault[]>(
+        `/teams/${teamId}/shared-vaults`,
+      )
+      set({ sharedVaults: vaults, isLoading: false })
+    } catch (err: unknown) {
+      set({
+        error: err instanceof Error ? err.message : String(err),
+        isLoading: false,
+      })
+    }
   },
-  createSharedVault: async () => {
-    set({ error: 'Shared vaults feature is not available in sync-only mode' })
+
+  createSharedVault: async (teamId, vaultId, name) => {
+    set({ isLoading: true, error: null })
+    try {
+      const vault = await api.post<SharedVault>(
+        `/teams/${teamId}/shared-vaults`,
+        {
+          vaultId,
+          name,
+        },
+      )
+      set({ sharedVaults: [...get().sharedVaults, vault], isLoading: false })
+    } catch (err: unknown) {
+      set({
+        error: err instanceof Error ? err.message : String(err),
+        isLoading: false,
+      })
+    }
   },
-  updateSharedVault: async () => {
-    set({ error: 'Shared vaults feature is not available in sync-only mode' })
+
+  deleteSharedVault: async (teamId, vaultId) => {
+    set({ isLoading: true, error: null })
+    try {
+      await api.delete(`/teams/${teamId}/shared-vaults/${vaultId}`)
+      set({
+        sharedVaults: get().sharedVaults.filter((v) => v.id !== vaultId),
+        isLoading: false,
+      })
+    } catch (err: unknown) {
+      set({
+        error: err instanceof Error ? err.message : String(err),
+        isLoading: false,
+      })
+    }
   },
-  deleteSharedVault: async () => {
-    set({ error: 'Shared vaults feature is not available in sync-only mode' })
-  },
-  unlockSharedVault: async () => {
-    set({ error: 'Shared vaults feature is not available in sync-only mode' })
-  },
+
   selectSharedVault: (vault) => set({ selectedSharedVault: vault }),
   clearError: () => set({ error: null }),
 }))

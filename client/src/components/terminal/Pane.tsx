@@ -1,8 +1,18 @@
-import { useDroppable, useDraggable } from '@dnd-kit/react'
-import { pointerIntersection } from '@dnd-kit/collision'
 import { CollisionPriority } from '@dnd-kit/abstract'
+import { pointerIntersection } from '@dnd-kit/collision'
+import { useDraggable, useDroppable } from '@dnd-kit/react'
+import {
+  ArrowsLeftRight,
+  DotsSixVertical,
+  SplitHorizontal,
+  SplitVertical,
+  X,
+} from '@phosphor-icons/react'
+import { useState } from 'react'
+import { type DropSide, useDragStore } from '../../stores/dragStore'
+import type { Host } from '../../stores/hostStore'
 import { useTerminalStore } from '../../stores/terminalStore'
-import { useDragStore, type DropSide } from '../../stores/dragStore'
+import PortForwarding from '../portforwarding/PortForwarding'
 import HostBrowser from './HostBrowser'
 import Terminal from './Terminal'
 
@@ -12,7 +22,10 @@ interface PaneProps {
   isActive: boolean
   closable: boolean
   isActiveTab: boolean
-  onRestorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
+  onRestorePreset: (
+    preset: { id?: string; name?: string; layout: string },
+    tabId: string,
+  ) => void
 }
 
 function statusDotClass(status: string): string {
@@ -54,7 +67,15 @@ function previewStyle(side: DropSide): React.CSSProperties {
 //   - top / bottom split the middle third (top half / bottom half)
 // This gives a clean, deterministic side target for every cursor position
 // without the zones overlapping each other.
-function PaneDropZone({ tabId, paneId, side }: { tabId: string; paneId: string; side: DropSide }) {
+function PaneDropZone({
+  tabId,
+  paneId,
+  side,
+}: {
+  tabId: string
+  paneId: string
+  side: DropSide
+}) {
   const { ref } = useDroppable({
     id: `${paneId}:${side}`,
     data: { type: 'pane', tabId, paneId, side },
@@ -71,23 +92,49 @@ function PaneDropZone({ tabId, paneId, side }: { tabId: string; paneId: string; 
       Object.assign(style, { left: 0, top: 0, width: '33.34%', height: '100%' })
       break
     case 'right':
-      Object.assign(style, { right: 0, top: 0, width: '33.34%', height: '100%' })
+      Object.assign(style, {
+        right: 0,
+        top: 0,
+        width: '33.34%',
+        height: '100%',
+      })
       break
     case 'top':
-      Object.assign(style, { left: '33.33%', top: 0, width: '33.33%', height: '50%' })
+      Object.assign(style, {
+        left: '33.33%',
+        top: 0,
+        width: '33.33%',
+        height: '50%',
+      })
       break
     case 'bottom':
-      Object.assign(style, { left: '33.33%', bottom: 0, width: '33.33%', height: '50%' })
+      Object.assign(style, {
+        left: '33.33%',
+        bottom: 0,
+        width: '33.33%',
+        height: '50%',
+      })
       break
   }
   return <div ref={ref} style={style} />
 }
 
-export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onRestorePreset }: PaneProps) {
-  const { setActivePane, splitPane, removePane, connectPane } = useTerminalStore()
+export default function Pane({
+  tabId,
+  pane,
+  isActive,
+  closable,
+  isActiveTab,
+  onRestorePreset,
+}: PaneProps) {
+  const { setActivePane, splitPane, removePane, connectPane } =
+    useTerminalStore()
   const dropPane = useDragStore((s) => s.dropPane)
   const dropSide: DropSide | null =
-    dropPane && dropPane.tabId === tabId && dropPane.paneId === pane.id ? dropPane.side : null
+    dropPane && dropPane.tabId === tabId && dropPane.paneId === pane.id
+      ? dropPane.side
+      : null
+  const [showPortForwarding, setShowPortForwarding] = useState(false)
 
   // Grip handle makes this pane draggable for in-tab reordering.
   const { ref, isDragging } = useDraggable({
@@ -95,24 +142,43 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
     data: { type: 'pane-source', tabId, paneId: pane.id },
   })
 
-  const handleConnect = (host: any) => {
+  const handleConnect = (host: Host) => {
     connectPane(tabId, pane.id, host.id, host.name, {
       hostAddress: host.address,
       hostPort: host.port,
       hostUsername: host.username,
+      authType: host.authType,
+      keyId: host.keyId,
+    })
+  }
+
+  const handleConnectLocal = (shell: string) => {
+    connectPane(tabId, pane.id, `local_${Date.now()}`, 'Local', {
+      connectionType: 'local',
+      shell,
     })
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: terminal pane container with ref and data attributes
     <div
       data-pane-id={pane.id}
       data-tab-id={tabId}
+      role="button"
+      tabIndex={0}
       className={`flex flex-col h-full min-h-0 min-w-0 bg-dark-950 relative ${
-        isActive ? 'ring-1 ring-inset ring-primary-600/60' : 'ring-1 ring-inset ring-dark-800'
+        isActive
+          ? 'ring-1 ring-inset ring-primary-600/60'
+          : 'ring-1 ring-inset ring-dark-800'
       } ${dropSide ? 'ring-1 ring-inset ring-primary-500' : ''} ${
         isDragging ? 'opacity-40' : ''
       }`}
       onMouseDown={() => setActivePane(tabId, pane.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          setActivePane(tabId, pane.id)
+        }
+      }}
     >
       {/* Pane header */}
       <div
@@ -120,24 +186,20 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
           isActive ? 'bg-dark-800' : 'bg-dark-900'
         }`}
       >
-        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotClass(pane.connectionStatus)}`} />
+        <div
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotClass(pane.connectionStatus)}`}
+        />
 
         {/* Drag handle (only when there is more than one pane to rearrange) */}
         {closable && (
           <button
+            type="button"
             ref={ref}
             className="p-0.5 text-dark-500 hover:text-white hover:bg-dark-700 rounded cursor-grab active:cursor-grabbing flex-shrink-0"
             title="Drag to move pane"
             style={{ touchAction: 'none' }}
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-              <circle cx="7" cy="5" r="1.5" />
-              <circle cx="13" cy="5" r="1.5" />
-              <circle cx="7" cy="10" r="1.5" />
-              <circle cx="13" cy="10" r="1.5" />
-              <circle cx="7" cy="15" r="1.5" />
-              <circle cx="13" cy="15" r="1.5" />
-            </svg>
+            <DotsSixVertical className="w-3.5 h-3.5" />
           </button>
         )}
 
@@ -147,6 +209,7 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
 
         {/* Split horizontal */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             splitPane(tabId, pane.id, 'horizontal')
@@ -154,13 +217,12 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
           className="p-0.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
           title="Split right"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4v16M4 8h16M4 16h16" />
-          </svg>
+          <SplitHorizontal className="w-3.5 h-3.5" weight="bold" />
         </button>
 
         {/* Split vertical */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             splitPane(tabId, pane.id, 'vertical')
@@ -168,14 +230,28 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
           className="p-0.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
           title="Split down"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M8 4v16M16 4v16" />
-          </svg>
+          <SplitVertical className="w-3.5 h-3.5" weight="bold" />
         </button>
+
+        {/* Port forwarding (only when connected) */}
+        {pane.hostId && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowPortForwarding(true)
+            }}
+            className="p-0.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
+            title="Port Forwarding"
+          >
+            <ArrowsLeftRight className="w-3.5 h-3.5" weight="bold" />
+          </button>
+        )}
 
         {/* Close (only when more than one pane in the tab) */}
         {closable && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               removePane(tabId, pane.id)
@@ -183,9 +259,7 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
             className="p-0.5 text-dark-400 hover:text-red-400 hover:bg-dark-700 rounded"
             title="Close pane"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-3.5 h-3.5" weight="bold" />
           </button>
         )}
       </div>
@@ -201,10 +275,18 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
             hostAddress={pane.hostAddress}
             hostPort={pane.hostPort}
             hostUsername={pane.hostUsername}
+            authType={pane.authType}
+            keyId={pane.keyId}
+            connectionType={pane.connectionType}
+            shell={pane.shell}
             isActive={isActive}
           />
         ) : (
-          <HostBrowser onConnect={handleConnect} onRestorePreset={(preset) => onRestorePreset(preset, tabId)} />
+          <HostBrowser
+            onConnect={handleConnect}
+            onConnectLocal={handleConnectLocal}
+            onRestorePreset={(preset) => onRestorePreset(preset, tabId)}
+          />
         )}
         {isActiveTab && (
           <>
@@ -216,6 +298,39 @@ export default function Pane({ tabId, pane, isActive, closable, isActiveTab, onR
         )}
         {dropSide && <div style={previewStyle(dropSide)} />}
       </div>
+
+      {/* Port Forwarding Drawer */}
+      {showPortForwarding && (
+        <div className="absolute inset-0 z-50 flex">
+          <div className="w-80 bg-dark-900 border-l border-dark-700 flex flex-col">
+            <div className="flex items-center justify-between p-2 border-b border-dark-700">
+              <span className="text-sm font-medium text-white">
+                Port Forwarding
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPortForwarding(false)}
+                className="p-1 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <PortForwarding hostId={pane.hostId} />
+            </div>
+          </div>
+          {/* Backdrop */}
+          <button
+            type="button"
+            className="flex-1 bg-black/30 cursor-default"
+            onClick={() => setShowPortForwarding(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowPortForwarding(false)
+            }}
+            aria-label="Close port forwarding panel"
+          />
+        </div>
+      )}
     </div>
   )
 }

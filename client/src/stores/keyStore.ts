@@ -1,8 +1,12 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import {
+  decryptKeyCredentials,
+  encryptKeyCredentials,
+} from '../lib/vaultCrypto'
+import { useAuthStore } from './authStore'
 
 interface Key {
   id: string
@@ -26,6 +30,7 @@ interface KeyState {
   importKey: (key: Partial<Key>) => Promise<void>
   generateKey: (name: string, keyType: string) => Promise<void>
   deleteKey: (id: string) => Promise<void>
+  getCredentialsForKey: (keyId: string) => Promise<string>
   clearError: () => void
 }
 
@@ -42,10 +47,16 @@ export const useKeyStore = create<KeyState>((set, get) => ({
   fetchKeys: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const keys = await invoke<Key[]>('list_keys', { userId: getUserId(), vaultId: vaultId || null })
+      const keys = await invoke<Key[]>('list_keys', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({ keys, isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -55,16 +66,17 @@ export const useKeyStore = create<KeyState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
+      const encrypted = await encryptKeyCredentials({
+        userId: getUserId(),
+        name: keyData.name || '',
+        description: keyData.description,
+        keyType: keyData.keyType || 'ed25519',
+        publicKey: keyData.publicKey || '',
+        encryptedPrivateKey: keyData.encryptedPrivateKey,
+        fingerprint: keyData.fingerprint,
+      })
       const result = await invoke<Key>('create_key', {
-        key: {
-          userId: getUserId(),
-          name: keyData.name || '',
-          description: keyData.description,
-          keyType: keyData.keyType || 'ed25519',
-          publicKey: keyData.publicKey || '',
-          encryptedPrivateKey: keyData.encryptedPrivateKey,
-          fingerprint: keyData.fingerprint,
-        },
+        key: encrypted,
         deviceId,
       })
       set({
@@ -72,8 +84,11 @@ export const useKeyStore = create<KeyState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -81,22 +96,48 @@ export const useKeyStore = create<KeyState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const mockKey = {
+      let keyResult: {
+        publicKey: string
+        privateKey: string
+        fingerprint: string
+      }
+
+      if (keyType === 'rsa') {
+        keyResult = await invoke<{
+          publicKey: string
+          privateKey: string
+          fingerprint: string
+        }>('generate_rsa_keypair')
+      } else {
+        keyResult = await invoke<{
+          publicKey: string
+          privateKey: string
+          fingerprint: string
+        }>('generate_ed25519_keypair')
+      }
+
+      const encrypted = await encryptKeyCredentials({
         userId: getUserId(),
         name,
         keyType,
-        publicKey: `ssh-${keyType} AAAA模拟公钥`,
-        encryptedPrivateKey: '加密私钥占位符',
-        fingerprint: 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99',
-      }
-      const result = await invoke<Key>('create_key', { key: mockKey, deviceId })
+        publicKey: keyResult.publicKey,
+        encryptedPrivateKey: keyResult.privateKey,
+        fingerprint: keyResult.fingerprint,
+      })
+      const result = await invoke<Key>('create_key', {
+        key: encrypted,
+        deviceId,
+      })
       set({
         keys: [...get().keys, result],
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -111,8 +152,24 @@ export const useKeyStore = create<KeyState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
+    }
+  },
+
+  getCredentialsForKey: async (keyId) => {
+    try {
+      const key = get().keys.find((k) => k.id === keyId)
+      if (!key) return ''
+      const decrypted = await decryptKeyCredentials({
+        encryptedPrivateKey: key.encryptedPrivateKey,
+      })
+      return decrypted.encryptedPrivateKey || ''
+    } catch {
+      return ''
     }
   },
 

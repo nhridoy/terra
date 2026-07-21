@@ -1,9 +1,10 @@
 import type { FileItem } from './sftpTypes'
 
-const TAURI_ERROR = 'Local filesystem is only available in the desktop app. Run "pnpm tauri dev" to test locally.'
+const TAURI_ERROR =
+  'Local filesystem is only available in the desktop app. Run "pnpm tauri dev" to test locally.'
 
 function ensureTauri(): void {
-  if (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__) {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
     throw new Error(TAURI_ERROR)
   }
 }
@@ -55,7 +56,10 @@ export async function readLocalFile(filePath: string): Promise<string> {
   return readTextFile(filePath)
 }
 
-export async function writeLocalFile(filePath: string, content: string): Promise<void> {
+export async function writeLocalFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
   const { writeTextFile } = await loadTauriFs()
   await writeTextFile(filePath, content)
 }
@@ -70,7 +74,10 @@ export async function removeLocalFile(filePath: string): Promise<void> {
   await remove(filePath)
 }
 
-export async function renameLocalFile(oldPath: string, newPath: string): Promise<void> {
+export async function renameLocalFile(
+  oldPath: string,
+  newPath: string,
+): Promise<void> {
   const { rename } = await loadTauriFs()
   await rename(oldPath, newPath)
 }
@@ -101,7 +108,9 @@ export async function openFilePicker(): Promise<string | null> {
   return null
 }
 
-export async function saveFilePicker(defaultName?: string): Promise<string | null> {
+export async function saveFilePicker(
+  defaultName?: string,
+): Promise<string | null> {
   const { save } = await loadTauriDialog()
   const selected = await save({
     defaultPath: defaultName,
@@ -111,5 +120,5 @@ export async function saveFilePicker(defaultName?: string): Promise<string | nul
 }
 
 export function isTauriAvailable(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }

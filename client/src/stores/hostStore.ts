@@ -1,8 +1,12 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import {
+  decryptHostCredentials,
+  encryptHostCredentials,
+} from '../lib/vaultCrypto'
+import { useAuthStore } from './authStore'
 
 function normalizeTags(tags: unknown): string[] {
   if (!tags) return []
@@ -18,7 +22,7 @@ function normalizeTags(tags: unknown): string[] {
   return []
 }
 
-function normalizeHost(raw: any): Host {
+function normalizeHost(raw: Omit<Host, 'tags'> & { tags: unknown }): Host {
   return { ...raw, tags: normalizeTags(raw.tags) }
 }
 
@@ -35,6 +39,11 @@ export interface Host {
   sortOrder: number
   createdAt: string
   updatedAt: string
+  password?: string
+  privateKey?: string
+  passphrase?: string
+  authType?: 'password' | 'key'
+  keyId?: string
 }
 
 export interface Group {
@@ -59,6 +68,9 @@ interface HostState {
   updateHost: (id: string, host: Partial<Host>) => Promise<void>
   deleteHost: (id: string) => Promise<void>
   selectHost: (host: Host | null) => void
+  getCredentialsForHost: (
+    hostId: string,
+  ) => Promise<{ password: string; privateKey: string; passphrase: string }>
   createGroup: (group: Partial<Group>) => Promise<void>
   updateGroup: (id: string, group: Partial<Group>) => Promise<void>
   deleteGroup: (id: string) => Promise<void>
@@ -79,20 +91,32 @@ export const useHostStore = create<HostState>((set, get) => ({
   fetchHosts: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const hosts = await invoke<any[]>('list_hosts', { userId: getUserId(), vaultId: vaultId || null })
+      const hosts = await invoke<Host[]>('list_hosts', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({ hosts: hosts.map(normalizeHost), isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
   fetchGroups: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const groups = await invoke<Group[]>('list_groups', { userId: getUserId(), vaultId: vaultId || null })
+      const groups = await invoke<Group[]>('list_groups', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({ groups, isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -100,24 +124,34 @@ export const useHostStore = create<HostState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const result = await invoke<any>('create_host', {
-        host: {
-          userId: getUserId(),
-          name: host.name || '',
-          address: host.address || '',
-          port: host.port || 22,
-          username: host.username || '',
-          groupId: host.groupId || null,
-          tags: host.tags ? JSON.stringify(host.tags) : '[]',
-          color: host.color || null,
-          icon: host.icon || null,
-        },
+      const payload: Record<string, unknown> = {
+        userId: getUserId(),
+        name: host.name || '',
+        address: host.address || '',
+        port: host.port || 22,
+        username: host.username || '',
+        groupId: host.groupId || null,
+        tags: host.tags ? JSON.stringify(host.tags) : '[]',
+        color: host.color || null,
+        icon: host.icon || null,
+        authType: host.authType || 'password',
+        keyId: host.keyId || '',
+      }
+      if (host.password) payload.password = host.password
+      if (host.privateKey) payload.privateKey = host.privateKey
+      if (host.passphrase) payload.passphrase = host.passphrase
+      const encrypted = await encryptHostCredentials(payload)
+      const result = await invoke<Host>('create_host', {
+        host: encrypted,
         deviceId,
       })
       set({ hosts: [...get().hosts, normalizeHost(result)], isLoading: false })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -125,28 +159,40 @@ export const useHostStore = create<HostState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const result = await invoke<any>('update_host', {
+      const payload: Record<string, unknown> = {
+        userId: getUserId(),
+        name: host.name || '',
+        address: host.address || '',
+        port: host.port || 22,
+        username: host.username || '',
+        groupId: host.groupId || null,
+        tags: host.tags ? JSON.stringify(host.tags) : '[]',
+        color: host.color || null,
+        icon: host.icon || null,
+        authType: host.authType || 'password',
+        keyId: host.keyId || '',
+      }
+      if (host.password) payload.password = host.password
+      if (host.privateKey) payload.privateKey = host.privateKey
+      if (host.passphrase) payload.passphrase = host.passphrase
+      const encrypted = await encryptHostCredentials(payload)
+      const result = await invoke<Host>('update_host', {
         id,
-        host: {
-          userId: getUserId(),
-          name: host.name || '',
-          address: host.address || '',
-          port: host.port || 22,
-          username: host.username || '',
-          groupId: host.groupId || null,
-          tags: host.tags ? JSON.stringify(host.tags) : '[]',
-          color: host.color || null,
-          icon: host.icon || null,
-        },
+        host: encrypted,
         deviceId,
       })
       set({
-        hosts: get().hosts.map((h) => (h.id === id ? normalizeHost(result) : h)),
+        hosts: get().hosts.map((h) =>
+          h.id === id ? normalizeHost(result) : h,
+        ),
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -160,12 +206,28 @@ export const useHostStore = create<HostState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
   selectHost: (host) => set({ selectedHost: host }),
+
+  getCredentialsForHost: async (hostId) => {
+    try {
+      const creds = await invoke<{
+        password: string
+        privateKey: string
+        passphrase: string
+      }>('get_host_credentials', { hostId })
+      return await decryptHostCredentials(creds)
+    } catch {
+      return { password: '', privateKey: '', passphrase: '' }
+    }
+  },
 
   createGroup: async (group) => {
     set({ isLoading: true, error: null })
@@ -182,8 +244,11 @@ export const useHostStore = create<HostState>((set, get) => ({
       })
       set({ groups: [...get().groups, result], isLoading: false })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -206,8 +271,11 @@ export const useHostStore = create<HostState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -218,7 +286,7 @@ export const useHostStore = create<HostState>((set, get) => ({
       await invoke('delete_group', { id, deviceId })
       const [groups, hosts] = await Promise.all([
         invoke<Group[]>('list_groups', { userId: getUserId(), vaultId: null }),
-        invoke<any[]>('list_hosts', { userId: getUserId(), vaultId: null }),
+        invoke<Host[]>('list_hosts', { userId: getUserId(), vaultId: null }),
       ])
       set({
         groups,
@@ -226,8 +294,11 @@ export const useHostStore = create<HostState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 

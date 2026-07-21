@@ -24,5 +24,6 @@ export const useDragStore = create<DragState>((set) => ({
 
   sourcePaneId: null,
   sourceTabId: null,
-  setSourcePane: (paneId, tabId) => set({ sourcePaneId: paneId, sourceTabId: tabId }),
+  setSourcePane: (paneId, tabId) =>
+    set({ sourcePaneId: paneId, sourceTabId: tabId }),
 }))

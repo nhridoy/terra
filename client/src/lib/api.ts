@@ -1,35 +1,23 @@
-const API_BASE = 'http://localhost:8080/api'
+import {
+  clearTokens,
+  getAccessToken,
+  getApiUrl,
+  getRefreshToken,
+  isTokenExpired,
+  refreshAccessToken,
+  saveTokens,
+} from './auth'
 
 class ApiClient {
-  private token: string | null = null
-  private _refreshToken: string | null = null
-
-  setTokens(token: string, refreshToken: string) {
-    this.token = token
-    this._refreshToken = refreshToken
-    localStorage.setItem('token', token)
-    localStorage.setItem('refreshToken', refreshToken)
-  }
-
-  getTokens() {
-    return {
-      token: this.token || localStorage.getItem('token'),
-      refreshToken: this._refreshToken || localStorage.getItem('refreshToken'),
-    }
-  }
-
-  clearTokens() {
-    this.token = null
-    this._refreshToken = null
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
-  }
-
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
   ): Promise<T> {
-    const { token } = this.getTokens()
+    let token = await getAccessToken()
+
+    if (await isTokenExpired()) {
+      token = await refreshAccessToken()
+    }
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -37,15 +25,44 @@ class ApiClient {
       ...options.headers,
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
+    const baseUrl = await getApiUrl()
+    const response = await fetch(`${baseUrl}/api/v1${endpoint}`, {
       ...options,
       headers,
     })
 
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken()
+      if (newToken) {
+        const retryHeaders: HeadersInit = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${newToken}`,
+          ...options.headers,
+        }
+        const retryResponse = await fetch(`${baseUrl}/api/v1${endpoint}`, {
+          ...options,
+          headers: retryHeaders,
+        })
+        const retryData = await retryResponse.json()
+        if (!retryResponse.ok) {
+          const err = new Error(
+            retryData.error || 'Request failed',
+          ) as Error & { status?: number }
+          err.status = retryResponse.status
+          throw err
+        }
+        return retryData
+      }
+      await clearTokens()
+      throw new Error('Session expired')
+    }
+
     const data = await response.json()
 
     if (!response.ok) {
-      const err = new Error(data.error || 'Request failed') as Error & { status?: number }
+      const err = new Error(data.error || 'Request failed') as Error & {
+        status?: number
+      }
       err.status = response.status
       throw err
     }
@@ -53,24 +70,30 @@ class ApiClient {
     return data
   }
 
-  // Auth
   async register(email: string, username: string, password: string) {
-    return this.request<{
+    const data = await this.request<{
       userId: string
       token: string
       refreshToken: string
-      expiresAt: string
+      expiresAt: number
+      hasMasterPassword: boolean
     }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, username, password }),
     })
+
+    await saveTokens(data.token, data.refreshToken, data.expiresAt)
+    return data
   }
 
   async login(email: string, password: string) {
     const data = await this.request<{
       token: string
       refreshToken: string
+      expiresAt: number
       userId: string
+      username: string
+      hasMasterPassword: boolean
       encryptedPrivateKey?: string
       encryptedPersonalKey?: string
       publicKey?: string
@@ -81,25 +104,80 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
     })
 
-    this.setTokens(data.token, data.refreshToken)
+    await saveTokens(data.token, data.refreshToken, data.expiresAt)
     return data
   }
 
-  async refreshToken(): Promise<{ token: string; refreshToken: string; expiresAt: string }> {
-    const { refreshToken } = this.getTokens()
+  async refreshToken() {
+    const refreshToken = await getRefreshToken()
     if (!refreshToken) throw new Error('No refresh token')
 
     const data = await this.request<{
       token: string
       refreshToken: string
-      expiresAt: string
+      expiresAt: number
     }>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     })
 
-    this.setTokens(data.token, data.refreshToken)
+    await saveTokens(data.token, data.refreshToken, data.expiresAt)
     return data
+  }
+
+  async logout() {
+    try {
+      await this.request('/auth/logout', { method: 'POST' })
+    } catch {
+      // Ignore errors on logout
+    }
+    await clearTokens()
+  }
+
+  async setMasterPassword() {
+    return this.request<{ message: string }>('/auth/master-password', {
+      method: 'POST',
+    })
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    return this.request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  }
+
+  async updateProfile(data: { username: string; email: string }) {
+    return this.request<{
+      userId: string
+      username: string
+      email: string
+    }>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async get<T>(endpoint: string): Promise<T> {
+    return this.request<T>(endpoint)
+  }
+
+  async post<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  }
+
+  async put<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  }
+
+  async delete<T>(endpoint: string): Promise<T> {
+    return this.request<T>(endpoint, { method: 'DELETE' })
   }
 }
 

@@ -52,13 +52,16 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
     setError(null)
 
     try {
-      const tagArray = tags.split(',').map(t => t.trim()).filter(Boolean)
+      const tagArray = tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
       if (snippet) {
         await updateSnippet(snippet.id, {
           name: name.trim(),
           command: command.trim(),
           description: description.trim(),
-          tags: tagArray
+          tags: tagArray,
         })
       } else {
         await createSnippet({
@@ -70,8 +73,12 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
         })
       }
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save snippet')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to save snippet',
+      )
     } finally {
       setIsLoading(false)
     }
@@ -86,7 +93,10 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
       )}
 
       <div>
-        <label htmlFor="snippet-name" className="block text-dark-300 text-sm mb-2">
+        <label
+          htmlFor="snippet-name"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Name
         </label>
         <input
@@ -97,12 +107,14 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
           className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           placeholder="Snippet name"
           required
-          autoFocus
         />
       </div>
 
       <div>
-        <label htmlFor="snippet-command" className="block text-dark-300 text-sm mb-2">
+        <label
+          htmlFor="snippet-command"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Command
         </label>
         <textarea
@@ -117,7 +129,10 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
       </div>
 
       <div>
-        <label htmlFor="snippet-description" className="block text-dark-300 text-sm mb-2">
+        <label
+          htmlFor="snippet-description"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Description (optional)
         </label>
         <textarea
@@ -131,7 +146,10 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
       </div>
 
       <div>
-        <label htmlFor="snippet-tags" className="block text-dark-300 text-sm mb-2">
+        <label
+          htmlFor="snippet-tags"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Tags (comma separated)
         </label>
         <input
@@ -157,7 +175,11 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
           disabled={isLoading}
           className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50"
         >
-          {isLoading ? 'Saving...' : snippet ? 'Save Changes' : 'Create Snippet'}
+          {isLoading
+            ? 'Saving...'
+            : snippet
+              ? 'Save Changes'
+              : 'Create Snippet'}
         </button>
       </div>
     </form>

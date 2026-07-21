@@ -1,6 +1,7 @@
-import { useSortable } from '@dnd-kit/react/sortable'
 import { closestCenter } from '@dnd-kit/collision'
-import type { TerminalTab, PaneNode } from '../../stores/terminalStore'
+import { useSortable } from '@dnd-kit/react/sortable'
+import { FloppyDisk, X } from '@phosphor-icons/react'
+import type { PaneNode, TerminalTab } from '../../stores/terminalStore'
 import { computeTabSnapshot } from '../../stores/terminalStore'
 
 function collectPaneStatuses(node: PaneNode): string[] {
@@ -33,7 +34,15 @@ interface SortableTabProps {
   onSavePresetChanges?: (tabId: string) => void
 }
 
-export default function SortableTab({ tab, index, isActive, onActivate, onClose, onSavePreset, onSavePresetChanges }: SortableTabProps) {
+export default function SortableTab({
+  tab,
+  index,
+  isActive,
+  onActivate,
+  onClose,
+  onSavePreset,
+  onSavePresetChanges,
+}: SortableTabProps) {
   const { ref, isDragging } = useSortable({
     id: tab.id,
     index,
@@ -43,12 +52,22 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
   const dot = statusDotClass(collectPaneStatuses(tab.root))
   const multiPane = countLeaves(tab.root) > 1
   const hasPreset = !!tab.activePresetId
-  const isPresetDirty = hasPreset && computeTabSnapshot(tab.root) !== tab.savedPresetSnapshot
+  const isPresetDirty =
+    hasPreset && computeTabSnapshot(tab.root) !== tab.savedPresetSnapshot
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: dnd-kit draggable ref requires div
     <div
       ref={ref}
+      role="button"
+      tabIndex={0}
       onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onActivate()
+        }
+      }}
       className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-opacity duration-150 max-w-[140px] flex-shrink-0 select-none ${
         isActive
           ? 'bg-dark-800 text-white'
@@ -70,23 +89,22 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
           )}
           {onSavePresetChanges && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 onSavePresetChanges(tab.id)
               }}
               disabled={!isPresetDirty}
-              title={isPresetDirty ? 'Save preset changes' : 'No unsaved changes'}
+              title={
+                isPresetDirty ? 'Save preset changes' : 'No unsaved changes'
+              }
               className={`flex-shrink-0 ${
                 isPresetDirty
                   ? 'text-primary-400 hover:text-white'
                   : 'text-dark-600 cursor-default'
               }`}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
-              </svg>
+              <FloppyDisk className="w-3 h-3" />
             </button>
           )}
         </>
@@ -94,6 +112,7 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
         multiPane &&
         onSavePreset && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onSavePreset(tab.id)
@@ -101,16 +120,13 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
             className="text-dark-500 hover:text-white flex-shrink-0"
             title="Save as Quick Preset"
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3v5h6V3" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 21v-7h8v7" />
-            </svg>
+            <FloppyDisk className="w-3 h-3" />
           </button>
         )
       )}
 
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation()
           onClose()
@@ -118,9 +134,7 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
         className="ml-0.5 text-dark-500 hover:text-white flex-shrink-0"
         aria-label="Close tab"
       >
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
+        <X className="w-3 h-3" />
       </button>
     </div>
   )
@@ -129,7 +143,9 @@ export default function SortableTab({ tab, index, isActive, onActivate, onClose,
 export function TabPreview({ tab }: { tab: TerminalTab }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800/50">
-      <span className="text-xs text-dark-300 truncate max-w-[160px]">{tab.title}</span>
+      <span className="text-xs text-dark-300 truncate max-w-[160px]">
+        {tab.title}
+      </span>
     </div>
   )
 }

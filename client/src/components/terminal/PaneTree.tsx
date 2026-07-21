@@ -1,6 +1,6 @@
 import { useRef } from 'react'
+import type { LeafNode, PaneNode } from '../../stores/terminalStore'
 import { useTerminalStore } from '../../stores/terminalStore'
-import type { PaneNode, LeafNode } from '../../stores/terminalStore'
 import Pane from './Pane'
 
 interface PaneTreeProps {
@@ -8,7 +8,10 @@ interface PaneTreeProps {
   node: PaneNode
   activePaneId: string | null
   isActiveTab: boolean
-  onRestorePreset: (preset: { id?: string; name?: string; layout: string }, tabId: string) => void
+  onRestorePreset: (
+    preset: { id?: string; name?: string; layout: string },
+    tabId: string,
+  ) => void
 }
 
 interface PlacedPane {
@@ -99,24 +102,27 @@ function SplitDivider({
   containerRef: React.RefObject<HTMLDivElement>
 }) {
   const { setPaneSizes } = useTerminalStore()
-  const dragRef = useRef<{ sizes: number[]; sumAll: number; startPx: number } | null>(null)
+  const dragRef = useRef<{
+    sizes: number[]
+    sumAll: number
+    startPx: number
+  } | null>(null)
   const isHorizontal = divider.direction === 'horizontal'
   const MIN_FRACTION = 0.1 // neither adjacent pane may shrink below 10% of the split
 
-  const geometry =
-    isHorizontal
-      ? {
-          left: `calc(${divider.posPct}% - ${DIV / 2}px)`,
-          top: `${divider.crossPct}%`,
-          width: `${DIV}px`,
-          height: `${divider.extentPct}%`,
-        }
-      : {
-          left: `${divider.crossPct}%`,
-          top: `calc(${divider.posPct}% - ${DIV / 2}px)`,
-          width: `${divider.extentPct}%`,
-          height: `${DIV}px`,
-        }
+  const geometry = isHorizontal
+    ? {
+        left: `calc(${divider.posPct}% - ${DIV / 2}px)`,
+        top: `${divider.crossPct}%`,
+        width: `${DIV}px`,
+        height: `${divider.extentPct}%`,
+      }
+    : {
+        left: `${divider.crossPct}%`,
+        top: `calc(${divider.posPct}% - ${DIV / 2}px)`,
+        width: `${divider.extentPct}%`,
+        height: `${DIV}px`,
+      }
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -186,7 +192,9 @@ function SplitDivider({
       {/* Grip handle — revealed on hover to signal resizability */}
       <div
         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded bg-dark-800/90 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity ${
-          isHorizontal ? 'flex-col gap-1 py-1.5 px-1' : 'flex-row gap-1 px-1.5 py-1'
+          isHorizontal
+            ? 'flex-col gap-1 py-1.5 px-1'
+            : 'flex-row gap-1 px-1.5 py-1'
         }`}
       >
         <span className="w-1 h-1 rounded-full bg-dark-400 group-hover:bg-white" />
@@ -201,7 +209,8 @@ function findSplitInStore(tabId: string, splitId: string) {
   if (!tab) return null
   const stack: PaneNode[] = [tab.root]
   while (stack.length) {
-    const n = stack.pop()!
+    const n = stack.pop()
+    if (!n) continue
     if (n.type === 'split') {
       if (n.id === splitId) return n
       stack.push(...n.children)
@@ -210,7 +219,13 @@ function findSplitInStore(tabId: string, splitId: string) {
   return null
 }
 
-export default function PaneTree({ tabId, node, activePaneId, isActiveTab, onRestorePreset }: PaneTreeProps) {
+export default function PaneTree({
+  tabId,
+  node,
+  activePaneId,
+  isActiveTab,
+  onRestorePreset,
+}: PaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const closable = countLeaves(node) > 1
 
@@ -247,7 +262,12 @@ export default function PaneTree({ tabId, node, activePaneId, isActiveTab, onRes
       })}
 
       {dividers.map((d) => (
-        <SplitDivider key={d.id} tabId={tabId} divider={d} containerRef={containerRef} />
+        <SplitDivider
+          key={d.id}
+          tabId={tabId}
+          divider={d}
+          containerRef={containerRef}
+        />
       ))}
     </div>
   )

@@ -1,12 +1,16 @@
+import { DesktopTower, Lightning, MagnifyingGlass } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
-import { useHostStore, type Host } from '../../stores/hostStore'
+import { type Host, useHostStore } from '../../stores/hostStore'
 
 interface SftpHostPickerProps {
   onConnect: (host: Host) => void
   onClose: () => void
 }
 
-export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerProps) {
+export default function SftpHostPicker({
+  onConnect,
+  onClose,
+}: SftpHostPickerProps) {
   const { hosts } = useHostStore()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -15,7 +19,8 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
   const q = query.toLowerCase()
   const filteredHosts = hosts.filter(
     (host) =>
-      host.name.toLowerCase().includes(q) || host.address.toLowerCase().includes(q),
+      host.name.toLowerCase().includes(q) ||
+      host.address.toLowerCase().includes(q),
   )
 
   useEffect(() => {
@@ -24,7 +29,7 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
 
   useEffect(() => {
     setSelectedIndex(0)
-  }, [query])
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -55,7 +60,7 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
         id: `direct_${Date.now()}`,
         name: address,
         address,
-        port: Number.parseInt(port || '22'),
+        port: Number.parseInt(port || '22', 10),
         username: username || 'root',
         authType: 'password',
         tags: [],
@@ -71,9 +76,7 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
     <div className="flex flex-col h-full bg-dark-900">
       {/* Search */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-dark-700">
-        <svg className="w-5 h-5 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
+        <MagnifyingGlass className="w-5 h-5 text-dark-400" weight="bold" />
         <input
           ref={inputRef}
           type="text"
@@ -85,6 +88,7 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
         />
         {query && (
           <button
+            type="button"
             onClick={() => setQuery('')}
             className="text-xs text-dark-400 hover:text-white"
           >
@@ -98,13 +102,12 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
         {/* Direct connect option */}
         {query && noExactHost && (
           <button
+            type="button"
             onClick={handleDirectConnect}
             className="flex items-center w-full gap-3 px-4 py-3 text-left hover:bg-dark-800"
           >
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-600">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+              <Lightning className="w-4 h-4 text-white" weight="bold" />
             </div>
             <div>
               <div className="text-sm text-white">Connect to {query}</div>
@@ -117,13 +120,19 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
         <div className="pb-2">
           {filteredHosts.length === 0 ? (
             <div className="px-4 py-3 text-sm text-dark-500">
-              {query ? 'No hosts match your search' : 'No hosts available — add a host or type a connection string'}
+              {query
+                ? 'No hosts match your search'
+                : 'No hosts available — add a host or type a connection string'}
             </div>
           ) : (
             filteredHosts.map((host, index) => (
               <button
+                type="button"
                 key={host.id}
-                onClick={() => { onConnect(host); onClose() }}
+                onClick={() => {
+                  onConnect(host)
+                  onClose()
+                }}
                 className={`w-full px-4 py-3 flex items-center gap-3 text-left ${
                   index === selectedIndex ? 'bg-dark-800' : 'hover:bg-dark-800'
                 }`}
@@ -132,20 +141,22 @@ export default function SftpHostPicker({ onConnect, onClose }: SftpHostPickerPro
                   className="flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg"
                   style={{ backgroundColor: host.color || '#64748b' }}
                 >
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-                  </svg>
+                  <DesktopTower className="w-4 h-4 text-white" weight="bold" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white">{host.name}</div>
                   <div className="text-xs text-dark-400">
-                    {host.username ? `${host.username}@` : ''}{host.address}:{host.port}
+                    {host.username ? `${host.username}@` : ''}
+                    {host.address}:{host.port}
                   </div>
                 </div>
                 {host.tags && host.tags.length > 0 && (
                   <div className="flex gap-1">
                     {host.tags.slice(0, 2).map((tag: string) => (
-                      <span key={tag} className="px-1.5 py-0.5 bg-dark-700 text-dark-300 text-xs rounded">
+                      <span
+                        key={tag}
+                        className="px-1.5 py-0.5 bg-dark-700 text-dark-300 text-xs rounded"
+                      >
                         {tag}
                       </span>
                     ))}

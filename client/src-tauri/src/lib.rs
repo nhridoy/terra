@@ -3,8 +3,10 @@
 mod ssh;
 mod vault;
 mod db;
-mod crud;
 mod sync;
+mod crud;
+mod known_hosts;
+mod local_shell;
 
 use std::sync::Mutex;
 use ssh::SSHState;
@@ -12,19 +14,27 @@ use tauri::Manager;
 
 pub struct AppState {
     pub device_id: String,
+    pub api_url: Mutex<Option<String>>,
     pub user_id: Mutex<Option<String>>,
     pub encryption_key: Mutex<Option<String>>,
-    pub token: Mutex<Option<String>>,
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to TermVault!", name)
 }
 
 #[tauri::command]
 fn get_device_id(state: tauri::State<'_, AppState>) -> String {
     state.device_id.clone()
+}
+
+#[tauri::command]
+fn set_api_url(url: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.api_url.lock().map_err(|e| e.to_string())?;
+    *guard = Some(url);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let guard = state.api_url.lock().map_err(|e| e.to_string())?;
+    Ok(guard.clone().unwrap_or_else(|| "http://localhost:8080".to_string()))
 }
 
 #[tauri::command]
@@ -42,37 +52,12 @@ fn set_encryption_key(key: String, state: tauri::State<'_, AppState>) -> Result<
 }
 
 #[tauri::command]
-fn set_token(token: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut guard = state.token.lock().map_err(|e| e.to_string())?;
-    *guard = Some(token);
-    Ok(())
-}
-
-#[tauri::command]
-fn clear_auth(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    *state.user_id.lock().map_err(|e| e.to_string())? = None;
-    *state.encryption_key.lock().map_err(|e| e.to_string())? = None;
-    *state.token.lock().map_err(|e| e.to_string())? = None;
-    Ok(())
-}
-
-#[tauri::command]
-fn clear_local_db() -> Result<(), String> {
-    let conn = db::conn()?;
-    let conn = conn.as_ref().ok_or("DB not initialized")?;
-    conn.execute_batch(
-        "DELETE FROM hosts;
-         DELETE FROM groups;
-         DELETE FROM vaults;
-         DELETE FROM keychain;
-         DELETE FROM snippets;
-         DELETE FROM workspaces;
-         DELETE FROM tab_groups;
-         DELETE FROM settings;
-         DELETE FROM session_logs;
-         DELETE FROM command_logs;
-         DELETE FROM sync_tracking;"
-    ).map_err(|e| e.to_string())
+fn write_file(path: String, contents: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(p, contents).map_err(|e| e.to_string())
 }
 
 fn get_or_create_device_id() -> String {
@@ -80,11 +65,15 @@ fn get_or_create_device_id() -> String {
     let path = dirs.join("termvault").join("device_id");
     if let Ok(id) = std::fs::read_to_string(&path) {
         let id = id.trim().to_string();
-        if !id.is_empty() { return id; }
+        if !id.is_empty() {
+            return id;
+        }
     }
     let id = uuid::Uuid::new_v4().to_string();
-    std::fs::create_dir_all(path.parent().unwrap()).ok();
-    std::fs::write(&path, &id).ok();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, &id);
     id
 }
 
@@ -94,41 +83,59 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
+            let window = app
+                .get_webview_window("main")
+                .ok_or("main window not found")?;
             window.set_title("TermVault")?;
 
-            let app_data_dir = app.path().app_data_dir().expect("failed to get app dir");
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("failed to get app dir: {e}"))?;
             std::fs::create_dir_all(&app_data_dir).ok();
             let db_path = app_data_dir.join("termvault.db");
-            db::init(db_path.to_str().unwrap()).expect("Failed to init DB");
+            let db_str = db_path
+                .to_str()
+                .ok_or("database path is not valid UTF-8")?;
+            db::init(db_str).map_err(|e| format!("Failed to init local DB: {e}"))?;
+
+            // Set known_hosts path for SSH host key verification
+            let known_hosts_path = app_data_dir.join("known_hosts");
+            known_hosts::set_known_hosts_path(known_hosts_path);
 
             Ok(())
         })
         .manage(Mutex::new(SSHState::default()))
         .manage(AppState {
             device_id: get_or_create_device_id(),
+            api_url: Mutex::new(None),
             user_id: Mutex::new(None),
             encryption_key: Mutex::new(None),
-            token: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_device_id,
+            set_api_url,
+            get_api_url,
             set_user_id,
             set_encryption_key,
-            set_token,
+            write_file,
             vault::generate_salt,
             vault::derive_key,
             vault::encrypt,
             vault::decrypt,
+            vault::generate_recovery_kit,
+            vault::recover_from_kit,
+            vault::generate_ed25519_keypair,
+            vault::generate_rsa_keypair,
             ssh::connect,
             ssh::disconnect,
             ssh::send_input,
             ssh::resize,
+            ssh::accept_host_key,
             ssh::sftp_list,
             ssh::sftp_read,
             ssh::sftp_write,
@@ -138,56 +145,60 @@ pub fn run() {
             ssh::sftp_chmod,
             ssh::sftp_copy,
             ssh::sftp_cross_copy,
-            vault::derive_key,
-            vault::encrypt,
-            vault::decrypt,
-            crud::create_host,
-            crud::get_host,
+            ssh::port_forward_start,
+            ssh::port_forward_stop,
+            ssh::port_forward_list,
+            sync::sync_pull,
+            sync::sync_push,
+            sync::get_local_records,
+            db::get_unsynced_records,
+            db::process_sync_result,
             crud::list_hosts,
-            crud::list_hosts_by_group,
+            crud::create_host,
             crud::update_host,
             crud::delete_host,
-            crud::create_group,
+            crud::get_host_credentials,
+            crud::get_all_hosts_with_credentials,
+            crud::get_all_keys_with_credentials,
             crud::list_groups,
+            crud::create_group,
             crud::update_group,
             crud::delete_group,
-            crud::create_vault,
-            crud::create_default_vaults,
             crud::list_vaults,
+            crud::create_vault,
             crud::update_vault,
             crud::delete_vault,
             crud::get_vault_data,
-            crud::create_key,
             crud::list_keys,
-            crud::get_key,
+            crud::create_key,
+            crud::update_key,
             crud::delete_key,
-            crud::create_snippet,
             crud::list_snippets,
+            crud::create_snippet,
             crud::update_snippet,
             crud::delete_snippet,
-            crud::search_snippets,
-            crud::create_workspace,
             crud::list_workspaces,
+            crud::create_workspace,
             crud::update_workspace,
             crud::delete_workspace,
-            crud::create_tab_group,
             crud::list_tab_groups,
+            crud::create_tab_group,
             crud::update_tab_group,
             crud::delete_tab_group,
             crud::get_settings,
             crud::update_settings,
-            crud::create_session_log,
-            crud::list_session_logs,
-            crud::get_session_log,
-            crud::delete_session_log,
-            crud::end_session_log,
-            crud::log_command,
-            crud::list_command_logs,
-            sync::sync_push,
-            sync::sync_full,
-            clear_auth,
-            clear_local_db,
+            known_hosts::list_known_hosts,
+            known_hosts::remove_known_host,
+            known_hosts::clear_known_hosts,
+            local_shell::list_local_shells,
+            local_shell::connect_local,
+            local_shell::disconnect_local,
+            local_shell::send_input_local,
+            local_shell::resize_local,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TermVault");
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to run TermVault: {e}");
+            std::process::exit(1);
+        });
 }

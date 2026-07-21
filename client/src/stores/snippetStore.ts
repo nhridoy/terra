@@ -1,8 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
-import { useAuthStore } from './authStore'
 import { triggerSync } from '../lib/sync'
+import { useAuthStore } from './authStore'
 
 interface Snippet {
   id: string
@@ -59,13 +59,19 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   fetchSnippets: async (vaultId?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const snippets = await invoke<any[]>('list_snippets', { userId: getUserId(), vaultId: vaultId || null })
+      const snippets = await invoke<Snippet[]>('list_snippets', {
+        userId: getUserId(),
+        vaultId: vaultId || null,
+      })
       set({
         snippets: snippets.map((s) => ({ ...s, tags: normalizeTags(s.tags) })),
         isLoading: false,
       })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -75,7 +81,7 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const result = await invoke<any>('create_snippet', {
+      const result = await invoke<Snippet>('create_snippet', {
         snippet: {
           userId: getUserId(),
           name: snippetData.name || '',
@@ -86,12 +92,18 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
         deviceId,
       })
       set({
-        snippets: [...get().snippets, { ...result, tags: normalizeTags(result.tags) }],
+        snippets: [
+          ...get().snippets,
+          { ...result, tags: normalizeTags(result.tags) },
+        ],
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -99,7 +111,7 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const deviceId = await getDeviceId()
-      const result = await invoke<any>('update_snippet', {
+      const result = await invoke<Snippet>('update_snippet', {
         id,
         snippet: {
           userId: getUserId(),
@@ -111,12 +123,17 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
         deviceId,
       })
       set({
-        snippets: get().snippets.map((s) => (s.id === id ? { ...result, tags: normalizeTags(result.tags) } : s)),
+        snippets: get().snippets.map((s) =>
+          s.id === id ? { ...result, tags: normalizeTags(result.tags) } : s,
+        ),
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
@@ -132,8 +149,11 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
         isLoading: false,
       })
       triggerSync()
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 

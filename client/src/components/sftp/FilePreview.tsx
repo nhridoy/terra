@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { File, X } from '@phosphor-icons/react'
 import { invoke } from '@tauri-apps/api/core'
+import { useCallback, useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 
 interface FilePreviewProps {
@@ -21,25 +22,32 @@ export default function FilePreview({
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState<string>('')
 
-  useEffect(() => {
-    loadFile()
-  }, [filePath])
-
-  const loadFile = async () => {
+  const loadFile = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await invoke<number[]>('sftp_read', { hostId, path: filePath })
+      const result = await invoke<number[]>('sftp_read', {
+        hostId,
+        path: filePath,
+      })
       const decoder = new TextDecoder()
       const text = decoder.decode(new Uint8Array(result))
       setContent(text)
       setEditContent(text)
-    } catch (err: any) {
-      setError(err.message || 'Failed to read file')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to read file',
+      )
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [hostId, filePath])
+
+  useEffect(() => {
+    loadFile()
+  }, [loadFile])
 
   const handleSave = async () => {
     setIsLoading(true)
@@ -49,8 +57,12 @@ export default function FilePreview({
       await invoke('sftp_write', { hostId, path: filePath, data })
       setContent(editContent)
       setIsEditing(false)
-    } catch (err: any) {
-      setError(err.message || 'Failed to save file')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to save file',
+      )
     } finally {
       setIsLoading(false)
     }
@@ -129,19 +141,7 @@ export default function FilePreview({
         {/* Header */}
         <div className="p-4 border-b border-dark-700 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <svg
-              className="w-6 h-6 text-primary-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
+            <File className="w-6 h-6 text-primary-500" weight="bold" />
             <div>
               <h3 className="text-white font-medium">{fileName}</h3>
               <p className="text-dark-400 text-sm">{filePath}</p>
@@ -150,6 +150,7 @@ export default function FilePreview({
           <div className="flex items-center gap-2">
             {isTextFile() && !isEditing && (
               <button
+                type="button"
                 onClick={() => setIsEditing(true)}
                 className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg text-sm"
               >
@@ -157,34 +158,25 @@ export default function FilePreview({
               </button>
             )}
             <button
+              type="button"
               onClick={handleCopyToClipboard}
               className="bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-sm"
             >
               Copy
             </button>
             <button
+              type="button"
               onClick={handleDownload}
               className="bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-sm"
             >
               Download
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="text-dark-400 hover:text-white p-2"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <X className="w-5 h-5" weight="bold" />
             </button>
           </div>
         </div>
@@ -209,12 +201,14 @@ export default function FilePreview({
               />
               <div className="p-3 border-t border-dark-700 flex justify-end gap-2">
                 <button
+                  type="button"
                   onClick={handleCancel}
                   className="px-4 py-2 text-dark-400 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleSave}
                   className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
                 >

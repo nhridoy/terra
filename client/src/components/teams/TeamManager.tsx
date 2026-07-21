@@ -1,3 +1,4 @@
+import { Users, X } from '@phosphor-icons/react'
 import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
 import { useEffect, useState } from 'react'
 import { useTeamStore } from '../../stores/teamStore'
@@ -49,7 +50,13 @@ export default function TeamManager() {
   }
 
   const handleRemoveMember = async (userId: string) => {
-    if (selectedTeam && await tauriConfirm('Remove this member?', { title: 'Remove Member', kind: 'warning' })) {
+    if (
+      selectedTeam &&
+      (await tauriConfirm('Remove this member?', {
+        title: 'Remove Member',
+        kind: 'warning',
+      }))
+    ) {
       await removeMember(selectedTeam.id, userId)
     }
   }
@@ -78,6 +85,7 @@ export default function TeamManager() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Teams</h2>
           <button
+            type="button"
             onClick={() => setShowCreateModal(true)}
             className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg text-sm"
           >
@@ -96,10 +104,11 @@ export default function TeamManager() {
             </div>
           ) : (
             teams.map((team) => (
-              <div
+              <button
                 key={team.id}
+                type="button"
                 onClick={() => selectTeam(team)}
-                className={`p-3 cursor-pointer border-b border-dark-700 ${
+                className={`p-3 cursor-pointer border-b border-dark-700 text-left w-full ${
                   selectedTeam?.id === team.id
                     ? 'bg-primary-600/20 border-l-2 border-l-primary-500'
                     : 'hover:bg-dark-800'
@@ -120,7 +129,7 @@ export default function TeamManager() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -143,14 +152,21 @@ export default function TeamManager() {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => setShowInviteModal(true)}
                     className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm"
                   >
                     Invite Member
                   </button>
                   <button
+                    type="button"
                     onClick={async () => {
-                      if (await tauriConfirm('Delete this team?', { title: 'Delete Team', kind: 'warning' })) {
+                      if (
+                        await tauriConfirm('Delete this team?', {
+                          title: 'Delete Team',
+                          kind: 'warning',
+                        })
+                      ) {
                         await deleteTeam(selectedTeam.id)
                       }
                     }}
@@ -207,22 +223,11 @@ export default function TeamManager() {
                               <option value="admin">Admin</option>
                             </select>
                             <button
+                              type="button"
                               onClick={() => handleRemoveMember(member.userId)}
                               className="text-dark-400 hover:text-red-500 p-1"
                             >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M6 18L18 6M6 6l12 12"
-                                />
-                              </svg>
+                              <X className="w-4 h-4" weight="bold" />
                             </button>
                           </div>
                         )}
@@ -235,19 +240,10 @@ export default function TeamManager() {
           ) : (
             <div className="h-full flex items-center justify-center text-dark-400">
               <div className="text-center">
-                <svg
+                <Users
                   className="w-16 h-16 mx-auto mb-4 text-dark-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                  />
-                </svg>
+                  weight="bold"
+                />
                 <p>Select a team to view details</p>
               </div>
             </div>
@@ -264,10 +260,14 @@ export default function TeamManager() {
             </h3>
             <form onSubmit={handleCreateTeam} className="space-y-4">
               <div>
-                <label className="block text-dark-300 text-sm mb-2">
+                <label
+                  htmlFor="team-name"
+                  className="block text-dark-300 text-sm mb-2"
+                >
                   Team Name
                 </label>
                 <input
+                  id="team-name"
                   type="text"
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
@@ -277,10 +277,14 @@ export default function TeamManager() {
                 />
               </div>
               <div>
-                <label className="block text-dark-300 text-sm mb-2">
+                <label
+                  htmlFor="team-description"
+                  className="block text-dark-300 text-sm mb-2"
+                >
                   Description
                 </label>
                 <textarea
+                  id="team-description"
                   value={teamDescription}
                   onChange={(e) => setTeamDescription(e.target.value)}
                   className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -317,10 +321,14 @@ export default function TeamManager() {
             </h3>
             <form onSubmit={handleInviteMember} className="space-y-4">
               <div>
-                <label className="block text-dark-300 text-sm mb-2">
+                <label
+                  htmlFor="invite-email"
+                  className="block text-dark-300 text-sm mb-2"
+                >
                   Email
                 </label>
                 <input
+                  id="invite-email"
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
@@ -330,8 +338,14 @@ export default function TeamManager() {
                 />
               </div>
               <div>
-                <label className="block text-dark-300 text-sm mb-2">Role</label>
+                <label
+                  htmlFor="invite-role"
+                  className="block text-dark-300 text-sm mb-2"
+                >
+                  Role
+                </label>
                 <select
+                  id="invite-role"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
                   className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"

@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useEffect, useState } from 'react'
+import {
+  MAX_PASSWORD_LENGTH,
+  validateName,
+  validatePassword,
+} from '../../lib/validate'
 import { useHostStore } from '../../stores/hostStore'
 import { useVaultStore } from '../../stores/vaultStore'
 import Modal from '../ui/Modal'
 
-interface HostData {
+export interface HostData {
   id: string
   name: string
   address: string
@@ -45,7 +50,11 @@ function parseTags(tags: unknown): string[] {
   return []
 }
 
-export default function HostForm({ host, defaultGroupId, onClose }: HostFormProps) {
+export default function HostForm({
+  host,
+  defaultGroupId,
+  onClose,
+}: HostFormProps) {
   const { createHost, updateHost, groups } = useHostStore()
   const { currentVaultId } = useVaultStore()
   const [name, setName] = useState(host?.name || '')
@@ -63,7 +72,9 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
   const [keys, setKeys] = useState<Key[]>([])
 
   useEffect(() => {
-    invoke<any[]>('list_keys', { userId: '', vaultId: currentVaultId || null }).then((result) => setKeys(result || [])).catch(() => {})
+    invoke<Key[]>('list_keys', { userId: '', vaultId: currentVaultId || null })
+      .then((result) => setKeys(result || []))
+      .catch(() => {})
   }, [currentVaultId])
 
   useEffect(() => {
@@ -86,6 +97,22 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
     setError(null)
 
     try {
+      const nameErr = validateName(name)
+      if (nameErr) {
+        setError(nameErr)
+        setIsLoading(false)
+        return
+      }
+
+      if (authType === 'password' && password) {
+        const pwErr = validatePassword(password)
+        if (pwErr) {
+          setError(pwErr)
+          setIsLoading(false)
+          return
+        }
+      }
+
       const hostData = {
         name,
         address,
@@ -137,7 +164,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="host-name" className="block text-dark-300 text-sm mb-2">Name</label>
+          <label
+            htmlFor="host-name"
+            className="block text-dark-300 text-sm mb-2"
+          >
+            Name
+          </label>
           <input
             id="host-name"
             type="text"
@@ -151,7 +183,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
 
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
-            <label htmlFor="host-address" className="block text-dark-300 text-sm mb-2">Address</label>
+            <label
+              htmlFor="host-address"
+              className="block text-dark-300 text-sm mb-2"
+            >
+              Address
+            </label>
             <input
               id="host-address"
               type="text"
@@ -163,12 +200,19 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
             />
           </div>
           <div>
-            <label htmlFor="host-port" className="block text-dark-300 text-sm mb-2">Port</label>
+            <label
+              htmlFor="host-port"
+              className="block text-dark-300 text-sm mb-2"
+            >
+              Port
+            </label>
             <input
               id="host-port"
               type="number"
               value={port}
-              onChange={(e) => setPort(Number.parseInt(e.target.value) || 22)}
+              onChange={(e) =>
+                setPort(Number.parseInt(e.target.value, 10) || 22)
+              }
               className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               min="1"
               max="65535"
@@ -178,7 +222,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
         </div>
 
         <div>
-          <label htmlFor="host-username" className="block text-dark-300 text-sm mb-2">Username</label>
+          <label
+            htmlFor="host-username"
+            className="block text-dark-300 text-sm mb-2"
+          >
+            Username
+          </label>
           <input
             id="host-username"
             type="text"
@@ -191,7 +240,10 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
         </div>
 
         <div>
-          <label htmlFor="host-auth" className="block text-dark-300 text-sm mb-2">
+          <label
+            htmlFor="host-auth"
+            className="block text-dark-300 text-sm mb-2"
+          >
             Authentication
           </label>
           <div className="flex gap-2">
@@ -222,7 +274,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
 
         {authType === 'password' ? (
           <div>
-            <label htmlFor="host-password" className="block text-dark-300 text-sm mb-2">Password</label>
+            <label
+              htmlFor="host-password"
+              className="block text-dark-300 text-sm mb-2"
+            >
+              Password
+            </label>
             <input
               id="host-password"
               type="password"
@@ -230,12 +287,18 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Enter password"
+              maxLength={MAX_PASSWORD_LENGTH}
               required
             />
           </div>
         ) : (
           <div>
-            <label htmlFor="host-key" className="block text-dark-300 text-sm mb-2">SSH Key</label>
+            <label
+              htmlFor="host-key"
+              className="block text-dark-300 text-sm mb-2"
+            >
+              SSH Key
+            </label>
             <select
               id="host-key"
               value={keyId}
@@ -246,7 +309,8 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
               <option value="">Select a key</option>
               {keys.map((key) => (
                 <option key={key.id} value={key.id}>
-                  {key.name} ({key.keyType.toUpperCase()} - {key.fingerprint || key.description || 'No fingerprint'})
+                  {key.name} ({key.keyType.toUpperCase()} -{' '}
+                  {key.fingerprint || key.description || 'No fingerprint'})
                 </option>
               ))}
             </select>
@@ -254,7 +318,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
         )}
 
         <div>
-          <label htmlFor="host-color" className="block text-dark-300 text-sm mb-2">Color</label>
+          <label
+            htmlFor="host-color"
+            className="block text-dark-300 text-sm mb-2"
+          >
+            Color
+          </label>
           <div className="flex gap-2">
             {colors.map((c) => (
               <button
@@ -273,7 +342,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
         </div>
 
         <div>
-          <label htmlFor="host-tags" className="block text-dark-300 text-sm mb-2">Tags</label>
+          <label
+            htmlFor="host-tags"
+            className="block text-dark-300 text-sm mb-2"
+          >
+            Tags
+          </label>
           <input
             id="host-tags"
             type="text"
@@ -286,7 +360,12 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
 
         {!defaultGroupId && (
           <div>
-            <label htmlFor="host-group" className="block text-dark-300 text-sm mb-2">Group</label>
+            <label
+              htmlFor="host-group"
+              className="block text-dark-300 text-sm mb-2"
+            >
+              Group
+            </label>
             <select
               id="host-group"
               value={groupId}
@@ -295,7 +374,9 @@ export default function HostForm({ host, defaultGroupId, onClose }: HostFormProp
             >
               <option value="">No Group</option>
               {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
               ))}
             </select>
           </div>

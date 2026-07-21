@@ -514,5 +514,5 @@ export const useThemeStore = create<ThemeState>((set) => ({
   },
 }))
 
-export { themes }
 export type { Theme }
+export { themes }

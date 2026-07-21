@@ -1,24 +1,33 @@
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind v4 */
 @tailwind base;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind v4 */
 @tailwind components;
+/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind v4 */
 @tailwind utilities;
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Custom scrollbar */
@@ -45,9 +54,9 @@ code {
    100% height and the viewport transparent turns that remainder into the same
    background color as the terminal (seamless — no visible gap, no clipped cursor). */
 .xterm {
-  height: 100% !important;
+  height: 100%;
 }
 
 .xterm-viewport {
-  background-color: transparent !important;
+  background-color: transparent;
 }

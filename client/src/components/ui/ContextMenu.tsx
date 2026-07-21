@@ -18,13 +18,18 @@ interface ContextMenuProps {
   onClose: () => void
 }
 
-export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) {
+export default function ContextMenu({
+  items,
+  x,
+  y,
+  onClose,
+}: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   useEffect(() => {
     setSelectedIndex(0)
-  }, [items])
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -54,7 +59,7 @@ export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) 
     if (rect.bottom > window.innerHeight - padding) {
       menuRef.current.style.top = `${window.innerHeight - rect.height - padding}px`
     }
-  }, [x, y])
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -84,6 +89,7 @@ export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) 
   return (
     <div
       ref={menuRef}
+      role="menu"
       className="fixed z-[100] min-w-[180px] py-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl"
       style={{ left: x, top: y }}
       onKeyDown={handleKeyDown}
@@ -91,11 +97,17 @@ export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) 
     >
       {items.map((item, index) => {
         if ('type' in item) {
-          return <div key={`sep-${index}`} className="my-1 border-t border-dark-600" />
+          return (
+            <div
+              key={`sep-${index}`}
+              className="my-1 border-t border-dark-600"
+            />
+          )
         }
         return (
           <button
             key={item.label}
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               if (!item.disabled) {
@@ -119,7 +131,9 @@ export default function ContextMenu({ items, x, y, onClose }: ContextMenuProps) 
             )}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
-              <span className="text-xs text-dark-500 ml-4">{item.shortcut}</span>
+              <span className="text-xs text-dark-500 ml-4">
+                {item.shortcut}
+              </span>
             )}
           </button>
         )

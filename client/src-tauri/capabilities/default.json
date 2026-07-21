@@ -11,8 +11,8 @@
     "shell:allow-open",
     "dialog:default",
     "fs:default",
-    "http:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "store:default"
   ]
 }

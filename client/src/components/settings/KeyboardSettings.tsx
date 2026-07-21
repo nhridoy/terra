@@ -1,3 +1,4 @@
+import { X } from '@phosphor-icons/react'
 import { useState } from 'react'
 import { defaultShortcuts } from '../../hooks/useKeyboardShortcuts'
 import Modal from '../ui/Modal'
@@ -32,20 +33,12 @@ export default function KeyboardSettings({ onClose }: KeyboardSettingsProps) {
           <h3 className="text-xl font-semibold text-white">
             Keyboard Shortcuts
           </h3>
-          <button onClick={onClose} className="text-dark-400 hover:text-white">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-dark-400 hover:text-white"
+          >
+            <X className="w-5 h-5" weight="bold" />
           </button>
         </div>
 
@@ -90,10 +83,10 @@ export default function KeyboardSettings({ onClose }: KeyboardSettingsProps) {
                               }
                             }}
                             className="bg-dark-700 text-white px-2 py-1 rounded text-sm w-32"
-                            autoFocus
                           />
                         ) : (
                           <button
+                            type="button"
                             onClick={() => setEditingId(shortcut.id)}
                             className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 rounded text-sm text-dark-300 hover:text-white font-mono"
                           >
@@ -111,12 +104,14 @@ export default function KeyboardSettings({ onClose }: KeyboardSettingsProps) {
         {/* Footer */}
         <div className="p-4 border-t border-dark-700 flex justify-between">
           <button
+            type="button"
             onClick={handleReset}
             className="px-4 py-2 text-dark-400 hover:text-white"
           >
             Reset to defaults
           </button>
           <button
+            type="button"
             onClick={onClose}
             className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
           >

@@ -1,3 +1,4 @@
+import { FileText, Trash } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 
@@ -81,9 +82,18 @@ export default function SessionLog({ hostId }: SessionLogProps) {
             </div>
           ) : (
             filteredSessions.map((session) => (
+              // biome-ignore lint/a11y/useSemanticElements: contains nested <button> for delete
               <div
                 key={session.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedSession(session.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedSession(session.id)
+                  }
+                }}
                 className={`p-3 cursor-pointer border-b border-dark-700 ${
                   selectedSession === session.id
                     ? 'bg-primary-600/20 border-l-2 border-l-primary-500'
@@ -112,25 +122,14 @@ export default function SessionLog({ hostId }: SessionLogProps) {
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       deleteSession(session.id)
                     }}
                     className="text-dark-400 hover:text-red-500 p-1"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
+                    <Trash className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -185,19 +184,10 @@ export default function SessionLog({ hostId }: SessionLogProps) {
           ) : (
             <div className="h-full flex items-center justify-center text-dark-400">
               <div className="text-center">
-                <svg
+                <FileText
                   className="w-16 h-16 mx-auto mb-4 text-dark-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
+                  weight="bold"
+                />
                 <p>Select a session to view logs</p>
               </div>
             </div>

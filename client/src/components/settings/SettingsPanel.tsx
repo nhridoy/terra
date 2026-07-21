@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core'
 import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { useThemeStore, themes, type Theme } from '../../stores/themeStore'
 import { useTerminalStore } from '../../stores/terminalStore'
+import { type Theme, themes, useThemeStore } from '../../stores/themeStore'
 import settingsTabs from './SettingsTabs'
 
 interface SettingsPanelProps {
@@ -14,7 +15,9 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { currentTheme, setTheme } = useThemeStore()
   const { tabs, closeAllTabs } = useTerminalStore()
 
-  const [activeTab, setActiveTab] = useState<'appearance' | 'terminal' | 'ssh' | 'security' | 'advanced'>('appearance')
+  const [activeTab, setActiveTab] = useState<
+    'appearance' | 'terminal' | 'ssh' | 'security' | 'advanced'
+  >('appearance')
   const [fontSize, setFontSize] = useState(14)
   const [fontFamily, setFontFamily] = useState('JetBrains Mono')
   const [cursorStyle, setCursorStyle] = useState('block')
@@ -34,6 +37,65 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [profileName, setProfileName] = useState(user?.username || '')
   const [profileEmail, setProfileEmail] = useState(user?.email || '')
 
+  // Known hosts state
+  interface KnownHost {
+    host: string
+    port: number
+    fingerprint: string
+  }
+  const [knownHosts, setKnownHosts] = useState<KnownHost[]>([])
+  const [knownHostsLoading, setKnownHostsLoading] = useState(false)
+
+  const loadKnownHosts = useCallback(async () => {
+    try {
+      setKnownHostsLoading(true)
+      const hosts = await invoke<KnownHost[]>('list_known_hosts')
+      setKnownHosts(hosts)
+    } catch (err) {
+      console.error('Failed to load known hosts:', err)
+    } finally {
+      setKnownHostsLoading(false)
+    }
+  }, [])
+
+  const handleRemoveKnownHost = async (host: string, port: number) => {
+    if (
+      await tauriConfirm(
+        `Remove known host for ${host}:${port}? You will be prompted to verify their identity on next connection.`,
+        { title: 'Remove Known Host', kind: 'warning' },
+      )
+    ) {
+      try {
+        await invoke('remove_known_host', { host, port })
+        setKnownHosts((prev) =>
+          prev.filter((h) => !(h.host === host && h.port === port)),
+        )
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Failed to remove known host',
+        )
+      }
+    }
+  }
+
+  const handleClearAllKnownHosts = async () => {
+    if (
+      await tauriConfirm(
+        'Clear ALL known hosts? You will be prompted to verify identity for every host on next connection.',
+        { title: 'Clear All Known Hosts', kind: 'warning' },
+      )
+    ) {
+      try {
+        await invoke('clear_known_hosts')
+        setKnownHosts([])
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Failed to clear known hosts',
+        )
+      }
+    }
+  }
+
   useEffect(() => {
     // Load settings from localStorage
     const savedFontSize = localStorage.getItem('termvault.fontSize')
@@ -43,13 +105,21 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
     const savedScrollback = localStorage.getItem('termvault.scrollback')
     const savedBellStyle = localStorage.getItem('termvault.bellStyle')
 
-    if (savedFontSize) setFontSize(parseInt(savedFontSize))
+    if (savedFontSize) setFontSize(parseInt(savedFontSize, 10))
     if (savedFontFamily) setFontFamily(savedFontFamily)
-    if (savedCursorStyle) setCursorStyle(savedCursorStyle as 'block' | 'underline' | 'bar')
+    if (savedCursorStyle)
+      setCursorStyle(savedCursorStyle as 'block' | 'underline' | 'bar')
     if (savedCursorBlink) setCursorBlink(savedCursorBlink === 'true')
-    if (savedScrollback) setScrollback(parseInt(savedScrollback))
-    if (savedBellStyle) setBellStyle(savedBellStyle as 'none' | 'sound' | 'visual')
+    if (savedScrollback) setScrollback(parseInt(savedScrollback, 10))
+    if (savedBellStyle)
+      setBellStyle(savedBellStyle as 'none' | 'sound' | 'visual')
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'ssh') {
+      loadKnownHosts()
+    }
+  }, [activeTab, loadKnownHosts])
 
   const saveSetting = (key: string, value: string) => {
     localStorage.setItem(`termvault.${key}`, value)
@@ -94,8 +164,12 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
     try {
       await updateProfile({ username: profileName, email: profileEmail })
       setSuccess('Profile updated successfully')
-    } catch (err: any) {
-      setError(err.message || 'Failed to update profile')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to update profile',
+      )
     } finally {
       setIsLoading(false)
     }
@@ -122,15 +196,24 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-    } catch (err: any) {
-      setError(err.message || 'Failed to change password')
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : String(err) || 'Failed to change password',
+      )
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleClearAllSessions = async () => {
-    if (await tauriConfirm('Are you sure you want to close all active terminal sessions?', { title: 'Close Sessions', kind: 'warning' })) {
+    if (
+      await tauriConfirm(
+        'Are you sure you want to close all active terminal sessions?',
+        { title: 'Close Sessions', kind: 'warning' },
+      )
+    ) {
       closeAllTabs()
     }
   }
@@ -145,7 +228,9 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
       scrollback,
       bellStyle,
     }
-    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify(settings, null, 2)], {
+      type: 'application/json',
+    })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -166,7 +251,8 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         if (settings.fontSize) handleFontSizeChange(settings.fontSize)
         if (settings.fontFamily) handleFontFamilyChange(settings.fontFamily)
         if (settings.cursorStyle) handleCursorStyleChange(settings.cursorStyle)
-        if (settings.cursorBlink !== undefined) handleCursorBlinkChange(settings.cursorBlink)
+        if (settings.cursorBlink !== undefined)
+          handleCursorBlinkChange(settings.cursorBlink)
         if (settings.scrollback) handleScrollbackChange(settings.scrollback)
         if (settings.bellStyle) handleBellStyleChange(settings.bellStyle)
         setSuccess('Settings imported successfully')
@@ -185,6 +271,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         {settingsTabs.map((tab) => (
           <button
             key={tab.id}
+            type="button"
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
               activeTab === tab.id
@@ -219,6 +306,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
               {Object.entries(themes).map(([id, theme]) => (
                 <button
                   key={id}
+                  type="button"
                   onClick={() => setTheme(id as Theme)}
                   className={`p-4 rounded-lg border-2 transition-all ${
                     currentTheme === id
@@ -226,19 +314,32 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                       : 'border-dark-700 hover:border-dark-600'
                   }`}
                 >
-                  <div className="w-full h-12 rounded mb-2" style={{ background: theme.colors.background }} />
-                  <div className="text-sm font-medium text-white capitalize">{theme.name}</div>
+                  <div
+                    className="w-full h-12 rounded mb-2"
+                    style={{ background: theme.colors.background }}
+                  />
+                  <div className="text-sm font-medium text-white capitalize">
+                    {theme.name}
+                  </div>
                   <div className="text-xs text-dark-400 mt-1">{id}</div>
                 </button>
               ))}
             </div>
 
             <div className="border-t border-dark-700 pt-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Editor Font</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Editor Font
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-dark-300 text-sm mb-2">Font Family</label>
+                  <label
+                    htmlFor="font-family"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
+                    Font Family
+                  </label>
                   <select
+                    id="font-family"
                     value={fontFamily}
                     onChange={(e) => handleFontFamilyChange(e.target.value)}
                     className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -254,13 +355,21 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-dark-300 text-sm mb-2">Font Size: {fontSize}px</label>
+                  <label
+                    htmlFor="font-size"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
+                    Font Size: {fontSize}px
+                  </label>
                   <input
+                    id="font-size"
                     type="range"
                     min="10"
                     max="24"
                     value={fontSize}
-                    onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                    onChange={(e) =>
+                      handleFontSizeChange(parseInt(e.target.value, 10))
+                    }
                     className="w-full h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
                   />
                 </div>
@@ -275,10 +384,20 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
             <h3 className="text-lg font-semibold text-white">Cursor</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-dark-300 text-sm mb-2">Cursor Style</label>
+                <label
+                  htmlFor="cursor-style"
+                  className="block text-dark-300 text-sm mb-2"
+                >
+                  Cursor Style
+                </label>
                 <select
+                  id="cursor-style"
                   value={cursorStyle}
-                  onChange={(e) => handleCursorStyleChange(e.target.value as 'block' | 'underline' | 'bar')}
+                  onChange={(e) =>
+                    handleCursorStyleChange(
+                      e.target.value as 'block' | 'underline' | 'bar',
+                    )
+                  }
                   className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="block">Block</option>
@@ -294,33 +413,52 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   onChange={(e) => handleCursorBlinkChange(e.target.checked)}
                   className="w-4 h-4 accent-primary-500"
                 />
-                <label htmlFor="cursor-blink" className="text-white cursor-pointer">
+                <label
+                  htmlFor="cursor-blink"
+                  className="text-white cursor-pointer"
+                >
                   Cursor Blink
                 </label>
               </div>
             </div>
 
             <div className="border-t border-dark-700 pt-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Scrollback</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Scrollback
+              </h3>
               <div>
-                <label className="block text-dark-300 text-sm mb-2">Scrollback Lines: {scrollback.toLocaleString()}</label>
+                <label
+                  htmlFor="scrollback"
+                  className="block text-dark-300 text-sm mb-2"
+                >
+                  Scrollback Lines: {scrollback.toLocaleString()}
+                </label>
                 <input
+                  id="scrollback"
                   type="range"
                   min="1000"
                   max="100000"
                   step="1000"
                   value={scrollback}
-                  onChange={(e) => handleScrollbackChange(parseInt(e.target.value))}
+                  onChange={(e) =>
+                    handleScrollbackChange(parseInt(e.target.value, 10))
+                  }
                   className="w-full h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
                 />
               </div>
             </div>
 
             <div className="border-t border-dark-700 pt-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Bell Style</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Bell Style
+              </h3>
               <select
                 value={bellStyle}
-                onChange={(e) => handleBellStyleChange(e.target.value as 'none' | 'sound' | 'visual')}
+                onChange={(e) =>
+                  handleBellStyleChange(
+                    e.target.value as 'none' | 'sound' | 'visual',
+                  )
+                }
                 className="w-full max-w-xs bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="none">None</option>
@@ -334,28 +472,78 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         {/* SSH Tab */}
         {activeTab === 'ssh' && (
           <div className="space-y-6 max-w-2xl">
-            <h3 className="text-lg font-semibold text-white">SSH Configuration</h3>
+            <h3 className="text-lg font-semibold text-white">
+              SSH Configuration
+            </h3>
             <div className="bg-dark-800 rounded-lg p-4 space-y-4">
               <h4 className="text-white font-medium">SSH Client Settings</h4>
               <div className="space-y-3 text-sm text-dark-300">
-                <p>SSH client options are configured per-host in the host settings.</p>
-                <p className="text-dark-500">Global SSH options will be available in a future update.</p>
+                <p>
+                  SSH client options are configured per-host in the host
+                  settings.
+                </p>
+                <p className="text-dark-500">
+                  Global SSH options will be available in a future update.
+                </p>
               </div>
             </div>
 
             <div className="border-t border-dark-700 pt-4">
-              <h4 className="text-white font-medium mb-3">Known Hosts</h4>
-              <div className="bg-dark-800 rounded-lg p-4 space-y-2">
-                <p className="text-dark-400 text-sm">Known hosts are managed automatically when connecting to new hosts.</p>
-                <button
-                  onClick={() => {
-                    // TODO: Implement known hosts management
-                  }}
-                  className="text-sm text-primary-500 hover:text-primary-400"
-                >
-                  Manage Known Hosts
-                </button>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-white font-medium">Known Hosts</h4>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={loadKnownHosts}
+                    disabled={knownHostsLoading}
+                    className="text-sm text-dark-400 hover:text-white"
+                  >
+                    {knownHostsLoading ? 'Loading...' : 'Refresh'}
+                  </button>
+                  {knownHosts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllKnownHosts}
+                      className="text-sm text-red-400 hover:text-red-300"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {knownHosts.length === 0 ? (
+                <div className="bg-dark-800 rounded-lg p-4 text-sm text-dark-400">
+                  {knownHostsLoading
+                    ? 'Loading known hosts...'
+                    : 'No known hosts. They are saved automatically when you verify a host on first connection.'}
+                </div>
+              ) : (
+                <div className="bg-dark-800 rounded-lg divide-y divide-dark-700">
+                  {knownHosts.map((kh) => (
+                    <div
+                      key={`${kh.host}:${kh.port}`}
+                      className="flex items-center justify-between p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-mono truncate">
+                          {kh.host}:{kh.port}
+                        </p>
+                        <p className="text-dark-500 text-xs font-mono truncate mt-0.5">
+                          {kh.fingerprint}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveKnownHost(kh.host, kh.port)}
+                        className="text-dark-400 hover:text-red-400 text-xs ml-3 shrink-0"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -364,10 +552,15 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         {activeTab === 'security' && (
           <div className="space-y-6 max-w-2xl">
             <div className="bg-dark-800 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Change Password</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Change Password
+              </h3>
               <form onSubmit={handlePasswordChange} className="space-y-4">
                 <div>
-                  <label htmlFor="current-password" className="block text-dark-300 text-sm mb-2">
+                  <label
+                    htmlFor="current-password"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
                     Current Password
                   </label>
                   <input
@@ -380,7 +573,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor="new-password" className="block text-dark-300 text-sm mb-2">
+                  <label
+                    htmlFor="new-password"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
                     New Password
                   </label>
                   <input
@@ -394,7 +590,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor="confirm-password" className="block text-dark-300 text-sm mb-2">
+                  <label
+                    htmlFor="confirm-password"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
                     Confirm New Password
                   </label>
                   <input
@@ -421,7 +620,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
               <h3 className="text-lg font-semibold text-white mb-4">Profile</h3>
               <form onSubmit={handleProfileUpdate} className="space-y-4">
                 <div>
-                  <label htmlFor="profile-name" className="block text-dark-300 text-sm mb-2">
+                  <label
+                    htmlFor="profile-name"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
                     Username
                   </label>
                   <input
@@ -433,7 +635,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor="profile-email" className="block text-dark-300 text-sm mb-2">
+                  <label
+                    htmlFor="profile-email"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
                     Email
                   </label>
                   <input
@@ -455,8 +660,11 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
 
             <div className="bg-dark-800 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Sessions</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Sessions
+              </h3>
               <button
+                type="button"
                 onClick={handleClearAllSessions}
                 className="w-full px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
               >
@@ -470,18 +678,29 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         {activeTab === 'advanced' && (
           <div className="space-y-6 max-w-2xl">
             <div className="bg-dark-800 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Import / Export Settings</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Import / Export Settings
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button
+                  type="button"
                   onClick={handleExportSettings}
                   className="px-4 py-3 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors text-left"
                 >
                   <p className="font-medium">Export Settings</p>
-                  <p className="text-sm text-dark-400">Download current settings as JSON</p>
+                  <p className="text-sm text-dark-400">
+                    Download current settings as JSON
+                  </p>
                 </button>
                 <div>
-                  <label className="block text-dark-300 text-sm mb-2">Import Settings</label>
+                  <label
+                    htmlFor="import-settings"
+                    className="block text-dark-300 text-sm mb-2"
+                  >
+                    Import Settings
+                  </label>
                   <input
+                    id="import-settings"
                     type="file"
                     accept=".json"
                     onChange={handleImportSettings}
@@ -492,18 +711,28 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
 
             <div className="bg-dark-800 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Danger Zone</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Danger Zone
+              </h3>
               <div className="space-y-4">
                 <button
+                  type="button"
                   onClick={async () => {
-                    if (await tauriConfirm('Are you sure you want to delete all data? This cannot be undone.', { title: 'Delete All Data', kind: 'warning' })) {
+                    if (
+                      await tauriConfirm(
+                        'Are you sure you want to delete all data? This cannot be undone.',
+                        { title: 'Delete All Data', kind: 'warning' },
+                      )
+                    ) {
                       // TODO: Implement data deletion
                     }
                   }}
                   className="w-full px-4 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors text-left"
                 >
                   <p className="font-medium">Delete All Data</p>
-                  <p className="text-sm text-red-500">Permanently delete all hosts, keys, snippets, and settings</p>
+                  <p className="text-sm text-red-500">
+                    Permanently delete all hosts, keys, snippets, and settings
+                  </p>
                 </button>
               </div>
             </div>
@@ -514,6 +743,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
       {/* Common footer */}
       <div className="pt-6 border-t border-dark-700 flex justify-end">
         <button
+          type="button"
           onClick={onClose}
           className="px-4 py-2 text-dark-400 hover:text-white"
         >

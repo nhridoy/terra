@@ -1,15 +1,24 @@
-import { useState } from 'react'
-import { useDraggable, useDroppable } from '@dnd-kit/react'
-import { pointerIntersection } from '@dnd-kit/collision'
 import { CollisionPriority } from '@dnd-kit/abstract'
+import { pointerIntersection } from '@dnd-kit/collision'
+import { useDraggable, useDroppable } from '@dnd-kit/react'
+import {
+  DesktopTower,
+  DotsSixVertical,
+  Folder,
+  SplitHorizontal,
+  SplitVertical,
+  X,
+} from '@phosphor-icons/react'
+import { useState } from 'react'
+import { openDirectoryPicker } from '../../lib/localFs'
+import type { Host } from '../../stores/hostStore'
 import type { SftpLeafNode } from '../../stores/sftpStore'
 import { useSftpStore } from '../../stores/sftpStore'
+import Modal from '../ui/Modal'
+import { toast } from '../ui/Toast'
 import FileBrowser from './FileBrowser'
 import LocalFileBrowser from './LocalFileBrowser'
 import SftpHostPicker from './SftpHostPicker'
-import Modal from '../ui/Modal'
-import { openDirectoryPicker } from '../../lib/localFs'
-import { toast } from '../ui/Toast'
 
 type DropSide = 'left' | 'right' | 'top' | 'bottom'
 
@@ -52,13 +61,28 @@ function DropZone({ paneId, side }: { paneId: string; side: DropSide }) {
       Object.assign(style, { left: 0, top: 0, width: '33.34%', height: '100%' })
       break
     case 'right':
-      Object.assign(style, { right: 0, top: 0, width: '33.34%', height: '100%' })
+      Object.assign(style, {
+        right: 0,
+        top: 0,
+        width: '33.34%',
+        height: '100%',
+      })
       break
     case 'top':
-      Object.assign(style, { left: '33.33%', top: 0, width: '33.33%', height: '50%' })
+      Object.assign(style, {
+        left: '33.33%',
+        top: 0,
+        width: '33.33%',
+        height: '50%',
+      })
       break
     case 'bottom':
-      Object.assign(style, { left: '33.33%', bottom: 0, width: '33.33%', height: '50%' })
+      Object.assign(style, {
+        left: '33.33%',
+        bottom: 0,
+        width: '33.33%',
+        height: '50%',
+      })
       break
   }
   return <div ref={ref} style={style} />
@@ -69,10 +93,16 @@ interface SftpPaneProps {
   isActive: boolean
   closable: boolean
   dropSide: DropSide | null
-  onConnectHost: (host: any) => void
+  onConnectHost: (host: Host) => void
 }
 
-export default function SftpPane({ pane, isActive, closable, dropSide, onConnectHost }: SftpPaneProps) {
+export default function SftpPane({
+  pane,
+  isActive,
+  closable,
+  dropSide,
+  onConnectHost,
+}: SftpPaneProps) {
   const { splitPane, removePane, setActivePane, connectLocal } = useSftpStore()
   const [showHostPicker, setShowHostPicker] = useState(false)
 
@@ -81,17 +111,29 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
     data: { type: 'sftp-pane-source', paneId: pane.id },
   })
 
-  const displayName = pane.connectionType === 'host'
-    ? pane.hostName || pane.hostAddress || 'Connected'
-    : pane.connectionType === 'local'
-      ? pane.localPath || 'Local'
-      : 'New Pane'
+  const displayName =
+    pane.connectionType === 'host'
+      ? pane.hostName || pane.hostAddress || 'Connected'
+      : pane.connectionType === 'local'
+        ? pane.localPath || 'Local'
+        : 'New Pane'
 
   return (
-    <div
+    <section
       data-pane-id={pane.id}
+      aria-label={displayName}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setActivePane(pane.id)
+        }
+      }}
+      onClick={() => setActivePane(pane.id)}
       className={`flex flex-col h-full min-h-0 min-w-0 bg-dark-950 relative ${
-        isActive ? 'ring-1 ring-inset ring-primary-600/60' : 'ring-1 ring-inset ring-dark-800'
+        isActive
+          ? 'ring-1 ring-inset ring-primary-600/60'
+          : 'ring-1 ring-inset ring-dark-800'
       } ${isDragging ? 'opacity-40' : ''}`}
       onMouseDown={() => setActivePane(pane.id)}
     >
@@ -102,26 +144,22 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
         }`}
       >
         {/* Status dot */}
-        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-          pane.connectionType ? 'bg-green-500' : 'bg-dark-600'
-        }`} />
+        <div
+          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+            pane.connectionType ? 'bg-green-500' : 'bg-dark-600'
+          }`}
+        />
 
         {/* Drag handle */}
         {closable && (
           <button
+            type="button"
             ref={ref}
             className="p-0.5 text-dark-500 hover:text-white hover:bg-dark-700 rounded cursor-grab active:cursor-grabbing flex-shrink-0"
             title="Drag to move pane"
             style={{ touchAction: 'none' }}
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-              <circle cx="7" cy="5" r="1.5" />
-              <circle cx="13" cy="5" r="1.5" />
-              <circle cx="7" cy="10" r="1.5" />
-              <circle cx="13" cy="10" r="1.5" />
-              <circle cx="7" cy="15" r="1.5" />
-              <circle cx="13" cy="15" r="1.5" />
-            </svg>
+            <DotsSixVertical className="w-3.5 h-3.5" />
           </button>
         )}
 
@@ -132,36 +170,42 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
 
         {/* Split horizontal */}
         <button
-          onClick={(e) => { e.stopPropagation(); splitPane(pane.id, 'horizontal') }}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            splitPane(pane.id, 'horizontal')
+          }}
           className="p-0.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
           title="Split right"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4v16M4 8h16M4 16h16" />
-          </svg>
+          <SplitHorizontal className="w-3.5 h-3.5" />
         </button>
 
         {/* Split vertical */}
         <button
-          onClick={(e) => { e.stopPropagation(); splitPane(pane.id, 'vertical') }}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            splitPane(pane.id, 'vertical')
+          }}
           className="p-0.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
           title="Split down"
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M8 4v16M16 4v16" />
-          </svg>
+          <SplitVertical className="w-3.5 h-3.5" />
         </button>
 
         {/* Close */}
         {closable && (
           <button
-            onClick={(e) => { e.stopPropagation(); removePane(pane.id) }}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              removePane(pane.id)
+            }}
             className="p-0.5 text-dark-400 hover:text-red-400 hover:bg-dark-700 rounded"
             title="Close pane"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -182,35 +226,41 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <svg className="w-12 h-12 mx-auto mb-3 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <p className="text-sm text-dark-400 mb-3">Connect to a host or local filesystem to browse files</p>
+              <Folder className="w-12 h-12 mx-auto mb-3 text-dark-600" />
+              <p className="text-sm text-dark-400 mb-3">
+                Connect to a host or local filesystem to browse files
+              </p>
               <div className="flex items-center justify-center gap-2">
                 <button
-                  onClick={(e) => { e.stopPropagation(); setShowHostPicker(true) }}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowHostPicker(true)
+                  }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white transition-colors rounded bg-primary-600 hover:bg-primary-700"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-                  </svg>
+                  <DesktopTower className="w-3.5 h-3.5" />
                   Connect Host
                 </button>
                 <button
+                  type="button"
                   onClick={async (e) => {
                     e.stopPropagation()
                     try {
                       const path = await openDirectoryPicker()
                       if (path) connectLocal(pane.id, path)
                     } catch (err) {
-                      toast(err instanceof Error ? err.message : 'Failed to open directory picker', 'error')
+                      toast(
+                        err instanceof Error
+                          ? err.message
+                          : 'Failed to open directory picker',
+                        'error',
+                      )
                     }
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors rounded bg-dark-700 hover:bg-dark-600 text-dark-300"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
+                  <Folder className="w-3.5 h-3.5" />
                   Connect Local
                 </button>
               </div>
@@ -229,12 +279,17 @@ export default function SftpPane({ pane, isActive, closable, dropSide, onConnect
       </div>
 
       {/* Host picker modal */}
-      <Modal open={showHostPicker} onClose={() => setShowHostPicker(false)} title="Connect Host" maxWidth="max-w-lg">
+      <Modal
+        open={showHostPicker}
+        onClose={() => setShowHostPicker(false)}
+        title="Connect Host"
+        maxWidth="max-w-lg"
+      >
         <SftpHostPicker
           onConnect={onConnectHost}
           onClose={() => setShowHostPicker(false)}
         />
       </Modal>
-    </div>
+    </section>
   )
 }

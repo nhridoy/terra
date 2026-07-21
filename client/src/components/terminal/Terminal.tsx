@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import {
-  getOrCreateSession,
   attachSession,
+  destroySession,
   detachSession,
   fitSession,
-  destroySession,
+  getOrCreateSession,
   type Session,
 } from './sessionManager'
 
@@ -17,10 +17,27 @@ interface TerminalProps {
   hostAddress?: string
   hostPort?: number
   hostUsername?: string
+  authType?: 'password' | 'key'
+  keyId?: string
+  connectionType?: 'ssh' | 'local'
+  shell?: string
   isActive?: boolean
 }
 
-export default function Terminal({ hostId, hostName, tabId, paneId, hostAddress, hostPort, hostUsername, isActive }: TerminalProps) {
+export default function Terminal({
+  hostId,
+  hostName,
+  tabId,
+  paneId,
+  hostAddress,
+  hostPort,
+  hostUsername,
+  authType,
+  keyId,
+  connectionType,
+  shell,
+  isActive,
+}: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Attach to (or create) the persistent session for this pane. The effect is
@@ -38,6 +55,10 @@ export default function Terminal({ hostId, hostName, tabId, paneId, hostAddress,
       hostAddress,
       hostPort,
       hostUsername,
+      authType,
+      keyId,
+      connectionType,
+      shell,
     })
     attachSession(session, el)
 
@@ -51,7 +72,19 @@ export default function Terminal({ hostId, hostName, tabId, paneId, hostAddress,
       if (!exists) destroySession(paneId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paneId])
+  }, [
+    paneId,
+    hostName,
+    hostUsername,
+    hostAddress,
+    hostPort,
+    hostId,
+    tabId,
+    authType,
+    keyId,
+    connectionType,
+    shell,
+  ])
 
   // Keep status routing pointed at the current owning tab and re-fit on active.
   useEffect(() => {
@@ -63,6 +96,10 @@ export default function Terminal({ hostId, hostName, tabId, paneId, hostAddress,
       hostAddress,
       hostPort,
       hostUsername,
+      authType,
+      keyId,
+      connectionType,
+      shell,
     })
     session.params.tabId = tabId
     if (isActive) {
@@ -70,12 +107,28 @@ export default function Terminal({ hostId, hostName, tabId, paneId, hostAddress,
       return () => clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, tabId])
+  }, [
+    isActive,
+    tabId,
+    paneId,
+    hostId,
+    hostUsername,
+    hostName,
+    hostPort,
+    hostAddress,
+    authType,
+    keyId,
+    connectionType,
+    shell,
+  ])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
 
-function paneExistsInTree(node: import('../../stores/terminalStore').PaneNode, paneId: string): boolean {
+function paneExistsInTree(
+  node: import('../../stores/terminalStore').PaneNode,
+  paneId: string,
+): boolean {
   if (node.type === 'leaf') return node.id === paneId
   return node.children.some((c) => paneExistsInTree(c, paneId))
 }

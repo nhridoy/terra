@@ -1,3 +1,4 @@
+import { X } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 
 interface FocusModeProps {
@@ -55,23 +56,12 @@ export default function FocusMode({
 
       {/* Minimal exit button (top right, very subtle) */}
       <button
+        type="button"
         onClick={onExit}
         className="absolute top-2 right-2 p-2 text-dark-600 hover:text-dark-400 opacity-20 hover:opacity-100 transition-opacity"
         title="Exit focus mode (Esc)"
       >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M6 18L18 6M6 6l12 12"
-          />
-        </svg>
+        <X className="w-5 h-5" weight="bold" />
       </button>
     </div>
   )

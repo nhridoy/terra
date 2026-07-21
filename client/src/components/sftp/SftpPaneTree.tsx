@@ -1,6 +1,6 @@
 import { useRef } from 'react'
-import { useSftpStore, findLeaf } from '../../stores/sftpStore'
 import type { SftpPaneNode } from '../../stores/sftpStore'
+import { findLeaf, useSftpStore } from '../../stores/sftpStore'
 import SftpPane from './SftpPane'
 
 type DropSide = 'left' | 'right' | 'top' | 'bottom'
@@ -96,7 +96,11 @@ function SplitDivider({
   containerRef: React.RefObject<HTMLDivElement>
 }) {
   const setPaneSizes = useSftpStore((s) => s.setPaneSizes)
-  const dragRef = useRef<{ sizes: number[]; sumAll: number; startPx: number } | null>(null)
+  const dragRef = useRef<{
+    sizes: number[]
+    sumAll: number
+    startPx: number
+  } | null>(null)
   const isHorizontal = divider.direction === 'horizontal'
   const MIN_FRACTION = 0.1
 
@@ -118,7 +122,8 @@ function SplitDivider({
     const root = useSftpStore.getState().root
     const stack: SftpPaneNode[] = [root]
     while (stack.length) {
-      const n = stack.pop()!
+      const n = stack.pop()
+      if (!n) continue
       if (n.type === 'split' && n.id === splitId) return n
       if (n.type === 'split') stack.push(...n.children)
     }
@@ -190,7 +195,9 @@ function SplitDivider({
       />
       <div
         className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded bg-dark-800/90 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity ${
-          isHorizontal ? 'flex-col gap-1 py-1.5 px-1' : 'flex-row gap-1 px-1.5 py-1'
+          isHorizontal
+            ? 'flex-col gap-1 py-1.5 px-1'
+            : 'flex-row gap-1 px-1.5 py-1'
         }`}
       >
         <span className="w-1 h-1 rounded-full bg-dark-400 group-hover:bg-white" />
@@ -200,7 +207,11 @@ function SplitDivider({
   )
 }
 
-export default function SftpPaneTree({ node, activePaneId, dropTarget }: SftpPaneTreeProps) {
+export default function SftpPaneTree({
+  node,
+  activePaneId,
+  dropTarget,
+}: SftpPaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { connectHost } = useSftpStore()
   const closable = countLeaves(node) > 1
@@ -230,11 +241,13 @@ export default function SftpPaneTree({ node, activePaneId, dropTarget }: SftpPan
               isActive={p.id === activePaneId}
               closable={closable}
               dropSide={dropTarget?.paneId === p.id ? dropTarget.side : null}
-              onConnectHost={(host) => connectHost(leaf.id, host.id, host.name, {
-                hostAddress: host.address,
-                hostPort: host.port,
-                hostUsername: host.username,
-              })}
+              onConnectHost={(host) =>
+                connectHost(leaf.id, host.id, host.name, {
+                  hostAddress: host.address,
+                  hostPort: host.port,
+                  hostUsername: host.username,
+                })
+              }
             />
           </div>
         )

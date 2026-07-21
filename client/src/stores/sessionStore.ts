@@ -1,7 +1,8 @@
-import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { create } from 'zustand'
 import { getDeviceId } from '../lib/device'
 import { triggerSync } from '../lib/sync'
+import { useAuthStore } from './authStore'
 
 interface SessionLogEntry {
   id: string
@@ -57,29 +58,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   fetchSessions: async (_hostId?) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await invoke<any[]>('list_session_logs', { userId: '' })
+      const userId = useAuthStore.getState().user?.id || ''
+      const result = await invoke<Session[]>('list_session_logs', {
+        userId,
+      })
       set({ sessions: result || [], isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
   fetchSessionLogs: async (sessionId) => {
     set({ isLoading: true, error: null })
     try {
-      const result = await invoke<any>('get_session_log', { id: sessionId })
+      const result = await invoke<SessionLogEntry | null>('get_session_log', {
+        id: sessionId,
+      })
       set({ logs: result ? [result] : [], isLoading: false })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
   startSession: (hostId, hostName) => {
+    const user = useAuthStore.getState().user
     const session: Session = {
       id: `session_${Date.now()}`,
       hostId,
       hostName,
-      userId: 'current_user',
+      userId: user?.id || '',
       startTime: new Date().toISOString(),
       commandCount: 0,
       isActive: true,
@@ -107,12 +120,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   logCommand: (command, output, exitCode) => {
     const { currentSession } = get()
     if (currentSession) {
+      const user = useAuthStore.getState().user
       const log: SessionLogEntry = {
         id: `log_${Date.now()}`,
         hostId: currentSession.hostId,
         hostName: currentSession.hostName,
         userId: currentSession.userId,
-        username: 'current_user',
+        username: user?.username || '',
         command,
         output,
         exitCode,
@@ -138,8 +152,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: get().sessions.filter((s) => s.id !== id),
         isLoading: false,
       })
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false })
+    } catch (error: unknown) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        isLoading: false,
+      })
     }
   },
 
