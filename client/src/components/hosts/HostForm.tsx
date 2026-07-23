@@ -1,53 +1,36 @@
-import { invoke } from '@tauri-apps/api/core'
-import { useEffect, useState } from 'react'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
+import { useTransition } from "react";
 import {
-  MAX_PASSWORD_LENGTH,
-  validateName,
-  validatePassword,
-} from '../../lib/validate'
-import { useHostStore } from '../../stores/hostStore'
-import { useVaultStore } from '../../stores/vaultStore'
-import Modal from '../ui/Modal'
+  type HostFormSchema,
+  hostFormDefaultValues,
+  hostFormSchema,
+} from "../../lib/schema/hostFormSchema";
+import { parseTags } from "../../lib/parseTags";
+import { useHostStore } from "../../stores/hostStore";
+import { useVaultStore } from "../../stores/vaultStore";
+import { Button } from "../ui/Button";
+import { FormInput } from "../ui/forms/FormInput";
+import { FormSelect } from "../ui/forms/FormSelect";
+import ModalForm from "../shared/ModalForm";
 
 export interface HostData {
-  id: string
-  name: string
-  address: string
-  port: number
-  username: string
-  authType: 'password' | 'key'
-  keyId?: string
-  color?: string
-  groupId?: string
-  tags?: string[]
+  id: string;
+  name: string;
+  address: string;
+  port: number;
+  username: string;
+  authType: "password" | "key";
+  keyId?: string;
+  color?: string;
+  groupId?: string;
+  tags?: string[];
 }
 
 interface HostFormProps {
-  host?: HostData
-  defaultGroupId?: string
-  onClose: () => void
-}
-
-interface Key {
-  id: string
-  name: string
-  description?: string
-  keyType: string
-  fingerprint?: string
-}
-
-function parseTags(tags: unknown): string[] {
-  if (!tags) return []
-  if (Array.isArray(tags)) return tags
-  if (typeof tags === 'string') {
-    try {
-      const parsed = JSON.parse(tags)
-      return Array.isArray(parsed) ? parsed : [tags]
-    } catch {
-      return tags ? [tags] : []
-    }
-  }
-  return []
+  host?: HostData;
+  defaultGroupId?: string;
+  onClose: () => void;
 }
 
 export default function HostForm({
@@ -55,351 +38,216 @@ export default function HostForm({
   defaultGroupId,
   onClose,
 }: HostFormProps) {
-  const { createHost, updateHost, groups } = useHostStore()
-  const { currentVaultId } = useVaultStore()
-  const [name, setName] = useState(host?.name || '')
-  const [address, setAddress] = useState(host?.address || '')
-  const [port, setPort] = useState(host?.port || 22)
-  const [username, setUsername] = useState(host?.username || '')
-  const [authType, setAuthType] = useState<'password' | 'key'>('password')
-  const [password, setPassword] = useState('')
-  const [keyId, setKeyId] = useState(host?.keyId || '')
-  const [color, setColor] = useState(host?.color || '#64748b')
-  const [groupId, setGroupId] = useState(host?.groupId || defaultGroupId || '')
-  const [tags, setTags] = useState(parseTags(host?.tags).join(', ') || '')
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [keys, setKeys] = useState<Key[]>([])
+  const { createHost, updateHost, groups } = useHostStore();
+  const { currentVaultId } = useVaultStore();
+  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    invoke<Key[]>('list_keys', { userId: '', vaultId: currentVaultId || null })
-      .then((result) => setKeys(result || []))
-      .catch(() => {})
-  }, [currentVaultId])
+  const { control, handleSubmit, watch, reset } = useForm<HostFormSchema>({
+    resolver: zodResolver(hostFormSchema),
+    defaultValues: {
+      name: host?.name || hostFormDefaultValues.name,
+      address: host?.address || hostFormDefaultValues.address,
+      port: host?.port || hostFormDefaultValues.port,
+      username: host?.username || hostFormDefaultValues.username,
+      authType: host?.authType || hostFormDefaultValues.authType,
+      password: hostFormDefaultValues.password,
+      keyId: host?.keyId || hostFormDefaultValues.keyId,
+      color: host?.color || hostFormDefaultValues.color,
+      groupId: host?.groupId || defaultGroupId || hostFormDefaultValues.groupId,
+      tags: host?.tags ? parseTags(host.tags) : hostFormDefaultValues.tags,
+    },
+  });
 
-  useEffect(() => {
-    if (host) {
-      setName(host.name)
-      setAddress(host.address)
-      setPort(host.port)
-      setUsername(host.username)
-      setAuthType(host.authType || 'password')
-      setKeyId(host.keyId || '')
-      setColor(host.color || '#64748b')
-      setGroupId(host.groupId || '')
-      setTags(host.tags?.join(', ') || '')
-    }
-  }, [host])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const nameErr = validateName(name)
-      if (nameErr) {
-        setError(nameErr)
-        setIsLoading(false)
-        return
-      }
-
-      if (authType === 'password' && password) {
-        const pwErr = validatePassword(password)
-        if (pwErr) {
-          setError(pwErr)
-          setIsLoading(false)
-          return
-        }
-      }
-
-      const hostData = {
-        name,
-        address,
-        port,
-        username,
-        authType,
-        keyId: authType === 'key' ? keyId : undefined,
-        password: authType === 'password' ? password : undefined,
-        color,
-        groupId: groupId || undefined,
-        vaultId: currentVaultId || undefined,
-        tags: tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
-      }
-
-      if (host) {
-        await updateHost(host.id, hostData)
-      } else {
-        await createHost(hostData)
-      }
-      onClose()
-    } catch (err) {
-      setError((err as Error).message || 'Failed to save host')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const authType = watch("authType");
 
   const colors = [
-    '#64748b',
-    '#ef4444',
-    '#f59e0b',
-    '#22c55e',
-    '#3b82f6',
-    '#8b5cf6',
-    '#ec4899',
-    '#06b6d4',
-  ]
+    "#64748b",
+    "#ef4444",
+    "#f59e0b",
+    "#22c55e",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#06b6d4",
+  ];
+
+  const getButtonText = () => {
+    if (isPending) return "Saving...";
+    return host ? "Save Changes" : "Add Host";
+  };
+
+  const handleHostSubmit = async (data: HostFormSchema) => {
+    const hostData = {
+      name: data.name,
+      address: data.address,
+      port: data.port,
+      username: data.username,
+      authType: data.authType,
+      keyId: data.authType === "key" ? data.keyId : undefined,
+      password: data.authType === "password" ? data.password : undefined,
+      color: data.color,
+      groupId: data.groupId || undefined,
+      vaultId: currentVaultId || undefined,
+      tags: data.tags
+        ? data.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : [],
+    };
+
+    if (host) {
+      await updateHost(host.id, hostData);
+    } else {
+      await createHost(hostData);
+    }
+    reset();
+    onClose();
+  };
+
+  const onSubmit = async (data: HostFormSchema) => {
+    startTransition(async () => {
+      await handleHostSubmit(data);
+    });
+  };
 
   return (
-    <Modal open onClose={onClose} title={host ? 'Edit Host' : 'Add Host'}>
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 text-red-400 text-sm rounded-lg">
-          {error}
+    <ModalForm
+      onClose={onClose}
+      title={host ? "Edit Host" : "Add Host"}
+      isPending={isPending}
+      onSubmit={handleSubmit(onSubmit)}
+      submitButtonText={getButtonText()}
+    >
+      <FormInput
+        name="name"
+        label="Name"
+        control={control}
+        placeholder="My Server"
+        required
+      />
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2">
+          <FormInput
+            name="address"
+            label="Address"
+            control={control}
+            placeholder="192.168.1.100 or hostname"
+            required
+          />
         </div>
+        <div>
+          <FormInput
+            name="port"
+            label="Port"
+            control={control}
+            type="number"
+            required
+          />
+        </div>
+      </div>
+
+      <FormInput
+        name="username"
+        label="Username"
+        control={control}
+        placeholder="root"
+        required
+      />
+
+      <div>
+        <label id="auth-type-label" className="block text-dark-300 text-sm mb-2">
+          Authentication <span className="text-red-400 ml-0.5">*</span>
+        </label>
+        <Controller
+          name="authType"
+          control={control}
+          render={({ field }) => (
+            <div role="group" aria-labelledby="auth-type-label" className="flex gap-2">
+              <Button
+                type="button"
+                onClick={() => field.onChange("password")}
+                variant={field.value === "password" ? "default" : "secondary"}
+                className="flex-1"
+              >
+                Password
+              </Button>
+              <Button
+                type="button"
+                onClick={() => field.onChange("key")}
+                variant={field.value === "key" ? "default" : "secondary"}
+                className="flex-1"
+              >
+                SSH Key
+              </Button>
+            </div>
+          )}
+        />
+      </div>
+
+      {authType === "password" ? (
+        <FormInput
+          name="password"
+          label="Password"
+          control={control}
+          type="password"
+          placeholder="Enter password"
+          required
+        />
+      ) : (
+        <FormSelect
+          name="keyId"
+          label="SSH Key"
+          control={control}
+          options={[{ value: "", label: "Select a key" }]}
+          required
+        />
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label
-            htmlFor="host-name"
-            className="block text-dark-300 text-sm mb-2"
-          >
-            Name
-          </label>
-          <input
-            id="host-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            placeholder="My Server"
-            required
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <label
-              htmlFor="host-address"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Address
-            </label>
-            <input
-              id="host-address"
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="192.168.1.100 or hostname"
-              required
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="host-port"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Port
-            </label>
-            <input
-              id="host-port"
-              type="number"
-              value={port}
-              onChange={(e) =>
-                setPort(Number.parseInt(e.target.value, 10) || 22)
-              }
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              min="1"
-              max="65535"
-              required
-            />
-          </div>
-        </div>
-
-        <div>
-          <label
-            htmlFor="host-username"
-            className="block text-dark-300 text-sm mb-2"
-          >
-            Username
-          </label>
-          <input
-            id="host-username"
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            placeholder="root"
-            required
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="host-auth"
-            className="block text-dark-300 text-sm mb-2"
-          >
-            Authentication
-          </label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setAuthType('password')}
-              className={`flex-1 py-2 rounded-lg ${
-                authType === 'password'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-              }`}
-            >
-              Password
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthType('key')}
-              className={`flex-1 py-2 rounded-lg ${
-                authType === 'key'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-              }`}
-            >
-              SSH Key
-            </button>
-          </div>
-        </div>
-
-        {authType === 'password' ? (
-          <div>
-            <label
-              htmlFor="host-password"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Password
-            </label>
-            <input
-              id="host-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Enter password"
-              maxLength={MAX_PASSWORD_LENGTH}
-              required
-            />
-          </div>
-        ) : (
-          <div>
-            <label
-              htmlFor="host-key"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              SSH Key
-            </label>
-            <select
-              id="host-key"
-              value={keyId}
-              onChange={(e) => setKeyId(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              required
-            >
-              <option value="">Select a key</option>
-              {keys.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name} ({key.keyType.toUpperCase()} -{' '}
-                  {key.fingerprint || key.description || 'No fingerprint'})
-                </option>
+      <div>
+        <label id="color-label" className="block text-dark-300 text-sm mb-2">Color</label>
+        <Controller
+          name="color"
+          control={control}
+          render={({ field }) => (
+            <div role="group" aria-labelledby="color-label" className="flex gap-2">
+              {colors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => field.onChange(c)}
+                  className={`cursor-pointer w-8 h-8 rounded-full ${
+                    field.value === c
+                      ? "ring-2 ring-white ring-offset-2 ring-offset-dark-900"
+                      : ""
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
               ))}
-            </select>
-          </div>
-        )}
+            </div>
+          )}
+        />
+      </div>
 
-        <div>
-          <label
-            htmlFor="host-color"
-            className="block text-dark-300 text-sm mb-2"
-          >
-            Color
-          </label>
-          <div className="flex gap-2">
-            {colors.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className={`w-8 h-8 rounded-full ${
-                  color === c
-                    ? 'ring-2 ring-white ring-offset-2 ring-offset-dark-900'
-                    : ''
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        </div>
+      <FormInput
+        name="tags"
+        label="Tags"
+        control={control}
+        placeholder="production, web (comma-separated)"
+      />
 
-        <div>
-          <label
-            htmlFor="host-tags"
-            className="block text-dark-300 text-sm mb-2"
-          >
-            Tags
-          </label>
-          <input
-            id="host-tags"
-            type="text"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            placeholder="production, web (comma-separated)"
-          />
-        </div>
-
-        {!defaultGroupId && (
-          <div>
-            <label
-              htmlFor="host-group"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Group
-            </label>
-            <select
-              id="host-group"
-              value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="">No Group</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="flex gap-3 justify-end pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-dark-400 hover:text-white"
-            disabled={isLoading}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-            disabled={isLoading}
-          >
-            {isLoading ? 'Saving...' : host ? 'Save Changes' : 'Add Host'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
+      {!defaultGroupId && (
+        <FormSelect
+          name="groupId"
+          label="Group"
+          control={control}
+          options={[
+            { value: "", label: "No Group" },
+            ...groups.map((g) => ({ value: g.id, label: g.name })),
+          ]}
+        />
+      )}
+    </ModalForm>
+  );
 }

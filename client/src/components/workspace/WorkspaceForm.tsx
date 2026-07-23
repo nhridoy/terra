@@ -1,75 +1,73 @@
-import { useEffect, useState } from 'react'
-import Modal from '../ui/Modal'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { useTransition } from "react";
+import {
+  type WorkspaceFormSchema,
+  workspaceFormDefaultValues,
+  workspaceFormSchema,
+} from "../../lib/schema/workspaceFormSchema";
+import { FormInput } from "../ui/forms/FormInput";
+import ModalForm from "../shared/ModalForm";
 
 interface WorkspaceFormProps {
-  open: boolean
-  title: string
-  initialName?: string
-  submitLabel?: string
-  onSubmit: (name: string) => void
-  onClose: () => void
+  title: string;
+  initialName?: string;
+  submitLabel?: string;
+  onSubmit: (name: string) => void;
+  onClose: () => void;
 }
 
 export default function WorkspaceForm({
-  open,
   title,
-  initialName = '',
-  submitLabel = 'Save',
+  initialName = "",
+  submitLabel = "Save",
   onSubmit,
   onClose,
 }: WorkspaceFormProps) {
-  const [name, setName] = useState(initialName)
+  const [isPending, startTransition] = useTransition();
+
+  const { control, handleSubmit, reset } = useForm<WorkspaceFormSchema>({
+    resolver: zodResolver(workspaceFormSchema),
+    defaultValues: workspaceFormDefaultValues,
+  });
 
   useEffect(() => {
-    if (open) setName(initialName)
-  }, [open, initialName])
+    reset(initialName ? { name: initialName } : workspaceFormDefaultValues);
+  }, [initialName, reset]);
 
-  const handleSubmit = () => {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    onSubmit(trimmed)
-  }
+  const getButtonText = () => {
+    if (isPending) return "Saving...";
+    return submitLabel;
+  };
+
+  const handleWorkspaceSubmit = (data: WorkspaceFormSchema) => {
+    onSubmit(data.name);
+    reset();
+    onClose();
+  };
+
+  const onValid = (data: WorkspaceFormSchema) => {
+    startTransition(async () => {
+      await handleWorkspaceSubmit(data);
+    });
+  };
 
   return (
-    <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-md">
-      <div className="space-y-4">
-        <div>
-          <label
-            htmlFor="workspace-name"
-            className="block mb-1 text-xs font-medium text-dark-400"
-          >
-            Workspace name
-          </label>
-          <input
-            id="workspace-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSubmit()
-            }}
-            placeholder="e.g. Production Cluster"
-            className="w-full px-3 py-2 text-sm text-white bg-dark-950 border border-dark-700 rounded focus:outline-none focus:border-primary-500"
-          />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-dark-300 bg-dark-800 rounded hover:bg-dark-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!name.trim()}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50"
-          >
-            {submitLabel}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  )
+    <ModalForm
+      onClose={onClose}
+      title={title}
+      isPending={isPending}
+      onSubmit={handleSubmit(onValid)}
+      submitButtonText={getButtonText()}
+    >
+      <FormInput
+        name="name"
+        label="Workspace name"
+        control={control}
+        placeholder="e.g. Production Cluster"
+        required
+      />
+    </ModalForm>
+  );
 }

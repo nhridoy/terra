@@ -1,50 +1,50 @@
 import {
-  Eye,
-  GearSix,
-  Lightning,
-  Palette,
-  ShieldCheck,
-  TerminalWindow,
-} from '@phosphor-icons/react'
-import type { ReactNode } from 'react'
+  EyeIcon,
+  GearSixIcon,
+  LightningIcon,
+  PaletteIcon,
+  ShieldCheckIcon,
+  TerminalWindowIcon,
+} from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 
 interface SettingsTab {
-  id: string
-  label: string
-  icon: ReactNode
+  id: string;
+  label: string;
+  icon: ReactNode;
 }
 
 const settingsTabs: SettingsTab[] = [
   {
-    id: 'appearance',
-    label: 'Appearance',
-    icon: <Palette className="w-5 h-5" />,
+    id: "appearance",
+    label: "Appearance",
+    icon: <PaletteIcon className="w-5 h-5" />,
   },
   {
-    id: 'terminal',
-    label: 'Terminal',
-    icon: <TerminalWindow className="w-5 h-5" />,
+    id: "terminal",
+    label: "Terminal",
+    icon: <TerminalWindowIcon className="w-5 h-5" />,
   },
   {
-    id: 'ssh',
-    label: 'SSH',
-    icon: <Lightning className="w-5 h-5" />,
+    id: "ssh",
+    label: "SSH",
+    icon: <LightningIcon className="w-5 h-5" />,
   },
   {
-    id: 'security',
-    label: 'Security',
-    icon: <ShieldCheck className="w-5 h-5" />,
+    id: "security",
+    label: "Security",
+    icon: <ShieldCheckIcon className="w-5 h-5" />,
   },
   {
-    id: 'advanced',
-    label: 'Advanced',
+    id: "advanced",
+    label: "Advanced",
     icon: (
       <>
-        <GearSix className="w-5 h-5" />
-        <Eye className="w-5 h-5" weight="bold" />
+        <GearSixIcon className="w-5 h-5" />
+        <EyeIcon className="w-5 h-5" weight="bold" />
       </>
     ),
   },
-]
+];
 
-export default settingsTabs
+export default settingsTabs;

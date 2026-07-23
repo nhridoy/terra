@@ -10,9 +10,6 @@
     "core:event:default",
     "shell:allow-open",
     "dialog:default",
-    "fs:default",
-    "updater:default",
-    "process:default",
     "store:default"
   ]
 }

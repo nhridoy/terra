@@ -1,8 +1,14 @@
-import { Users, X } from '@phosphor-icons/react'
-import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
-import { useEffect, useState } from 'react'
-import { useTeamStore } from '../../stores/teamStore'
-import Modal from '../ui/Modal'
+import { UsersIcon, XIcon } from "@phosphor-icons/react";
+import { useEffect } from "react";
+import { useModal } from "../../hooks/useModal";
+import { confirmDelete } from "../../lib/confirmDelete";
+import type { CreateTeamFormSchema } from "../../lib/schema/createTeamFormSchema";
+import type { InviteMemberFormSchema } from "../../lib/schema/inviteMemberFormSchema";
+import { useTeamStore } from "../../stores/teamStore";
+import { Button } from "../ui/Button";
+import Select from "../ui/Select";
+import TeamForm from "./TeamForm";
+import InviteMemberForm from "./InviteMemberForm";
 
 export default function TeamManager() {
   const {
@@ -15,87 +21,70 @@ export default function TeamManager() {
     addMember,
     removeMember,
     updateMemberRole,
-  } = useTeamStore()
+  } = useTeamStore();
 
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showInviteModal, setShowInviteModal] = useState(false)
-  const [teamName, setTeamName] = useState('')
-  const [teamDescription, setTeamDescription] = useState('')
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState('member')
+  const createModal = useModal();
+  const inviteModal = useModal();
 
   useEffect(() => {
-    fetchTeams()
-  }, [fetchTeams])
+    fetchTeams();
+  }, [fetchTeams]);
 
-  const handleCreateTeam = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleCreateTeam = async (data: CreateTeamFormSchema) => {
     await createTeam({
-      name: teamName,
-      description: teamDescription,
-    })
-    setShowCreateModal(false)
-    setTeamName('')
-    setTeamDescription('')
-  }
+      name: data.name,
+      description: data.description,
+    });
+    createModal.hide();
+  };
 
-  const handleInviteMember = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleInviteMember = async (data: InviteMemberFormSchema) => {
     if (selectedTeam) {
-      await addMember(selectedTeam.id, inviteEmail, inviteRole)
-      setShowInviteModal(false)
-      setInviteEmail('')
-      setInviteRole('member')
+      await addMember(selectedTeam.id, data.email, data.role);
+      inviteModal.hide();
     }
-  }
+  };
 
   const handleRemoveMember = async (userId: string) => {
-    if (
-      selectedTeam &&
-      (await tauriConfirm('Remove this member?', {
-        title: 'Remove Member',
-        kind: 'warning',
-      }))
-    ) {
-      await removeMember(selectedTeam.id, userId)
+    if (selectedTeam && (await confirmDelete("Remove this member?"))) {
+      await removeMember(selectedTeam.id, userId);
     }
-  }
+  };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (selectedTeam) {
-      await updateMemberRole(selectedTeam.id, userId, newRole)
+      await updateMemberRole(selectedTeam.id, userId, newRole);
     }
-  }
+  };
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'owner':
-        return 'bg-purple-500/20 text-purple-400'
-      case 'admin':
-        return 'bg-blue-500/20 text-blue-400'
+      case "owner":
+        return "bg-purple-500/20 text-purple-400";
+      case "admin":
+        return "bg-blue-500/20 text-blue-400";
       default:
-        return 'bg-dark-600 text-dark-300'
+        return "bg-dark-600 text-dark-300";
     }
-  }
+  };
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="p-4 border-b border-dark-700">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Teams</h2>
-          <button
+          <Button
             type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg text-sm"
+            onClick={createModal.show}
+            variant="default"
+            size="sm"
           >
             + New Team
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Team List */}
         <div className="w-64 border-r border-dark-700 overflow-y-auto">
           {teams.length === 0 ? (
             <div className="p-4 text-center text-dark-400">
@@ -104,14 +93,15 @@ export default function TeamManager() {
             </div>
           ) : (
             teams.map((team) => (
-              <button
+              <Button
                 key={team.id}
                 type="button"
                 onClick={() => selectTeam(team)}
-                className={`p-3 cursor-pointer border-b border-dark-700 text-left w-full ${
+                variant="ghost"
+                className={`p-3 cursor-pointer border-b border-dark-700 text-left w-full h-auto justify-start ${
                   selectedTeam?.id === team.id
-                    ? 'bg-primary-600/20 border-l-2 border-l-primary-500'
-                    : 'hover:bg-dark-800'
+                    ? "bg-primary-600/20 border-l-2 border-l-primary-500"
+                    : "hover:bg-dark-800"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -129,16 +119,14 @@ export default function TeamManager() {
                     </div>
                   </div>
                 </div>
-              </button>
+              </Button>
             ))
           )}
         </div>
 
-        {/* Team Details */}
         <div className="flex-1 overflow-y-auto">
           {selectedTeam ? (
             <div className="p-6">
-              {/* Team Header */}
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h3 className="text-2xl font-bold text-white">
@@ -151,33 +139,29 @@ export default function TeamManager() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => setShowInviteModal(true)}
-                    className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm"
+                    onClick={inviteModal.show}
+                    variant="default"
+                    size="sm"
                   >
                     Invite Member
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={async () => {
-                      if (
-                        await tauriConfirm('Delete this team?', {
-                          title: 'Delete Team',
-                          kind: 'warning',
-                        })
-                      ) {
-                        await deleteTeam(selectedTeam.id)
+                      if (await confirmDelete("Delete this team?")) {
+                        await deleteTeam(selectedTeam.id);
                       }
                     }}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm"
+                    variant="destructive"
+                    size="sm"
                   >
                     Delete Team
-                  </button>
+                  </Button>
                 </div>
               </div>
 
-              {/* Members */}
               <div className="bg-dark-800 rounded-xl p-4">
                 <h4 className="text-white font-medium mb-4">
                   Members ({selectedTeam.members?.length || 0})
@@ -210,25 +194,28 @@ export default function TeamManager() {
                         >
                           {member.role}
                         </span>
-                        {member.role !== 'owner' && (
+                        {member.role !== "owner" && (
                           <div className="flex gap-1">
-                            <select
+                            <Select
                               value={member.role}
-                              onChange={(e) =>
-                                handleRoleChange(member.userId, e.target.value)
+                              onValueChange={(v) =>
+                                handleRoleChange(member.userId, v)
                               }
-                              className="bg-dark-600 text-white px-2 py-1 rounded text-sm"
-                            >
-                              <option value="member">Member</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                            <button
+                              options={[
+                                { value: "member", label: "Member" },
+                                { value: "admin", label: "Admin" },
+                              ]}
+                              className="w-28"
+                            />
+                            <Button
                               type="button"
                               onClick={() => handleRemoveMember(member.userId)}
-                              className="text-dark-400 hover:text-red-500 p-1"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="hover:text-red-500"
                             >
-                              <X className="w-4 h-4" weight="bold" />
-                            </button>
+                              <XIcon className="w-4 h-4" weight="bold" />
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -240,7 +227,7 @@ export default function TeamManager() {
           ) : (
             <div className="h-full flex items-center justify-center text-dark-400">
               <div className="text-center">
-                <Users
+                <UsersIcon
                   className="w-16 h-16 mx-auto mb-4 text-dark-600"
                   weight="bold"
                 />
@@ -251,128 +238,19 @@ export default function TeamManager() {
         </div>
       </div>
 
-      {/* Create Team Modal */}
-      {showCreateModal && (
-        <Modal onClose={() => setShowCreateModal(false)}>
-          <div className="bg-dark-900 rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold text-white mb-4">
-              Create Team
-            </h3>
-            <form onSubmit={handleCreateTeam} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="team-name"
-                  className="block text-dark-300 text-sm mb-2"
-                >
-                  Team Name
-                </label>
-                <input
-                  id="team-name"
-                  type="text"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="My Team"
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="team-description"
-                  className="block text-dark-300 text-sm mb-2"
-                >
-                  Description
-                </label>
-                <textarea
-                  id="team-description"
-                  value={teamDescription}
-                  onChange={(e) => setTeamDescription(e.target.value)}
-                  className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Optional description"
-                  rows={3}
-                />
-              </div>
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-dark-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-                >
-                  Create
-                </button>
-              </div>
-            </form>
-          </div>
-        </Modal>
+      {createModal.open && (
+        <TeamForm
+          onSubmit={handleCreateTeam}
+          onClose={createModal.hide}
+        />
       )}
 
-      {/* Invite Member Modal */}
-      {showInviteModal && (
-        <Modal onClose={() => setShowInviteModal(false)}>
-          <div className="bg-dark-900 rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold text-white mb-4">
-              Invite Member
-            </h3>
-            <form onSubmit={handleInviteMember} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="invite-email"
-                  className="block text-dark-300 text-sm mb-2"
-                >
-                  Email
-                </label>
-                <input
-                  id="invite-email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="user@example.com"
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="invite-role"
-                  className="block text-dark-300 text-sm mb-2"
-                >
-                  Role
-                </label>
-                <select
-                  id="invite-role"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowInviteModal(false)}
-                  className="px-4 py-2 text-dark-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-                >
-                  Send Invite
-                </button>
-              </div>
-            </form>
-          </div>
-        </Modal>
+      {inviteModal.open && (
+        <InviteMemberForm
+          onSubmit={handleInviteMember}
+          onClose={inviteModal.hide}
+        />
       )}
     </div>
-  )
+  );
 }

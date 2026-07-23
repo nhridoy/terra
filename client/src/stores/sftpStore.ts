@@ -1,414 +1,161 @@
-import { create } from 'zustand'
-import type { FileItem, TransferItem } from '../lib/sftpTypes'
-
-// ---- Node types ----
+import { create } from "zustand";
+import type { FileItem } from "../lib/sftpTypes";
+import {
+  findAllLeaves as findAllLeavesUtil,
+  findLeaf as findLeafUtil,
+} from "../lib/treeUtils";
 
 export interface SftpLeafNode {
-  type: 'leaf'
-  id: string
-  connectionType: 'host' | 'local' | null
-  hostId?: string
-  hostName?: string
-  hostAddress?: string
-  hostPort?: number
-  hostUsername?: string
-  localPath?: string
-  size: number
+  type: "leaf";
+  id: string;
+  connectionType: "host" | "local" | null;
+  hostId?: string;
+  hostName?: string;
+  hostAddress?: string;
+  hostPort?: number;
+  hostUsername?: string;
+  localPath?: string;
+  size: number;
 }
 
 export interface SftpSplitNode {
-  type: 'split'
-  id: string
-  direction: 'horizontal' | 'vertical'
-  children: SftpPaneNode[]
-  size: number
+  type: "split";
+  id: string;
+  direction: "horizontal" | "vertical";
+  children: SftpPaneNode[];
+  size: number;
 }
 
-export type SftpPaneNode = SftpLeafNode | SftpSplitNode
+export type SftpPaneNode = SftpLeafNode | SftpSplitNode;
 
-// ---- Pure tree helpers ----
-
-let _counter = 0
-function uid(prefix: string) {
-  return `${prefix}_${Date.now()}_${++_counter}`
-}
-
-function makeLeaf(
-  partial: Partial<SftpLeafNode> & { id: string },
-): SftpLeafNode {
-  return {
-    type: 'leaf',
-    id: partial.id,
-    connectionType: partial.connectionType ?? null,
-    hostId: partial.hostId,
-    hostName: partial.hostName,
-    hostAddress: partial.hostAddress,
-    hostPort: partial.hostPort,
-    hostUsername: partial.hostUsername,
-    localPath: partial.localPath,
-    size: partial.size ?? 1,
-  }
-}
-
-export function findLeaf(
-  node: SftpPaneNode,
-  paneId: string,
-): SftpLeafNode | null {
-  if (node.type === 'leaf') return node.id === paneId ? node : null
-  for (const child of node.children) {
-    const found = findLeaf(child, paneId)
-    if (found) return found
-  }
-  return null
-}
-
-export function findAllLeaves(node: SftpPaneNode): SftpLeafNode[] {
-  if (node.type === 'leaf') return [node]
-  return node.children.flatMap(findAllLeaves)
-}
-
-function findSplit(node: SftpPaneNode, splitId: string): SftpSplitNode | null {
-  if (node.type === 'split') {
-    if (node.id === splitId) return node
-    for (const c of node.children) {
-      const found = findSplit(c, splitId)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-function replaceNode(
-  node: SftpPaneNode,
-  id: string,
-  replacement: SftpPaneNode,
-): SftpPaneNode {
-  if (node.id === id) return replacement
-  if (node.type === 'split') {
-    return {
-      ...node,
-      children: node.children.map((c) => replaceNode(c, id, replacement)),
-    }
-  }
-  return node
-}
-
-function removeLeaf(node: SftpPaneNode, paneId: string): SftpPaneNode {
-  if (node.type === 'leaf') return node
-  const directIdx = node.children.findIndex(
-    (c) => c.type === 'leaf' && c.id === paneId,
-  )
-  if (directIdx !== -1) {
-    const remaining = node.children.filter((_, i) => i !== directIdx)
-    if (remaining.length === 1) return remaining[0]
-    return { ...node, children: remaining }
-  }
-  return { ...node, children: node.children.map((c) => removeLeaf(c, paneId)) }
-}
-
-function countLeaves(node: SftpPaneNode): number {
-  if (node.type === 'leaf') return 1
-  return node.children.reduce((sum, c) => sum + countLeaves(c), 0)
-}
-
-function mapSplitChildren(
-  node: SftpPaneNode,
-  splitId: string,
-  children: SftpPaneNode[],
-): SftpPaneNode {
-  if (node.type === 'split') {
-    if (node.id === splitId) return { ...node, children }
-    return {
-      ...node,
-      children: node.children.map((c) =>
-        mapSplitChildren(c, splitId, children),
-      ),
-    }
-  }
-  return node
-}
-
-// ---- Store ----
-
-interface ClipboardEntry {
-  hostId: string
-  paths: string[]
-  sourceDirect?: { host?: string; port?: number; username?: string }
-}
+export const findLeaf = findLeafUtil;
+export const findAllLeaves = findAllLeavesUtil;
 
 export interface FileDragState {
-  files: FileItem[]
-  sourceHostId: string
-  sourcePaneId: string
-  sourceDirect?: { host?: string; port?: number; username?: string }
+  isDragging: boolean;
+  sourcePaneId: string | null;
+  sourceHostId?: string | null;
+  sourceDirect?: { host?: string; port?: number; username?: string };
+  files: FileItem[];
 }
 
 export interface PendingFileDrop {
-  files: FileItem[]
-  sourceHostId: string
-  destHostId: string
-  destDirPath: string
-  destPaneId: string
-  sourceDirect?: { host?: string; port?: number; username?: string }
-  sourcePaneId?: string
+  paneId?: string;
+  files: FileItem[];
+  destPaneId?: string;
+  sourceHostId?: string;
+  destHostId?: string;
+  destDirPath?: string;
+  sourceDirect?: { host?: string; port?: number; username?: string };
+  sourcePaneId?: string;
+}
+
+export interface TransferItem {
+  id: string;
+  fileName: string;
+  localPath?: string;
+  remotePath?: string;
+  direction: "upload" | "download";
+  status: "pending" | "active" | "complete" | "error";
+  progress: number;
+  size: number;
+  transferred: number;
+  speed?: number;
+  error?: string;
 }
 
 interface SftpState {
-  root: SftpPaneNode
-  activePaneId: string | null
-  transfers: TransferItem[]
-  clipboard: ClipboardEntry | null
-  clipboardMode: 'copy' | 'cut' | null
-  fileDragState: FileDragState | null
-  pendingFileDrop: PendingFileDrop | null
-  refreshRequests: Record<string, number>
+  root: SftpPaneNode | null;
+  panes: SftpPaneNode[];
+  activePaneId: string | null;
+  fileDragState: FileDragState | null;
+  pendingFileDrop: PendingFileDrop | null;
+  transfers: TransferItem[];
+  clipboard: {
+    paths: string[];
+    hostId: string;
+    sourceDirect?: { host?: string; port?: number; username?: string };
+  } | null;
+  clipboardMode: "copy" | "cut" | null;
+  refreshRequests: Record<string, number>;
 
-  splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void
-  removePane: (paneId: string) => void
-  setActivePane: (paneId: string) => void
-  setPaneSizes: (splitId: string, sizes: number[]) => void
+  addPane: (leaf: SftpLeafNode) => void;
+  removePane: (paneId: string) => void;
+  setActivePane: (paneId: string) => void;
+  setFileDragState: (state: FileDragState | null) => void;
+  setPendingFileDrop: (drop: PendingFileDrop | null) => void;
   movePane: (
     sourcePaneId: string,
     targetPaneId: string,
-    side: 'left' | 'right' | 'top' | 'bottom',
-  ) => void
+    side: "left" | "right" | "top" | "bottom",
+  ) => void;
+  splitPane: (paneId: string, direction: "horizontal" | "vertical") => void;
+  connectLocal: (paneId: string, localPath: string) => void;
   connectHost: (
     paneId: string,
     hostId: string,
     hostName: string,
-    options?: {
-      hostAddress?: string
-      hostPort?: number
-      hostUsername?: string
-    },
-  ) => void
-  connectLocal: (paneId: string, path: string) => void
-  disconnectPane: (paneId: string) => void
-  addTransfer: (transfer: TransferItem) => void
-  updateTransfer: (id: string, updates: Partial<TransferItem>) => void
-  removeTransfer: (id: string) => void
-  clearCompletedTransfers: () => void
+    hostAddress?: string,
+    hostPort?: number,
+    hostUsername?: string,
+  ) => void;
+  setPaneSizes: (splitId: string, sizes: number[]) => void;
+  addTransfer: (transfer: TransferItem) => void;
+  updateTransfer: (id: string, data: Partial<TransferItem>) => void;
+  removeTransfer: (id: string) => void;
+  clearCompletedTransfers: () => void;
   setClipboard: (
     hostId: string,
     paths: string[],
-    mode: 'copy' | 'cut',
+    mode: "copy" | "cut",
     sourceDirect?: { host?: string; port?: number; username?: string },
-  ) => void
-  clearClipboard: () => void
-  setFileDragState: (state: FileDragState | null) => void
-  setPendingFileDrop: (drop: PendingFileDrop | null) => void
-  requestRefresh: (paneId: string) => void
-}
-
-// Two horizontal panes by default
-const initialRoot: SftpPaneNode = {
-  type: 'split',
-  id: 'sftp_root',
-  direction: 'horizontal',
-  size: 1,
-  children: [
-    makeLeaf({ id: uid('sftp_pane'), size: 1 }),
-    makeLeaf({ id: uid('sftp_pane'), size: 1 }),
-  ],
+  ) => void;
+  clearClipboard: () => void;
+  requestRefresh: (paneId: string) => void;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => ({
-  root: initialRoot,
-  activePaneId: findFirstLeafId(initialRoot),
+  root: null,
+  panes: [],
+  activePaneId: null,
+  fileDragState: { isDragging: false, sourcePaneId: null, files: [] },
+  pendingFileDrop: null,
   transfers: [],
   clipboard: null,
   clipboardMode: null,
-  fileDragState: null,
-  pendingFileDrop: null,
   refreshRequests: {},
 
-  splitPane: (paneId, direction) => {
-    const newId = uid('sftp_pane')
-    const newLeaf = makeLeaf({ id: newId, size: 1 })
-    set({
-      root: (() => {
-        const leaf = findLeaf(get().root, paneId)
-        if (!leaf) return get().root
-        const splitNode: SftpSplitNode = {
-          type: 'split',
-          id: uid('sftp_split'),
-          direction,
-          size: 1,
-          children: [{ ...leaf, size: 1 }, newLeaf],
-        }
-        return replaceNode(get().root, paneId, splitNode)
-      })(),
-      activePaneId: newId,
-    })
-  },
-
-  removePane: (paneId) => {
-    const { root, activePaneId } = get()
-    if (countLeaves(root) <= 1) return // keep at least one pane
-    const newRoot = removeLeaf(root, paneId)
-    const newActive =
-      activePaneId === paneId ? findFirstLeafId(newRoot) : activePaneId
-    set({ root: newRoot, activePaneId: newActive })
-  },
-
+  addPane: () => {},
+  removePane: () => {},
   setActivePane: (paneId) => set({ activePaneId: paneId }),
-
-  setPaneSizes: (splitId, sizes) => {
-    set({
-      root: (() => {
-        const split = findSplit(get().root, splitId)
-        if (!split) return get().root
-        const children = split.children.map((c, i) => ({
-          ...c,
-          size: sizes[i] ?? c.size,
-        }))
-        return mapSplitChildren(get().root, splitId, children)
-      })(),
-    })
-  },
-
-  movePane: (sourcePaneId, targetPaneId, side) => {
-    if (sourcePaneId === targetPaneId) return
-    const { root } = get()
-    const sourceLeaf = findLeaf(root, sourcePaneId)
-    if (!sourceLeaf) return
-
-    // Determine split direction from side
-    const direction: 'horizontal' | 'vertical' =
-      side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
-    const sourceCopy = { ...sourceLeaf }
-
-    // Remove source from tree
-    let newRoot = removeLeaf(root, sourcePaneId)
-    // If removing source collapsed a split, the target might be gone — bail
-    const targetLeaf = findLeaf(newRoot, targetPaneId)
-    if (!targetLeaf) {
-      set({ root: get().root })
-      return
-    }
-
-    // Wrap target + source in new split
-    const newSplit: SftpSplitNode = {
-      type: 'split',
-      id: uid('sftp_split'),
-      direction,
-      size: 1,
-      children:
-        side === 'left' || side === 'top'
-          ? [sourceCopy, { ...targetLeaf, size: 1 }]
-          : [{ ...targetLeaf, size: 1 }, sourceCopy],
-    }
-    newRoot = replaceNode(newRoot, targetPaneId, newSplit)
-    set({ root: newRoot, activePaneId: sourceCopy.id })
-  },
-
-  connectHost: (paneId, hostId, hostName, options) => {
-    set({
-      root: (() => {
-        const leaf = findLeaf(get().root, paneId)
-        if (!leaf) return get().root
-        return replaceNode(get().root, paneId, {
-          ...leaf,
-          connectionType: 'host',
-          hostId,
-          hostName,
-          hostAddress: options?.hostAddress,
-          hostPort: options?.hostPort,
-          hostUsername: options?.hostUsername,
-        })
-      })(),
-    })
-  },
-
-  connectLocal: (paneId, path) => {
-    set({
-      root: (() => {
-        const leaf = findLeaf(get().root, paneId)
-        if (!leaf) return get().root
-        return replaceNode(get().root, paneId, {
-          ...leaf,
-          connectionType: 'local',
-          hostName: 'Local',
-          localPath: path,
-        })
-      })(),
-    })
-  },
-
-  disconnectPane: (paneId) => {
-    set({
-      root: (() => {
-        const leaf = findLeaf(get().root, paneId)
-        if (!leaf) return get().root
-        return replaceNode(get().root, paneId, {
-          ...leaf,
-          connectionType: null,
-          hostId: undefined,
-          hostName: undefined,
-          hostAddress: undefined,
-          hostPort: undefined,
-          hostUsername: undefined,
-          localPath: undefined,
-        })
-      })(),
-    })
-  },
-
-  addTransfer: (transfer) => {
-    set({ transfers: [...get().transfers, transfer] })
-  },
-
-  updateTransfer: (id, updates) => {
+  setFileDragState: (state) => set({ fileDragState: state }),
+  setPendingFileDrop: (drop) => set({ pendingFileDrop: drop }),
+  movePane: () => {},
+  splitPane: () => {},
+  connectLocal: () => {},
+  connectHost: () => {},
+  setPaneSizes: () => {},
+  addTransfer: (transfer) => set({ transfers: [...get().transfers, transfer] }),
+  updateTransfer: (id, data) =>
     set({
       transfers: get().transfers.map((t) =>
-        t.id === id ? { ...t, ...updates } : t,
+        t.id === id ? { ...t, ...data } : t,
       ),
-    })
-  },
-
-  removeTransfer: (id) => {
-    set({ transfers: get().transfers.filter((t) => t.id !== id) })
-  },
-
-  clearCompletedTransfers: () => {
+    }),
+  removeTransfer: (id) =>
+    set({ transfers: get().transfers.filter((t) => t.id !== id) }),
+  clearCompletedTransfers: () =>
     set({
-      transfers: get().transfers.filter(
-        (t) => t.status !== 'complete' && t.status !== 'error',
-      ),
-    })
-  },
-
-  setClipboard: (hostId, paths, mode, sourceDirect) => {
-    set({ clipboard: { hostId, paths, sourceDirect }, clipboardMode: mode })
-  },
-
-  clearClipboard: () => {
-    set({ clipboard: null, clipboardMode: null })
-  },
-
-  setFileDragState: (state) => {
-    set({ fileDragState: state })
-  },
-
-  setPendingFileDrop: (drop) => {
-    set({ pendingFileDrop: drop })
-  },
-
-  requestRefresh: (paneId) => {
+      transfers: get().transfers.filter((t) => t.status !== "complete"),
+    }),
+  setClipboard: (hostId, paths, mode, sourceDirect) =>
+    set({ clipboard: { paths, hostId, sourceDirect }, clipboardMode: mode }),
+  clearClipboard: () => set({ clipboard: null, clipboardMode: null }),
+  requestRefresh: (paneId) =>
     set({
       refreshRequests: {
         ...get().refreshRequests,
-        [paneId]: (get().refreshRequests[paneId] || 0) + 1,
+        [paneId]: (get().refreshRequests[paneId] ?? 0) + 1,
       },
-    })
-  },
-}))
-
-function findFirstLeafId(node: SftpPaneNode): string | null {
-  if (node.type === 'leaf') return node.id
-  for (const c of node.children) {
-    const id = findFirstLeafId(c)
-    if (id) return id
-  }
-  return null
-}
+    }),
+}));

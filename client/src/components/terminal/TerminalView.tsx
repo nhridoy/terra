@@ -1,75 +1,75 @@
-import { useCallback, useState } from 'react'
-import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
-import type { Host } from '../../stores/hostStore'
-import { useTerminalStore } from '../../stores/terminalStore'
-import CommandAutocomplete from './CommandAutocomplete'
-import FocusMode from './FocusMode'
-import PaneTree from './PaneTree'
-import QuickConnect from './QuickConnect'
+import { useCallback, useState } from "react";
+import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import type { Host } from "../../stores/hostStore";
+import { useTerminalStore } from "../../stores/terminalStore";
+import CommandAutocomplete from "./CommandAutocomplete";
+import FocusMode from "./FocusMode";
+import PaneTree from "./PaneTree";
+import QuickConnect from "./QuickConnect";
 
 interface TerminalViewProps {
-  onSetActiveView?: (view: string) => void
+  onSetActiveView?: (view: string) => void;
 }
 
 export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
   const { tabs, activeTabId, connectActivePane, splitPane, removePane } =
-    useTerminalStore()
-  const [isFocusMode, setIsFocusMode] = useState(false)
-  const [showCommandPalette, setShowCommandPalette] = useState(false)
-  const [sidebarVisible, setSidebarVisible] = useState(true)
+    useTerminalStore();
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
-  const activeTab = tabs.find((tab) => tab.id === activeTabId)
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
   const handleNextTab = useCallback(() => {
-    const currentIndex = tabs.findIndex((t) => t.id === activeTabId)
+    const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
     if (currentIndex < tabs.length - 1) {
-      const nextTab = tabs[currentIndex + 1]
-      useTerminalStore.getState().setActiveTab(nextTab.id)
-      onSetActiveView?.(nextTab.id)
+      const nextTab = tabs[currentIndex + 1];
+      useTerminalStore.getState().setActiveTab(nextTab.id);
+      onSetActiveView?.(nextTab.id);
     } else if (tabs.length > 0) {
-      const firstTab = tabs[0]
-      useTerminalStore.getState().setActiveTab(firstTab.id)
-      onSetActiveView?.(firstTab.id)
+      const firstTab = tabs[0];
+      useTerminalStore.getState().setActiveTab(firstTab.id);
+      onSetActiveView?.(firstTab.id);
     }
-  }, [tabs, activeTabId, onSetActiveView])
+  }, [tabs, activeTabId, onSetActiveView]);
 
   const handlePrevTab = useCallback(() => {
-    const currentIndex = tabs.findIndex((t) => t.id === activeTabId)
+    const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
     if (currentIndex > 0) {
-      const prevTab = tabs[currentIndex - 1]
-      useTerminalStore.getState().setActiveTab(prevTab.id)
-      onSetActiveView?.(prevTab.id)
+      const prevTab = tabs[currentIndex - 1];
+      useTerminalStore.getState().setActiveTab(prevTab.id);
+      onSetActiveView?.(prevTab.id);
     } else if (tabs.length > 0) {
-      const lastTab = tabs[tabs.length - 1]
-      useTerminalStore.getState().setActiveTab(lastTab.id)
-      onSetActiveView?.(lastTab.id)
+      const lastTab = tabs[tabs.length - 1];
+      useTerminalStore.getState().setActiveTab(lastTab.id);
+      onSetActiveView?.(lastTab.id);
     }
-  }, [tabs, activeTabId, onSetActiveView])
+  }, [tabs, activeTabId, onSetActiveView]);
 
   const handleFocusMode = useCallback(() => {
-    setIsFocusMode(!isFocusMode)
-  }, [isFocusMode])
+    setIsFocusMode(!isFocusMode);
+  }, [isFocusMode]);
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarVisible(!sidebarVisible)
+    setSidebarVisible(!sidebarVisible);
     window.dispatchEvent(
-      new CustomEvent('toggle-sidebar', {
+      new CustomEvent("toggle-sidebar", {
         detail: { visible: !sidebarVisible },
       }),
-    )
-  }, [sidebarVisible])
+    );
+  }, [sidebarVisible]);
 
   const handleCommandSelect = useCallback((command: string) => {
-    console.log('Execute command:', command)
-    setShowCommandPalette(false)
-  }, [])
+    console.log("Execute command:", command);
+    setShowCommandPalette(false);
+  }, []);
 
   const handleQuickConnectHost = useCallback(
     (host: Host) => {
-      const { activeTabId: atId } = useTerminalStore.getState()
+      const { activeTabId: atId } = useTerminalStore.getState();
       if (!atId) {
-        const newTabId = useTerminalStore.getState().addEmptyTab()
-        onSetActiveView?.(newTabId)
+        const newTabId = useTerminalStore.getState().addEmptyTab();
+        onSetActiveView?.(newTabId);
         useTerminalStore
           .getState()
           .connectActivePane(newTabId, host.id, host.name, {
@@ -78,8 +78,8 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
             hostUsername: host.username,
             authType: host.authType,
             keyId: host.keyId,
-          })
-        return
+          });
+        return;
       }
       connectActivePane(atId, host.id, host.name, {
         hostAddress: host.address,
@@ -87,79 +87,80 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
         hostUsername: host.username,
         authType: host.authType,
         keyId: host.keyId,
-      })
-      onSetActiveView?.(atId)
+      });
+      onSetActiveView?.(atId);
     },
     [connectActivePane, onSetActiveView],
-  )
+  );
 
   const handleQuickConnectLocal = useCallback(
     (shell: string) => {
-      const { activeTabId: atId } = useTerminalStore.getState()
+      const { activeTabId: atId } = useTerminalStore.getState();
       if (!atId) {
-        const newTabId = useTerminalStore.getState().addEmptyTab()
-        onSetActiveView?.(newTabId)
+        const newTabId = useTerminalStore.getState().addEmptyTab();
+        onSetActiveView?.(newTabId);
         useTerminalStore
           .getState()
-          .connectActivePane(newTabId, `local_${Date.now()}`, 'Local', {
-            connectionType: 'local',
+          .connectActivePane(newTabId, `local_${Date.now()}`, "Local", {
+            connectionType: "local",
             shell,
-          })
-        return
+          });
+        return;
       }
-      connectActivePane(atId, `local_${Date.now()}`, 'Local', {
-        connectionType: 'local',
+      connectActivePane(atId, `local_${Date.now()}`, "Local", {
+        connectionType: "local",
         shell,
-      })
-      onSetActiveView?.(atId)
+      });
+      onSetActiveView?.(atId);
     },
     [connectActivePane, onSetActiveView],
-  )
+  );
 
   const handleSplit = useCallback(
-    (direction: 'horizontal' | 'vertical') => {
+    (direction: "horizontal" | "vertical") => {
       const { activeTabId: atId, tabs: currentTabs } =
-        useTerminalStore.getState()
-      const tab = currentTabs.find((t) => t.id === atId)
-      if (!atId || !tab?.activePaneId) return
-      splitPane(atId, tab.activePaneId, direction)
+        useTerminalStore.getState();
+      const tab = currentTabs.find((t) => t.id === atId);
+      if (!atId || !tab?.activePaneId) return;
+      splitPane(atId, tab.activePaneId, direction);
     },
     [splitPane],
-  )
+  );
 
   const handleCloseTab = useCallback(() => {
-    const { activeTabId: atId, tabs: currentTabs } = useTerminalStore.getState()
-    const tab = currentTabs.find((t) => t.id === atId)
-    if (!atId || !tab?.activePaneId) return
-    removePane(atId, tab.activePaneId)
-  }, [removePane])
+    const { activeTabId: atId, tabs: currentTabs } =
+      useTerminalStore.getState();
+    const tab = currentTabs.find((t) => t.id === atId);
+    if (!atId || !tab?.activePaneId) return;
+    removePane(atId, tab.activePaneId);
+  }, [removePane]);
 
   const handleRestorePreset = useCallback(
     (preset: { id?: string; name?: string; layout: string }, tabId: string) => {
-      useTerminalStore.getState().restorePreset(preset, tabId)
-      onSetActiveView?.(tabId)
+      useTerminalStore.getState().restorePreset(preset, tabId);
+      onSetActiveView?.(tabId);
     },
     [onSetActiveView],
-  )
+  );
 
   useKeyboardShortcuts({
     onNewTab: () => {
-      const newTabId = useTerminalStore.getState().addEmptyTab()
-      onSetActiveView?.(newTabId)
+      const newTabId = useTerminalStore.getState().addEmptyTab();
+      onSetActiveView?.(newTabId);
     },
     onCloseTab: handleCloseTab,
     onNextTab: handleNextTab,
     onPrevTab: handlePrevTab,
-    onSplitHorizontal: () => handleSplit('horizontal'),
-    onSplitVertical: () => handleSplit('vertical'),
+    onSplitHorizontal: () => handleSplit("horizontal"),
+    onSplitVertical: () => handleSplit("vertical"),
     onFocusMode: handleFocusMode,
     onQuickConnect: () => {},
     onCommandPalette: () => setShowCommandPalette(!showCommandPalette),
-    onSaveWorkspace: () => console.log('Save workspace'),
+    onSaveWorkspace: () => console.log("Save workspace"),
     onToggleSidebar: handleToggleSidebar,
-  })
+  });
 
-  if (!activeTab) return null
+  if (!activeTab) return null;
 
   return (
     <FocusMode isActive={isFocusMode} onExit={() => setIsFocusMode(false)}>
@@ -169,7 +170,7 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
           {tabs.map((tab) => (
             <div
               key={tab.id}
-              className={`absolute inset-0 ${tab.id === activeTabId ? '' : 'opacity-0 pointer-events-none'}`}
+              className={`absolute inset-0 ${tab.id === activeTabId ? "" : "opacity-0 pointer-events-none"}`}
             >
               <PaneTree
                 tabId={tab.id}
@@ -194,5 +195,5 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
         />
       </div>
     </FocusMode>
-  )
+  );
 }

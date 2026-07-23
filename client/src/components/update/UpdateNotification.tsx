@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react'
-import { useUpdateStore } from '../../stores/updateStore'
-import Modal from '../ui/Modal'
+import React, { useEffect } from "react";
+import { useUpdateStore } from "../../stores/updateStore";
+import { Button } from "../ui/Button";
+import Modal from "../ui/Modal";
 
 export default function UpdateNotification() {
   const {
@@ -12,21 +13,21 @@ export default function UpdateNotification() {
     checkForUpdates,
     downloadUpdate,
     installUpdate,
-  } = useUpdateStore()
+  } = useUpdateStore();
 
-  const [showModal, setShowModal] = React.useState(false)
+  const [showModal, setShowModal] = React.useState(false);
 
   useEffect(() => {
-    checkForUpdates()
-  }, [checkForUpdates])
+    checkForUpdates();
+  }, [checkForUpdates]);
 
   useEffect(() => {
     if (updateAvailable) {
-      setShowModal(true)
+      setShowModal(true);
     }
-  }, [updateAvailable])
+  }, [updateAvailable]);
 
-  if (!showModal) return null
+  if (!showModal) return null;
 
   return (
     <Modal open={showModal} onClose={() => !downloading && setShowModal(false)}>
@@ -61,32 +62,24 @@ export default function UpdateNotification() {
         <div className="flex gap-3 justify-end">
           {!downloading ? (
             <>
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-dark-400 hover:text-white"
+                variant="ghost"
               >
                 Later
-              </button>
-              <button
-                type="button"
-                onClick={downloadUpdate}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-              >
+              </Button>
+              <Button type="button" onClick={downloadUpdate}>
                 Update
-              </button>
+              </Button>
             </>
           ) : downloadProgress === 100 ? (
-            <button
-              type="button"
-              onClick={installUpdate}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
-            >
+            <Button type="button" onClick={installUpdate} variant="success">
               Restart & Install
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
     </Modal>
-  )
+  );
 }

@@ -1,25 +1,25 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from "react";
 
 export interface KeyboardShortcut {
-  id: string
-  keys: string
-  description: string
-  category: string
-  action: () => void
+  id: string;
+  keys: string;
+  description: string;
+  category: string;
+  action: () => void;
 }
 
 interface UseKeyboardShortcutsProps {
-  onNewTab?: () => void
-  onCloseTab?: () => void
-  onNextTab?: () => void
-  onPrevTab?: () => void
-  onSplitHorizontal?: () => void
-  onSplitVertical?: () => void
-  onFocusMode?: () => void
-  onQuickConnect?: () => void
-  onCommandPalette?: () => void
-  onSaveWorkspace?: () => void
-  onToggleSidebar?: () => void
+  onNewTab?: () => void;
+  onCloseTab?: () => void;
+  onNextTab?: () => void;
+  onPrevTab?: () => void;
+  onSplitHorizontal?: () => void;
+  onSplitVertical?: () => void;
+  onFocusMode?: () => void;
+  onQuickConnect?: () => void;
+  onCommandPalette?: () => void;
+  onSaveWorkspace?: () => void;
+  onToggleSidebar?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -37,77 +37,77 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const isMac = navigator.platform.includes('Mac')
-      const modifier = isMac ? e.metaKey : e.ctrlKey
+      const isMac = navigator.platform.includes("Mac");
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
 
       // New tab: Ctrl+T / Cmd+T
-      if (modifier && e.key === 't' && onNewTab) {
-        e.preventDefault()
-        onNewTab()
+      if (modifier && e.key === "t" && onNewTab) {
+        e.preventDefault();
+        onNewTab();
       }
 
       // Close tab: Ctrl+W / Cmd+W
-      if (modifier && e.key === 'w' && onCloseTab) {
-        e.preventDefault()
-        onCloseTab()
+      if (modifier && e.key === "w" && onCloseTab) {
+        e.preventDefault();
+        onCloseTab();
       }
 
       // Next tab: Ctrl+Tab / Cmd+Tab
-      if (modifier && e.key === 'Tab' && onNextTab) {
-        e.preventDefault()
+      if (modifier && e.key === "Tab" && onNextTab) {
+        e.preventDefault();
         if (e.shiftKey) {
-          onPrevTab?.()
+          onPrevTab?.();
         } else {
-          onNextTab()
+          onNextTab();
         }
       }
 
       // Previous tab: Ctrl+Shift+Tab / Cmd+Shift+Tab
-      if (modifier && e.shiftKey && e.key === 'Tab' && onPrevTab) {
-        e.preventDefault()
-        onPrevTab()
+      if (modifier && e.shiftKey && e.key === "Tab" && onPrevTab) {
+        e.preventDefault();
+        onPrevTab();
       }
 
       // Split horizontal: Ctrl+\ / Cmd+\
-      if (modifier && e.key === '\\' && onSplitHorizontal) {
-        e.preventDefault()
-        onSplitHorizontal()
+      if (modifier && e.key === "\\" && onSplitHorizontal) {
+        e.preventDefault();
+        onSplitHorizontal();
       }
 
       // Split vertical: Ctrl+Shift+\ / Cmd+Shift+\
-      if (modifier && e.shiftKey && e.key === '\\' && onSplitVertical) {
-        e.preventDefault()
-        onSplitVertical()
+      if (modifier && e.shiftKey && e.key === "\\" && onSplitVertical) {
+        e.preventDefault();
+        onSplitVertical();
       }
 
       // Focus mode: F11
-      if (e.key === 'F11' && onFocusMode) {
-        e.preventDefault()
-        onFocusMode()
+      if (e.key === "F11" && onFocusMode) {
+        e.preventDefault();
+        onFocusMode();
       }
 
       // Quick connect: Ctrl+K / Cmd+K
-      if (modifier && e.key === 'k' && onQuickConnect) {
-        e.preventDefault()
-        onQuickConnect()
+      if (modifier && e.key === "k" && onQuickConnect) {
+        e.preventDefault();
+        onQuickConnect();
       }
 
       // Command palette: Ctrl+Shift+P / Cmd+Shift+P
-      if (modifier && e.shiftKey && e.key === 'P' && onCommandPalette) {
-        e.preventDefault()
-        onCommandPalette()
+      if (modifier && e.shiftKey && e.key === "P" && onCommandPalette) {
+        e.preventDefault();
+        onCommandPalette();
       }
 
       // Save workspace: Ctrl+S / Cmd+S
-      if (modifier && e.key === 's' && onSaveWorkspace) {
-        e.preventDefault()
-        onSaveWorkspace()
+      if (modifier && e.key === "s" && onSaveWorkspace) {
+        e.preventDefault();
+        onSaveWorkspace();
       }
 
       // Toggle sidebar: Ctrl+B / Cmd+B
-      if (modifier && e.key === 'b' && onToggleSidebar) {
-        e.preventDefault()
-        onToggleSidebar()
+      if (modifier && e.key === "b" && onToggleSidebar) {
+        e.preventDefault();
+        onToggleSidebar();
       }
     },
     [
@@ -123,75 +123,75 @@ export function useKeyboardShortcuts({
       onSaveWorkspace,
       onToggleSidebar,
     ],
-  )
+  );
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 }
 
 // Default shortcuts configuration
-export const defaultShortcuts: Omit<KeyboardShortcut, 'action'>[] = [
-  { id: 'new-tab', keys: 'Ctrl+T', description: 'New tab', category: 'Tabs' },
+export const defaultShortcuts: Omit<KeyboardShortcut, "action">[] = [
+  { id: "new-tab", keys: "Ctrl+T", description: "New tab", category: "Tabs" },
   {
-    id: 'close-tab',
-    keys: 'Ctrl+W',
-    description: 'Close tab',
-    category: 'Tabs',
+    id: "close-tab",
+    keys: "Ctrl+W",
+    description: "Close tab",
+    category: "Tabs",
   },
   {
-    id: 'next-tab',
-    keys: 'Ctrl+Tab',
-    description: 'Next tab',
-    category: 'Tabs',
+    id: "next-tab",
+    keys: "Ctrl+Tab",
+    description: "Next tab",
+    category: "Tabs",
   },
   {
-    id: 'prev-tab',
-    keys: 'Ctrl+Shift+Tab',
-    description: 'Previous tab',
-    category: 'Tabs',
+    id: "prev-tab",
+    keys: "Ctrl+Shift+Tab",
+    description: "Previous tab",
+    category: "Tabs",
   },
   {
-    id: 'split-h',
-    keys: 'Ctrl+\\',
-    description: 'Split horizontal',
-    category: 'Split',
+    id: "split-h",
+    keys: "Ctrl+\\",
+    description: "Split horizontal",
+    category: "Split",
   },
   {
-    id: 'split-v',
-    keys: 'Ctrl+Shift+\\',
-    description: 'Split vertical',
-    category: 'Split',
+    id: "split-v",
+    keys: "Ctrl+Shift+\\",
+    description: "Split vertical",
+    category: "Split",
   },
   {
-    id: 'focus-mode',
-    keys: 'F11',
-    description: 'Toggle focus mode',
-    category: 'View',
+    id: "focus-mode",
+    keys: "F11",
+    description: "Toggle focus mode",
+    category: "View",
   },
   {
-    id: 'quick-connect',
-    keys: 'Ctrl+K',
-    description: 'Quick connect',
-    category: 'Connection',
+    id: "quick-connect",
+    keys: "Ctrl+K",
+    description: "Quick connect",
+    category: "Connection",
   },
   {
-    id: 'command-palette',
-    keys: 'Ctrl+Shift+P',
-    description: 'Command palette',
-    category: 'General',
+    id: "command-palette",
+    keys: "Ctrl+Shift+P",
+    description: "Command palette",
+    category: "General",
   },
   {
-    id: 'save-workspace',
-    keys: 'Ctrl+S',
-    description: 'Save workspace',
-    category: 'Workspace',
+    id: "save-workspace",
+    keys: "Ctrl+S",
+    description: "Save workspace",
+    category: "Workspace",
   },
   {
-    id: 'toggle-sidebar',
-    keys: 'Ctrl+B',
-    description: 'Toggle sidebar',
-    category: 'View',
+    id: "toggle-sidebar",
+    keys: "Ctrl+B",
+    description: "Toggle sidebar",
+    category: "View",
   },
-]
+];

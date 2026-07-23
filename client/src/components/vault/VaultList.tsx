@@ -1,8 +1,11 @@
-import { Lock } from '@phosphor-icons/react'
-import { useVaultStore } from '../../stores/vaultStore'
+import { LockIcon } from "@phosphor-icons/react";
+import { useVaultStore } from "../../stores/vaultStore";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 
 export default function VaultList() {
-  const { vaults, currentVaultId, switchVault } = useVaultStore()
+  const { vaults, currentVaultId, switchVault } = useVaultStore();
 
   return (
     <div className="h-full flex flex-col">
@@ -12,28 +15,25 @@ export default function VaultList() {
 
       <div className="flex-1 overflow-y-auto p-2">
         {vaults.length === 0 ? (
-          <div className="text-center text-dark-400 py-8">
-            <Lock
-              className="w-12 h-12 mx-auto mb-4 text-dark-600"
-              weight="bold"
-            />
-            <p>No vaults yet</p>
-            <p className="text-sm mt-2">Create a vault to store credentials</p>
-          </div>
+          <EmptyState
+            icon={LockIcon}
+            title="No vaults yet"
+            description="Create a vault to store credentials"
+          />
         ) : (
           vaults.map((vault) => (
-            <button
-              type="button"
+            <Button
               key={vault.id}
+              variant="secondary"
               onClick={() => switchVault(vault.id)}
-              className={`p-3 rounded-lg cursor-pointer mb-2 text-left w-full ${
+              className={`p-3 h-auto rounded-lg mb-2 text-left w-full ${
                 currentVaultId === vault.id
-                  ? 'bg-primary-600/20 border border-primary-500/50'
-                  : 'bg-dark-800 hover:bg-dark-700'
+                  ? "bg-primary-600/20 border border-primary-500/50"
+                  : ""
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full bg-primary-500 flex-shrink-0" />
+                <div className="w-3 h-3 rounded-full bg-primary-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-white truncate">
                     {vault.name}
@@ -44,22 +44,18 @@ export default function VaultList() {
                     </p>
                   )}
                 </div>
-                {vault.isDefault && (
-                  <span className="px-2 py-0.5 text-xs bg-primary-600/20 text-primary-400 rounded">
-                    Default
-                  </span>
-                )}
+                {vault.isDefault && <Badge variant="primary">Default</Badge>}
                 {vault.isSystem && (
                   <span className="px-2 py-0.5 text-xs bg-dark-600 text-dark-300 rounded flex items-center gap-1">
-                    <Lock className="w-3 h-3" weight="bold" />
+                    <LockIcon className="w-3 h-3" weight="bold" />
                     Protected
                   </span>
                 )}
               </div>
-            </button>
+            </Button>
           ))
         )}
       </div>
     </div>
-  )
+  );
 }

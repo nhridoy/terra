@@ -1,11 +1,13 @@
-import { ArrowsClockwise, SignOut } from '@phosphor-icons/react'
+import { ArrowsClockwiseIcon, SignOutIcon } from "@phosphor-icons/react";
+import { Button } from "../ui/Button";
+import { StatusDot } from "../ui/StatusDot";
 
 interface ConnectionStatusProps {
-  status: 'connected' | 'connecting' | 'disconnected' | 'error'
-  hostName?: string
-  lastConnected?: string
-  onDisconnect?: () => void
-  onReconnect?: () => void
+  status: "connected" | "connecting" | "disconnected" | "error";
+  hostName?: string;
+  lastConnected?: string;
+  onDisconnect?: () => void;
+  onReconnect?: () => void;
 }
 
 export default function ConnectionStatus({
@@ -15,95 +17,80 @@ export default function ConnectionStatus({
   onDisconnect,
   onReconnect,
 }: ConnectionStatusProps) {
-  const getStatusColor = () => {
-    switch (status) {
-      case 'connected':
-        return 'bg-green-500'
-      case 'connecting':
-        return 'bg-yellow-500 animate-pulse'
-      case 'disconnected':
-        return 'bg-dark-500'
-      case 'error':
-        return 'bg-red-500'
-      default:
-        return 'bg-dark-500'
-    }
-  }
-
   const getStatusText = () => {
     switch (status) {
-      case 'connected':
-        return 'Connected'
-      case 'connecting':
-        return 'Connecting...'
-      case 'disconnected':
-        return 'Disconnected'
-      case 'error':
-        return 'Error'
+      case "connected":
+        return "Connected";
+      case "connecting":
+        return "Connecting...";
+      case "disconnected":
+        return "Disconnected";
+      case "error":
+        return "Error";
       default:
-        return 'Unknown'
+        return "Unknown";
     }
-  }
+  };
 
   const getStatusTextColor = () => {
     switch (status) {
-      case 'connected':
-        return 'text-green-500'
-      case 'connecting':
-        return 'text-yellow-500'
-      case 'disconnected':
-        return 'text-dark-400'
-      case 'error':
-        return 'text-red-500'
+      case "connected":
+        return "text-green-500";
+      case "connecting":
+        return "text-yellow-500";
+      case "disconnected":
+        return "text-dark-400";
+      case "error":
+        return "text-red-500";
       default:
-        return 'text-dark-400'
+        return "text-dark-400";
     }
-  }
+  };
 
   return (
     <div className="flex items-center gap-3">
-      {/* Status indicator */}
       <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+        <StatusDot status={status} />
         <span className={`text-sm ${getStatusTextColor()}`}>
           {getStatusText()}
         </span>
       </div>
 
-      {/* Host name */}
       {hostName && <span className="text-dark-300 text-sm">•</span>}
       {hostName && <span className="text-white text-sm">{hostName}</span>}
 
-      {/* Last connected */}
-      {lastConnected && status === 'disconnected' && (
+      {lastConnected && status === "disconnected" && (
         <span className="text-dark-500 text-xs">
           Last: {new Date(lastConnected).toLocaleTimeString()}
         </span>
       )}
 
-      {/* Action buttons */}
       <div className="flex items-center gap-1 ml-auto">
-        {status === 'connected' && onDisconnect && (
-          <button
+        {status === "connected" && onDisconnect && (
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={onDisconnect}
-            className="text-dark-400 hover:text-red-500 p-1"
+            className="hover:text-red-500"
             title="Disconnect"
           >
-            <SignOut className="w-4 h-4" weight="bold" />
-          </button>
+            <SignOutIcon className="w-4 h-4" weight="bold" />
+          </Button>
         )}
-        {(status === 'disconnected' || status === 'error') && onReconnect && (
-          <button
+        {(status === "disconnected" || status === "error") && onReconnect && (
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={onReconnect}
-            className="text-dark-400 hover:text-primary-500 p-1"
+            className="hover:text-primary-500"
             title="Reconnect"
           >
-            <ArrowsClockwise className="w-4 h-4" weight="bold" />
-          </button>
+            <ArrowsClockwiseIcon className="w-4 h-4" weight="bold" />
+          </Button>
         )}
       </div>
     </div>
-  )
+  );
 }

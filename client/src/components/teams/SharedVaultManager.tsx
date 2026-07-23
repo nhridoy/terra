@@ -1,5 +1,5 @@
 interface SharedVaultManagerProps {
-  teamId: string
+  teamId: string;
 }
 
 export default function SharedVaultManager({
@@ -9,5 +9,5 @@ export default function SharedVaultManager({
     <div className="p-6 text-center text-dark-400">
       <p>Shared vaults are not available in sync-only mode.</p>
     </div>
-  )
+  );
 }

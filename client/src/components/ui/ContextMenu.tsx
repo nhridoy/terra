@@ -1,21 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from "react";
 
 export type ContextMenuItem =
   | {
-      label: string
-      icon?: React.ReactNode
-      shortcut?: string
-      danger?: boolean
-      disabled?: boolean
-      onClick: () => void
+      label: string;
+      icon?: React.ReactNode;
+      shortcut?: string;
+      danger?: boolean;
+      disabled?: boolean;
+      onClick: () => void;
     }
-  | { type: 'separator' }
+  | { type: "separator" };
 
 interface ContextMenuProps {
-  items: ContextMenuItem[]
-  x: number
-  y: number
-  onClose: () => void
+  items: ContextMenuItem[];
+  x: number;
+  y: number;
+  onClose: () => void;
 }
 
 export default function ContextMenu({
@@ -24,67 +24,67 @@ export default function ContextMenu({
   y,
   onClose,
 }: ContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [])
+    setSelectedIndex(0);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose()
+        onClose();
       }
-    }
+    };
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleEsc)
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEsc);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleEsc)
-    }
-  }, [onClose])
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, [onClose]);
 
   // Clamp position to viewport
   useEffect(() => {
-    if (!menuRef.current) return
-    const rect = menuRef.current.getBoundingClientRect()
-    const padding = 8
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const padding = 8;
     if (rect.right > window.innerWidth - padding) {
-      menuRef.current.style.left = `${window.innerWidth - rect.width - padding}px`
+      menuRef.current.style.left = `${window.innerWidth - rect.width - padding}px`;
     }
     if (rect.bottom > window.innerHeight - padding) {
-      menuRef.current.style.top = `${window.innerHeight - rect.height - padding}px`
+      menuRef.current.style.top = `${window.innerHeight - rect.height - padding}px`;
     }
-  }, [])
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
       setSelectedIndex((prev) => {
-        let next = prev + 1
-        while (next < items.length && 'type' in items[next]) next++
-        return next < items.length ? next : prev
-      })
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
+        let next = prev + 1;
+        while (next < items.length && "type" in items[next]) next++;
+        return next < items.length ? next : prev;
+      });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
       setSelectedIndex((prev) => {
-        let next = prev - 1
-        while (next >= 0 && 'type' in items[next]) next--
-        return next >= 0 ? next : prev
-      })
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const item = items[selectedIndex]
-      if (item && !('type' in item) && !item.disabled) {
-        item.onClick()
-        onClose()
+        let next = prev - 1;
+        while (next >= 0 && "type" in items[next]) next--;
+        return next >= 0 ? next : prev;
+      });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const item = items[selectedIndex];
+      if (item && !("type" in item) && !item.disabled) {
+        item.onClick();
+        onClose();
       }
     }
-  }
+  };
 
   return (
     <div
@@ -96,38 +96,38 @@ export default function ContextMenu({
       tabIndex={-1}
     >
       {items.map((item, index) => {
-        if ('type' in item) {
+        if ("type" in item) {
           return (
             <div
               key={`sep-${index}`}
               className="my-1 border-t border-dark-600"
             />
-          )
+          );
         }
         return (
           <button
             key={item.label}
             type="button"
             onClick={(e) => {
-              e.stopPropagation()
+              e.stopPropagation();
               if (!item.disabled) {
-                item.onClick()
-                onClose()
+                item.onClick();
+                onClose();
               }
             }}
             onMouseEnter={() => !item.disabled && setSelectedIndex(index)}
             className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left ${
               item.disabled
-                ? 'text-dark-500 cursor-not-allowed'
+                ? "text-dark-500 cursor-not-allowed"
                 : item.danger
-                  ? 'text-red-400 hover:bg-red-500/10'
+                  ? "text-red-400 hover:bg-red-500/10"
                   : index === selectedIndex
-                    ? 'text-white bg-dark-700'
-                    : 'text-dark-200 hover:bg-dark-700'
+                    ? "text-white bg-dark-700"
+                    : "text-dark-200 hover:bg-dark-700"
             }`}
           >
             {item.icon && (
-              <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>
+              <span className="w-4 h-4 shrink-0">{item.icon}</span>
             )}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
@@ -136,8 +136,8 @@ export default function ContextMenu({
               </span>
             )}
           </button>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

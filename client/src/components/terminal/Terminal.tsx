@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { useTerminalStore } from '../../stores/terminalStore'
+import { useEffect, useRef } from "react";
+import { useTerminalStore } from "../../stores/terminalStore";
 import {
   attachSession,
   destroySession,
@@ -7,21 +7,21 @@ import {
   fitSession,
   getOrCreateSession,
   type Session,
-} from './sessionManager'
+} from "./sessionManager";
 
 interface TerminalProps {
-  hostId: string
-  hostName: string
-  tabId: string
-  paneId: string
-  hostAddress?: string
-  hostPort?: number
-  hostUsername?: string
-  authType?: 'password' | 'key'
-  keyId?: string
-  connectionType?: 'ssh' | 'local'
-  shell?: string
-  isActive?: boolean
+  hostId: string;
+  hostName: string;
+  tabId: string;
+  paneId: string;
+  hostAddress?: string;
+  hostPort?: number;
+  hostUsername?: string;
+  authType?: "password" | "key";
+  keyId?: string;
+  connectionType?: "ssh" | "local";
+  shell?: string;
+  isActive?: boolean;
 }
 
 export default function Terminal({
@@ -38,14 +38,14 @@ export default function Terminal({
   shell,
   isActive,
 }: TerminalProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Attach to (or create) the persistent session for this pane. The effect is
   // keyed on paneId only — moving the pane between tabs changes tabId but must
   // NOT reconnect, so the WebSocket/xterm session is reused.
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    const el = containerRef.current;
+    if (!el) return;
 
     const session: Session = getOrCreateSession({
       paneId,
@@ -59,18 +59,18 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    })
-    attachSession(session, el)
+    });
+    attachSession(session, el);
 
     return () => {
-      detachSession(session, el)
+      detachSession(session, el);
       // Destroy only if the pane no longer exists anywhere (it was closed,
       // not moved to another tab).
       const exists = useTerminalStore
         .getState()
-        .tabs.some((t) => paneExistsInTree(t.root, paneId))
-      if (!exists) destroySession(paneId)
-    }
+        .tabs.some((t) => paneExistsInTree(t.root, paneId));
+      if (!exists) destroySession(paneId);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     paneId,
@@ -84,7 +84,7 @@ export default function Terminal({
     keyId,
     connectionType,
     shell,
-  ])
+  ]);
 
   // Keep status routing pointed at the current owning tab and re-fit on active.
   useEffect(() => {
@@ -100,11 +100,11 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    })
-    session.params.tabId = tabId
+    });
+    session.params.tabId = tabId;
     if (isActive) {
-      const timer = setTimeout(() => fitSession(paneId), 50)
-      return () => clearTimeout(timer)
+      const timer = setTimeout(() => fitSession(paneId), 50);
+      return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -120,15 +120,15 @@ export default function Terminal({
     keyId,
     connectionType,
     shell,
-  ])
+  ]);
 
-  return <div ref={containerRef} className="w-full h-full" />
+  return <div ref={containerRef} className="w-full h-full" />;
 }
 
 function paneExistsInTree(
-  node: import('../../stores/terminalStore').PaneNode,
+  node: import("../../stores/terminalStore").PaneNode,
   paneId: string,
 ): boolean {
-  if (node.type === 'leaf') return node.id === paneId
-  return node.children.some((c) => paneExistsInTree(c, paneId))
+  if (node.type === "leaf") return node.id === paneId;
+  return node.children.some((c) => paneExistsInTree(c, paneId));
 }

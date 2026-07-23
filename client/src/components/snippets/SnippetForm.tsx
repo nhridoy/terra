@@ -1,187 +1,116 @@
-import { useState } from 'react'
-import { useSnippetStore } from '../../stores/snippetStore'
-import { useVaultStore } from '../../stores/vaultStore'
-
-interface Snippet {
-  id: string
-  name: string
-  command: string
-  description?: string
-  tags?: string[]
-  vaultId?: string
-  createdAt: string
-}
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useTransition } from "react";
+import {
+  type SnippetFormSchema,
+  snippetFormDefaultValues,
+  snippetFormSchema,
+} from "../../lib/schema/snippetFormSchema";
+import { parseTags } from "../../lib/parseTags";
+import { useSnippetStore } from "../../stores/snippetStore";
+import { useVaultStore } from "../../stores/vaultStore";
+import { FormInput } from "../ui/forms/FormInput";
+import { FormTextarea } from "../ui/forms/FormTextarea";
+import ModalForm from "../shared/ModalForm";
 
 interface SnippetFormProps {
-  snippet?: Snippet
-  onClose: () => void
-}
-
-function parseTags(tags: unknown): string[] {
-  if (!tags) return []
-  if (Array.isArray(tags)) return tags
-  if (typeof tags === 'string') {
-    try {
-      const parsed = JSON.parse(tags)
-      return Array.isArray(parsed) ? parsed : [tags]
-    } catch {
-      return tags ? [tags] : []
-    }
-  }
-  return []
+  snippet?: { id: string; name: string; command: string; description?: string; tags?: string[] };
+  onClose: () => void;
 }
 
 export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
-  const { createSnippet, updateSnippet } = useSnippetStore()
-  const { currentVaultId } = useVaultStore()
-  const [name, setName] = useState(snippet?.name || '')
-  const [command, setCommand] = useState(snippet?.command || '')
-  const [description, setDescription] = useState(snippet?.description || '')
-  const [tags, setTags] = useState(parseTags(snippet?.tags).join(', '))
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { createSnippet, updateSnippet } = useSnippetStore();
+  const { currentVaultId } = useVaultStore();
+  const [isPending, startTransition] = useTransition();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim() || !command.trim()) {
-      setError('Name and command are required')
-      return
+  const { control, handleSubmit, reset } = useForm<SnippetFormSchema>({
+    resolver: zodResolver(snippetFormSchema),
+    defaultValues: {
+      name: snippet?.name || snippetFormDefaultValues.name,
+      command: snippet?.command || snippetFormDefaultValues.command,
+      description: snippet?.description || snippetFormDefaultValues.description,
+      tags: snippet?.tags ? parseTags(snippet.tags) : snippetFormDefaultValues.tags,
+    },
+  });
+
+  const getButtonText = () => {
+    if (isPending) return "Saving...";
+    return snippet ? "Save Changes" : "Create Snippet";
+  };
+
+  const handleSnippetSubmit = async (data: SnippetFormSchema) => {
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const tagArray = data.tags
+      ? data.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [];
+
+    if (snippet) {
+      await updateSnippet(snippet.id, {
+        name: data.name,
+        command: data.command,
+        description: data.description || "",
+        tags: tagArray,
+      });
+    } else {
+      await createSnippet({
+        name: data.name,
+        command: data.command,
+        description: data.description || "",
+        tags: tagArray,
+        vaultId: currentVaultId || undefined,
+      });
     }
+    reset();
+    onClose();
+  };
 
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const tagArray = tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean)
-      if (snippet) {
-        await updateSnippet(snippet.id, {
-          name: name.trim(),
-          command: command.trim(),
-          description: description.trim(),
-          tags: tagArray,
-        })
-      } else {
-        await createSnippet({
-          name: name.trim(),
-          command: command.trim(),
-          description: description.trim(),
-          tags: tagArray,
-          vaultId: currentVaultId || undefined,
-        })
-      }
-      onClose()
-    } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : String(err) || 'Failed to save snippet',
-      )
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const onSubmit = async (data: SnippetFormSchema) => {
+    startTransition(async () => {
+      await handleSnippetSubmit(data);
+    });
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="p-3 bg-red-500/20 border border-red-500/50 text-red-400 text-sm rounded-lg">
-          {error}
-        </div>
-      )}
+    <ModalForm
+      onClose={onClose}
+      title={snippet ? "Edit Snippet" : "New Snippet"}
+      isPending={isPending}
+      onSubmit={handleSubmit(onSubmit)}
+      submitButtonText={getButtonText()}
+    >
+      <FormInput
+        name="name"
+        label="Name"
+        control={control}
+        placeholder="Snippet name"
+        required
+      />
 
-      <div>
-        <label
-          htmlFor="snippet-name"
-          className="block text-dark-300 text-sm mb-2"
-        >
-          Name
-        </label>
-        <input
-          id="snippet-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          placeholder="Snippet name"
-          required
-        />
-      </div>
+      <FormTextarea
+        name="command"
+        label="Command"
+        control={control}
+        placeholder="ssh user@host&#10;ls -la"
+        required
+      />
 
-      <div>
-        <label
-          htmlFor="snippet-command"
-          className="block text-dark-300 text-sm mb-2"
-        >
-          Command
-        </label>
-        <textarea
-          id="snippet-command"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          rows={4}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono text-sm"
-          placeholder="ssh user@host&#10;ls -la"
-          required
-        />
-      </div>
+      <FormInput
+        name="description"
+        label="Description"
+        control={control}
+        placeholder="What does this snippet do?"
+      />
 
-      <div>
-        <label
-          htmlFor="snippet-description"
-          className="block text-dark-300 text-sm mb-2"
-        >
-          Description (optional)
-        </label>
-        <textarea
-          id="snippet-description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          placeholder="What does this snippet do?"
-        />
-      </div>
-
-      <div>
-        <label
-          htmlFor="snippet-tags"
-          className="block text-dark-300 text-sm mb-2"
-        >
-          Tags (comma separated)
-        </label>
-        <input
-          id="snippet-tags"
-          type="text"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          placeholder="production, deploy, ssh"
-        />
-      </div>
-
-      <div className="flex gap-3 justify-end pt-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-4 py-2 text-dark-400 hover:text-white"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50"
-        >
-          {isLoading
-            ? 'Saving...'
-            : snippet
-              ? 'Save Changes'
-              : 'Create Snippet'}
-        </button>
-      </div>
-    </form>
-  )
+      <FormInput
+        name="tags"
+        label="Tags (comma separated)"
+        control={control}
+        placeholder="production, deploy, ssh"
+      />
+    </ModalForm>
+  );
 }

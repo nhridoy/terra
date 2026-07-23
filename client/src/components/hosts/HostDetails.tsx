@@ -1,12 +1,14 @@
-import { Folder, PencilSimple, Trash } from '@phosphor-icons/react'
-import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
-import { type Host, useHostStore } from '../../stores/hostStore'
+import { FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
+import { confirmDelete } from "../../lib/confirmDelete";
+import { type Host, useHostStore } from "../../stores/hostStore";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
 
 interface HostDetailsProps {
-  host: Host
-  onConnect: (host: Host) => void
-  onEdit: (host: Host) => void
-  onDelete: (id: string) => void
+  host: Host;
+  onConnect: (host: Host) => void;
+  onEdit: (host: Host) => void;
+  onDelete: (id: string) => void;
 }
 
 export default function HostDetails({
@@ -15,88 +17,86 @@ export default function HostDetails({
   onEdit,
   onDelete,
 }: HostDetailsProps) {
-  const { groups } = useHostStore()
+  const { groups } = useHostStore();
   const groupName = host.groupId
     ? groups.find((g) => g.id === host.groupId)?.name
-    : null
+    : null;
   const handleSftpClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-  }
+    e.stopPropagation();
+  };
 
   const handleDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (
-      await tauriConfirm(`Delete host "${host.name}"?`, {
-        title: 'Delete Host',
-        kind: 'warning',
-      })
-    ) {
-      onDelete(host.id)
+    e.stopPropagation();
+    if (await confirmDelete(`Delete host "${host.name}"?`)) {
+      onDelete(host.id);
     }
-  }
+  };
 
   return (
     <>
-      <button
+      <Button
         type="button"
         onClick={() => onConnect(host)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') onConnect(host)
+          if (e.key === "Enter" || e.key === " ") onConnect(host);
         }}
-        className="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer hover:bg-dark-800 group transition-colors text-left w-full"
+        variant="ghost"
+        className="gap-3 px-3 py-3 rounded-lg cursor-pointer hover:bg-dark-800 group transition-colors text-left w-full h-auto"
       >
         <div
-          className="w-3 h-3 rounded-full flex-shrink-0"
-          style={{ backgroundColor: host.color || '#64748b' }}
+          className="w-3 h-3 rounded-full shrink-0"
+          style={{ backgroundColor: host.color || "#64748b" }}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-white text-sm font-medium truncate">
               {host.name}
             </p>
-            {groupName && (
-              <span className="px-1.5 py-0.5 text-xs bg-dark-700 text-dark-300 rounded">
-                {groupName}
-              </span>
-            )}
+            {groupName && <Badge>{groupName}</Badge>}
           </div>
           <p className="text-dark-400 text-xs truncate">
             {host.username}@{host.address}:{host.port}
           </p>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
+          <Button
             type="button"
             onClick={handleSftpClick}
-            className="p-1.5 text-dark-400 hover:text-primary-500 rounded hover:bg-dark-700"
+            variant="ghost"
+            size="icon"
+            className="text-dark-400 hover:text-primary-500"
             title="Open SFTP"
           >
-            <Folder className="w-4 h-4" weight="bold" />
-          </button>
-          <button
+            <FolderIcon className="w-4 h-4" weight="bold" />
+          </Button>
+          <Button
             type="button"
             onClick={(e) => {
-              e.stopPropagation()
-              onEdit(host)
+              e.stopPropagation();
+              onEdit(host);
             }}
-            className="p-1.5 text-dark-400 hover:text-yellow-500 rounded hover:bg-dark-700"
+            variant="ghost"
+            size="icon"
+            className="text-dark-400 hover:text-yellow-500"
             title="Edit host"
           >
-            <PencilSimple className="w-4 h-4" weight="bold" />
-          </button>
-          <button
+            <PencilSimpleIcon className="w-4 h-4" weight="bold" />
+          </Button>
+          <Button
             type="button"
             onClick={handleDelete}
-            className="p-1.5 text-dark-400 hover:text-red-500 rounded hover:bg-dark-700"
+            variant="ghost"
+            size="icon"
+            className="text-dark-400 hover:text-red-500"
             title="Delete host"
           >
-            <Trash className="w-4 h-4" weight="bold" />
-          </button>
+            <TrashIcon className="w-4 h-4" weight="bold" />
+          </Button>
         </div>
-      </button>
+      </Button>
 
       {/* SFTP Modal */}
       {/* SFTP view would be handled by the parent Layout component */}
     </>
-  )
+  );
 }

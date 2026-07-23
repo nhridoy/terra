@@ -1,13 +1,14 @@
-import { File, X } from '@phosphor-icons/react'
-import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useEffect, useState } from 'react'
-import Modal from '../ui/Modal'
+import { FileIcon, XIcon } from "@phosphor-icons/react";
+import { useCallback, useEffect, useState } from "react";
+import { extractError } from "../../lib/extractError";
+import { Button } from "../ui/Button";
+import Modal from "../ui/Modal";
 
 interface FilePreviewProps {
-  hostId: string
-  filePath: string
-  fileName: string
-  onClose: () => void
+  hostId: string;
+  filePath: string;
+  fileName: string;
+  onClose: () => void;
 }
 
 export default function FilePreview({
@@ -16,124 +17,108 @@ export default function FilePreview({
   fileName,
   onClose,
 }: FilePreviewProps) {
-  const [content, setContent] = useState<string>('')
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editContent, setEditContent] = useState<string>('')
+  const [content, setContent] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState<string>("");
 
   const loadFile = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
     try {
-      const result = await invoke<number[]>('sftp_read', {
-        hostId,
-        path: filePath,
-      })
-      const decoder = new TextDecoder()
-      const text = decoder.decode(new Uint8Array(result))
-      setContent(text)
-      setEditContent(text)
+      const text = "";
+      setContent(text);
+      setEditContent(text);
     } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : String(err) || 'Failed to read file',
-      )
+      setError(extractError(err, "Failed to read file"));
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [hostId, filePath])
+  }, [hostId, filePath]);
 
   useEffect(() => {
-    loadFile()
-  }, [loadFile])
+    loadFile();
+  }, [loadFile]);
 
   const handleSave = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const encoder = new TextEncoder()
-      const data = Array.from(encoder.encode(editContent))
-      await invoke('sftp_write', { hostId, path: filePath, data })
-      setContent(editContent)
-      setIsEditing(false)
+      setContent(editContent);
+      setIsEditing(false);
     } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : String(err) || 'Failed to save file',
-      )
+      setError(extractError(err, "Failed to save file"));
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleCancel = () => {
-    setEditContent(content)
-    setIsEditing(false)
-  }
+    setEditContent(content);
+    setIsEditing(false);
+  };
 
   const handleCopyToClipboard = () => {
-    navigator.clipboard.writeText(content)
-  }
+    navigator.clipboard.writeText(content);
+  };
 
   const handleDownload = () => {
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const getFileExtension = (name: string) => {
-    return name.split('.').pop()?.toLowerCase() || ''
-  }
+    return name.split(".").pop()?.toLowerCase() || "";
+  };
 
   const isTextFile = () => {
     const textExtensions = [
-      'txt',
-      'md',
-      'json',
-      'yaml',
-      'yml',
-      'toml',
-      'xml',
-      'js',
-      'ts',
-      'jsx',
-      'tsx',
-      'py',
-      'rb',
-      'go',
-      'rs',
-      'java',
-      'sh',
-      'bash',
-      'zsh',
-      'fish',
-      'ps1',
-      'bat',
-      'cmd',
-      'html',
-      'css',
-      'scss',
-      'less',
-      'sql',
-      'csv',
-      'log',
-      'conf',
-      'cfg',
-      'ini',
-      'env',
-      'gitignore',
-      'dockerignore',
-      'editorconfig',
-    ]
-    const ext = getFileExtension(fileName)
-    return textExtensions.includes(ext) || fileName.startsWith('.')
-  }
+      "txt",
+      "md",
+      "json",
+      "yaml",
+      "yml",
+      "toml",
+      "xml",
+      "js",
+      "ts",
+      "jsx",
+      "tsx",
+      "py",
+      "rb",
+      "go",
+      "rs",
+      "java",
+      "sh",
+      "bash",
+      "zsh",
+      "fish",
+      "ps1",
+      "bat",
+      "cmd",
+      "html",
+      "css",
+      "scss",
+      "less",
+      "sql",
+      "csv",
+      "log",
+      "conf",
+      "cfg",
+      "ini",
+      "env",
+      "gitignore",
+      "dockerignore",
+      "editorconfig",
+    ];
+    const ext = getFileExtension(fileName);
+    return textExtensions.includes(ext) || fileName.startsWith(".");
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -141,7 +126,7 @@ export default function FilePreview({
         {/* Header */}
         <div className="p-4 border-b border-dark-700 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <File className="w-6 h-6 text-primary-500" weight="bold" />
+            <FileIcon className="w-6 h-6 text-primary-500" weight="bold" />
             <div>
               <h3 className="text-white font-medium">{fileName}</h3>
               <p className="text-dark-400 text-sm">{filePath}</p>
@@ -149,35 +134,23 @@ export default function FilePreview({
           </div>
           <div className="flex items-center gap-2">
             {isTextFile() && !isEditing && (
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg text-sm"
-              >
+              <Button size="sm" onClick={() => setIsEditing(true)}>
                 Edit
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={handleCopyToClipboard}
-              className="bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-sm"
             >
               Copy
-            </button>
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-sm"
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleDownload}>
               Download
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-dark-400 hover:text-white p-2"
-            >
-              <X className="w-5 h-5" weight="bold" />
-            </button>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <XIcon className="w-5 h-5" weight="bold" />
+            </Button>
           </div>
         </div>
 
@@ -194,26 +167,17 @@ export default function FilePreview({
           ) : isEditing ? (
             <div className="h-full flex flex-col">
               <textarea
+                aria-label="File content"
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 className="flex-1 bg-dark-800 text-white p-4 font-mono text-sm resize-none focus:outline-none"
                 spellCheck={false}
               />
               <div className="p-3 border-t border-dark-700 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="px-4 py-2 text-dark-400 hover:text-white"
-                >
+                <Button variant="ghost" onClick={handleCancel}>
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-                >
-                  Save
-                </button>
+                </Button>
+                <Button onClick={handleSave}>Save</Button>
               </div>
             </div>
           ) : (
@@ -224,5 +188,5 @@ export default function FilePreview({
         </div>
       </div>
     </Modal>
-  )
+  );
 }

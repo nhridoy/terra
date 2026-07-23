@@ -1,48 +1,53 @@
-import { GearSix } from '@phosphor-icons/react'
-import { useState } from 'react'
-import { type Theme, themes, useThemeStore } from '../../stores/themeStore'
-import Modal from '../ui/Modal'
+import { GearSixIcon } from "@phosphor-icons/react";
+import { useState } from "react";
+import { type Theme, themes, useThemeStore } from "../../stores/themeStore";
+import { Button } from "../ui/Button";
+import Input from "../ui/Input";
+import Modal from "../ui/Modal";
+import Select from "../ui/Select";
 
 export default function Settings() {
-  const { currentTheme, setTheme } = useThemeStore()
-  const [isOpen, setIsOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'themes' | 'terminal' | 'about'>(
-    'themes',
-  )
-  const [searchQuery, setSearchQuery] = useState('')
+  const { currentTheme, setTheme } = useThemeStore();
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"themes" | "terminal" | "about">(
+    "themes",
+  );
+  const [searchQuery, setSearchQuery] = useState("");
 
   if (!isOpen) {
     return (
-      <button
+      <Button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 left-4 bg-dark-700 hover:bg-dark-600 text-white p-3 rounded-full shadow-lg"
+        variant="secondary"
+        size="icon"
+        className="fixed bottom-4 left-4 rounded-full shadow-lg"
         title="Settings"
       >
-        <GearSix className="w-5 h-5" weight="bold" />
-      </button>
-    )
+        <GearSixIcon className="w-5 h-5" weight="bold" />
+      </Button>
+    );
   }
 
   const filteredThemes = (Object.keys(themes) as Theme[]).filter((theme) =>
     themes[theme].name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  );
 
   const themeCategories = {
-    popular: ['dark', 'light', 'dracula', 'nord', 'monokai', 'onedark'],
-    'catppuccin-family': [
-      'catppuccin',
-      'tokyo-night',
-      'rose-pine',
-      'palenight',
+    popular: ["dark", "light", "dracula", "nord", "monokai", "onedark"],
+    "catppuccin-family": [
+      "catppuccin",
+      "tokyo-night",
+      "rose-pine",
+      "palenight",
     ],
-    'solarized-family': ['solarized', 'ayu-mirage', 'material-ocean'],
-    github: ['github-dark', 'github-light'],
-    'gruvbox-family': ['gruvbox'],
-    colorful: ['cyberpunk', 'neon', 'neon-pink', 'matrix', 'hacker'],
-    nature: ['forest', 'ocean', 'sunset', 'arctic', 'volcanic'],
-    other: ['midnight', 'retro', 'pastel', 'warm'],
-  }
+    "solarized-family": ["solarized", "ayu-mirage", "material-ocean"],
+    github: ["github-dark", "github-light"],
+    "gruvbox-family": ["gruvbox"],
+    colorful: ["cyberpunk", "neon", "neon-pink", "matrix", "hacker"],
+    nature: ["forest", "ocean", "sunset", "arctic", "volcanic"],
+    other: ["midnight", "retro", "pastel", "warm"],
+  };
 
   return (
     <Modal
@@ -51,60 +56,59 @@ export default function Settings() {
       title="Settings"
       maxWidth="max-w-4xl"
     >
-      <div className="flex flex-col" style={{ height: '70vh' }}>
+      <div className="flex flex-col" style={{ height: "70vh" }}>
         <div className="flex-1 flex overflow-hidden">
           {/* Sidebar */}
           <div className="w-48 border-r border-dark-700 p-4 shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('themes')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-2 ${
-                activeTab === 'themes'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-dark-400 hover:bg-dark-800'
+            <Button
+              variant="ghost"
+              onClick={() => setActiveTab("themes")}
+              className={`w-full justify-start mb-2 ${
+                activeTab === "themes"
+                  ? "bg-primary-600 text-white"
+                  : "text-dark-400"
               }`}
             >
               Themes
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('terminal')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-2 ${
-                activeTab === 'terminal'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-dark-400 hover:bg-dark-800'
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setActiveTab("terminal")}
+              className={`w-full justify-start mb-2 ${
+                activeTab === "terminal"
+                  ? "bg-primary-600 text-white"
+                  : "text-dark-400"
               }`}
             >
               Terminal
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('about')}
-              className={`w-full text-left px-3 py-2 rounded-lg ${
-                activeTab === 'about'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-dark-400 hover:bg-dark-800'
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setActiveTab("about")}
+              className={`w-full justify-start ${
+                activeTab === "about"
+                  ? "bg-primary-600 text-white"
+                  : "text-dark-400"
               }`}
             >
               About
-            </button>
+            </Button>
           </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            {activeTab === 'themes' && (
+            {activeTab === "themes" && (
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">
                   Themes ({Object.keys(themes).length})
                 </h3>
 
                 {/* Search */}
-                <input
-                  type="text"
+                <Input
                   placeholder="Search themes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-dark-800 text-white px-4 py-2 rounded-lg mb-6 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="py-2 mb-6"
                 />
 
                 {searchQuery ? (
@@ -123,7 +127,7 @@ export default function Settings() {
                     ([category, themeList]) => (
                       <div key={category} className="mb-6">
                         <h4 className="text-dark-400 text-sm font-medium mb-3 uppercase tracking-wider">
-                          {category.replace(/-/g, ' ')}
+                          {category.replace(/-/g, " ")}
                         </h4>
                         <div className="grid grid-cols-3 gap-3">
                           {themeList.map((theme) => (
@@ -142,7 +146,7 @@ export default function Settings() {
               </div>
             )}
 
-            {activeTab === 'terminal' && (
+            {activeTab === "terminal" && (
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">
                   Terminal Settings
@@ -155,14 +159,18 @@ export default function Settings() {
                         Terminal font size in pixels
                       </div>
                     </div>
-                    <select className="bg-dark-700 text-white px-3 py-2 rounded-lg">
-                      <option>12px</option>
-                      <option>14px</option>
-                      <option>16px</option>
-                      <option>18px</option>
-                      <option>20px</option>
-                      <option>24px</option>
-                    </select>
+                    <Select
+                      value="14px"
+                      options={[
+                        { value: "12px", label: "12px" },
+                        { value: "14px", label: "14px" },
+                        { value: "16px", label: "16px" },
+                        { value: "18px", label: "18px" },
+                        { value: "20px", label: "20px" },
+                        { value: "24px", label: "24px" },
+                      ]}
+                      className="w-32"
+                    />
                   </div>
                   <div className="flex items-center justify-between p-4 bg-dark-800 rounded-lg">
                     <div>
@@ -171,13 +179,20 @@ export default function Settings() {
                         Terminal font family
                       </div>
                     </div>
-                    <select className="bg-dark-700 text-white px-3 py-2 rounded-lg">
-                      <option>JetBrains Mono</option>
-                      <option>Fira Code</option>
-                      <option>Source Code Pro</option>
-                      <option>Cascadia Code</option>
-                      <option>monospace</option>
-                    </select>
+                    <Select
+                      value="JetBrains Mono"
+                      options={[
+                        { value: "JetBrains Mono", label: "JetBrains Mono" },
+                        { value: "Fira Code", label: "Fira Code" },
+                        {
+                          value: "Source Code Pro",
+                          label: "Source Code Pro",
+                        },
+                        { value: "Cascadia Code", label: "Cascadia Code" },
+                        { value: "monospace", label: "monospace" },
+                      ]}
+                      className="w-48"
+                    />
                   </div>
                   <div className="flex items-center justify-between p-4 bg-dark-800 rounded-lg">
                     <div>
@@ -186,11 +201,15 @@ export default function Settings() {
                         Terminal cursor appearance
                       </div>
                     </div>
-                    <select className="bg-dark-700 text-white px-3 py-2 rounded-lg">
-                      <option>Block</option>
-                      <option>Underline</option>
-                      <option>Bar</option>
-                    </select>
+                    <Select
+                      value="Block"
+                      options={[
+                        { value: "Block", label: "Block" },
+                        { value: "Underline", label: "Underline" },
+                        { value: "Bar", label: "Bar" },
+                      ]}
+                      className="w-32"
+                    />
                   </div>
                   <div className="flex items-center justify-between p-4 bg-dark-800 rounded-lg">
                     <div>
@@ -201,6 +220,7 @@ export default function Settings() {
                     </div>
                     <input
                       type="checkbox"
+                      aria-label="Cursor Blink"
                       defaultChecked
                       className="w-5 h-5 rounded"
                     />
@@ -214,18 +234,22 @@ export default function Settings() {
                         Number of lines to keep in scrollback
                       </div>
                     </div>
-                    <select className="bg-dark-700 text-white px-3 py-2 rounded-lg">
-                      <option>1000</option>
-                      <option>5000</option>
-                      <option>10000</option>
-                      <option>50000</option>
-                    </select>
+                    <Select
+                      value="5000"
+                      options={[
+                        { value: "1000", label: "1000" },
+                        { value: "5000", label: "5000" },
+                        { value: "10000", label: "10000" },
+                        { value: "50000", label: "50000" },
+                      ]}
+                      className="w-32"
+                    />
                   </div>
                 </div>
               </div>
             )}
 
-            {activeTab === 'about' && (
+            {activeTab === "about" && (
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">
                   About TermVault
@@ -271,17 +295,13 @@ export default function Settings() {
 
         {/* Footer */}
         <div className="p-4 border-t border-dark-700 flex justify-end shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-          >
+          <Button type="button" onClick={() => setIsOpen(false)}>
             Done
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
-  )
+  );
 }
 
 function ThemeButton({
@@ -289,18 +309,18 @@ function ThemeButton({
   isSelected,
   onSelect,
 }: {
-  theme: Theme
-  isSelected: boolean
-  onSelect: () => void
+  theme: Theme;
+  isSelected: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
       onClick={onSelect}
-      className={`p-3 rounded-lg border-2 text-left ${
+      className={`p-3 h-auto justify-start ${
         isSelected
-          ? 'border-primary-500 bg-primary-500/10'
-          : 'border-dark-700 bg-dark-800 hover:border-dark-600'
+          ? "border-primary-500 bg-primary-500/10 border-2"
+          : "border-dark-700"
       }`}
     >
       <div className="flex items-center gap-3">
@@ -315,6 +335,6 @@ function ThemeButton({
           {isSelected && <div className="text-primary-400 text-xs">Active</div>}
         </div>
       </div>
-    </button>
-  )
+    </Button>
+  );
 }

@@ -1,20 +1,29 @@
-import { useState } from 'react'
-import { useHostStore } from '../../stores/hostStore'
-import { useVaultStore } from '../../stores/vaultStore'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { useTransition } from "react";
+import {
+  type GroupFormSchema,
+  groupFormDefaultValues,
+  groupFormSchema,
+} from "../../lib/schema/groupFormSchema";
+import { useHostStore } from "../../stores/hostStore";
+import { useVaultStore } from "../../stores/vaultStore";
+import { FormInput } from "../ui/forms/FormInput";
+import ModalForm from "../shared/ModalForm";
 
 interface Group {
-  id: string
-  name: string
-  parentId?: string
-  vaultId?: string
-  sortOrder: number
-  createdAt: string
+  id: string;
+  name: string;
+  parentId?: string;
+  vaultId?: string;
+  sortOrder: number;
+  createdAt: string;
 }
 
 interface GroupFormProps {
-  group?: Group
-  defaultParentId?: string
-  onClose: () => void
+  group?: Group;
+  defaultParentId?: string;
+  onClose: () => void;
 }
 
 export default function GroupForm({
@@ -22,90 +31,64 @@ export default function GroupForm({
   defaultParentId,
   onClose,
 }: GroupFormProps) {
-  const { createGroup, updateGroup } = useHostStore()
-  const { currentVaultId } = useVaultStore()
-  const [name, setName] = useState(group?.name || '')
-  const parentId = group?.parentId || defaultParentId || ''
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { createGroup, updateGroup } = useHostStore();
+  const { currentVaultId } = useVaultStore();
+  const [isPending, startTransition] = useTransition();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) {
-      setError('Group name is required')
-      return
+  const { control, handleSubmit, reset } = useForm<GroupFormSchema>({
+    resolver: zodResolver(groupFormSchema),
+    defaultValues: {
+      name: group?.name || groupFormDefaultValues.name,
+    },
+  });
+
+  const getButtonText = () => {
+    if (isPending) return "Saving...";
+    return group ? "Save Changes" : "Create Group";
+  };
+
+  const handleGroupSubmit = async (data: GroupFormSchema) => {
+    const parentId = group?.parentId || defaultParentId || undefined;
+    if (group) {
+      await updateGroup(group.id, {
+        name: data.name,
+        parentId,
+      });
+    } else {
+      await createGroup({
+        name: data.name,
+        parentId,
+        vaultId: currentVaultId || undefined,
+      });
     }
+    reset();
+    onClose();
+  };
 
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      if (group) {
-        await updateGroup(group.id, {
-          name: name.trim(),
-          parentId: parentId || undefined,
-        })
-      } else {
-        await createGroup({
-          name: name.trim(),
-          parentId: parentId || undefined,
-          vaultId: currentVaultId || undefined,
-        })
-      }
-      onClose()
-    } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : String(err) || 'Failed to save group',
-      )
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const onSubmit = async (data: GroupFormSchema) => {
+    startTransition(async () => {
+      await handleGroupSubmit(data);
+    });
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="p-3 bg-red-500/20 border border-red-500/50 text-red-400 text-sm rounded-lg">
-          {error}
-        </div>
-      )}
-
-      <div>
-        <label
-          htmlFor="group-name"
-          className="block text-dark-300 text-sm mb-2"
-        >
-          Group Name
-        </label>
-        <input
-          id="group-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+    <ModalForm
+      onClose={onClose}
+      title={group ? "Edit Group" : "New Group"}
+      isPending={isPending}
+      onSubmit={handleSubmit(onSubmit)}
+      cancelButtonText="Cancel"
+      submitButtonText={getButtonText()}
+    >
+        <FormInput
+          name="name"
+          label="Group Name"
+          control={control}
           placeholder="Group name"
           required
         />
-      </div>
 
-      <div className="flex gap-3 justify-end pt-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-4 py-2 text-dark-400 hover:text-white"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50"
-        >
-          {isLoading ? 'Saving...' : group ? 'Save Changes' : 'Create Group'}
-        </button>
-      </div>
-    </form>
-  )
+       
+    </ModalForm>
+  );
 }

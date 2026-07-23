@@ -1,115 +1,55 @@
-import { useEffect, useRef, useState } from 'react'
-import LoginScreen from './components/auth/LoginScreen'
-import MasterPasswordScreen from './components/auth/MasterPasswordScreen'
-import Layout from './components/layout/Layout'
-import ToastContainer from './components/ui/Toast'
-import { getStoredSalt, isUnlocked, setCurrentUser } from './lib/crypto'
-import { startPeriodicSync, stopPeriodicSync, syncPull } from './lib/sync'
-import { useAuthStore } from './stores/authStore'
-import { useHostStore } from './stores/hostStore'
-import { useVaultStore } from './stores/vaultStore'
+import { useEffect } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { Toaster } from "sonner";
+import AuthGuard from "./components/auth/AuthGuard";
+import Layout from "./components/layout/Layout";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import HistoryPage from "./pages/HistoryPage";
+import HostsPage from "./pages/HostsPage";
+import KeysPage from "./pages/KeysPage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import SettingsPage from "./pages/SettingsPage";
+import SftpPage from "./pages/SftpPage";
+import SnippetsPage from "./pages/SnippetsPage";
+import TerminalPage from "./pages/TerminalPage";
+import WorkspacesPage from "./pages/WorkspacesPage";
+import { useAuthStore } from "./stores/authStore";
 
 function App() {
-  const { isAuthenticated, isLoading, restoreSession, hasMasterPassword } =
-    useAuthStore()
-  const user = useAuthStore((s) => s.user)
-  const { fetchHosts, fetchGroups } = useHostStore()
-  const { fetchVaults, currentVaultId } = useVaultStore()
-  const [ready, setReady] = useState(false)
-  const [unlocked, setUnlocked] = useState(false)
-  const didRestore = useRef(false)
+  const restoreSession = useAuthStore((s) => s.restoreSession);
 
-  const storedSalt = user?.id ? getStoredSalt(user.id) : null
-
-  // Set current user for per-user salt storage
   useEffect(() => {
-    setCurrentUser(user?.id ?? null)
-  }, [user?.id])
+    restoreSession();
+  }, [restoreSession]);
 
-  // Restore session once on mount
-  useEffect(() => {
-    if (didRestore.current) return
-    didRestore.current = true
-    restoreSession().finally(() => setReady(true))
-  }, [restoreSession])
-
-  // If master key is in memory, mark as unlocked
-  useEffect(() => {
-    if (isUnlocked()) {
-      setUnlocked(true)
-    }
-  })
-
-  // Start sync when ready
-  useEffect(() => {
-    if (isAuthenticated && unlocked) {
-      syncPull().then(() => {
-        fetchHosts(currentVaultId || undefined)
-        fetchGroups(currentVaultId || undefined)
-        fetchVaults()
-      })
-      startPeriodicSync()
-    }
-    return () => stopPeriodicSync()
-  }, [
-    isAuthenticated,
-    unlocked,
-    currentVaultId,
-    fetchHosts,
-    fetchGroups,
-    fetchVaults,
-  ])
-
-  // Loading: waiting for restoreSession or login in progress
-  if (!ready || isLoading) {
-    return (
-      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
-      </div>
-    )
-  }
-
-  // Not authenticated: show login
-  if (!isAuthenticated) {
-    return <LoginScreen />
-  }
-
-  // Authenticated but no master password: show setup
-  if (!hasMasterPassword) {
-    return (
-      <MasterPasswordScreen
-        mode="setup"
-        onComplete={() => {
-          setUnlocked(true)
-          syncPull().then(() => {
-            fetchHosts(currentVaultId || undefined)
-            fetchGroups(currentVaultId || undefined)
-            fetchVaults()
-          })
-          startPeriodicSync()
-        }}
-      />
-    )
-  }
-
-  // Authenticated, has master password, but not unlocked: show unlock
-  if (!unlocked) {
-    return (
-      <MasterPasswordScreen
-        mode="unlock"
-        saltHex={storedSalt || undefined}
-        onComplete={() => setUnlocked(true)}
-      />
-    )
-  }
-
-  // Everything ready: show main app
   return (
-    <>
-      <Layout />
-      <ToastContainer />
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AuthGuard requireAuth={false} />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        </Route>
+
+        <Route element={<AuthGuard requireAuth={true} />}>
+          <Route element={<Layout />}>
+            <Route index element={<Navigate to="/hosts" replace />} />
+            <Route path="hosts" element={<HostsPage />} />
+            <Route path="workspaces" element={<WorkspacesPage />} />
+            <Route path="snippets" element={<SnippetsPage />} />
+            <Route path="keys" element={<KeysPage />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="terminal" element={<TerminalPage />} />
+            <Route path="sftp" element={<SftpPage />} />
+            <Route path="*" element={<Navigate to="/hosts" replace />} />
+          </Route>
+        </Route>
+      </Routes>
+      <Toaster richColors />
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;

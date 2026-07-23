@@ -1,330 +1,185 @@
-import { Copy, TerminalWindow, Trash } from '@phosphor-icons/react'
-import { invoke } from '@tauri-apps/api/core'
-import { confirm as tauriConfirm } from '@tauri-apps/plugin-dialog'
-import { useCallback, useEffect, useState } from 'react'
-import { getDeviceId } from '../../lib/device'
-import { triggerSync } from '../../lib/sync'
-import { useVaultStore } from '../../stores/vaultStore'
-import Modal from '../ui/Modal'
+import {
+  CopyIcon,
+  FileTextIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
+import { confirmDelete } from "../../lib/confirmDelete";
+import { useVaultStore } from "../../stores/vaultStore";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { EmptyActionState } from "../ui/EmptyActionState";
+import { EmptyState } from "../ui/EmptyState";
+import Input from "../ui/Input";
+import { SectionHeader } from "../ui/SectionHeader";
 
 interface Snippet {
-  id: string
-  name: string
-  command: string
-  description?: string
-  tags: string[]
-  createdAt: string
+  id: string;
+  name: string;
+  command: string;
+  description?: string;
+  tags: string[];
+  createdAt: string;
 }
 
-export default function SnippetList({
-  onMutation,
-}: {
-  onMutation?: () => void
-}) {
-  const [snippets, setSnippets] = useState<Snippet[]>([])
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [selectedSnippet, setSelectedSnippet] = useState<Snippet | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const { currentVaultId } = useVaultStore()
+interface SnippetListProps {
+  onNew: () => void;
+  onEdit: (snippet: Snippet) => void;
+}
+
+export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
+  const { currentVaultId } = useVaultStore();
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchSnippets = useCallback(async () => {
     try {
-      const result = await invoke<Snippet[]>('list_snippets', {
-        userId: '',
-        vaultId: currentVaultId || null,
-      })
-      setSnippets(result || [])
-    } catch (error) {
-      console.error('Failed to fetch snippets:', error)
+      setSnippets([]);
+    } catch (e) {
+      console.error("Failed to fetch snippets:", e);
     }
-  }, [currentVaultId])
+  }, [currentVaultId]);
 
   useEffect(() => {
-    fetchSnippets()
-  }, [fetchSnippets])
-
-  const handleDelete = async (id: string) => {
-    if (
-      await tauriConfirm('Are you sure you want to delete this snippet?', {
-        title: 'Delete Snippet',
-        kind: 'warning',
-      })
-    ) {
-      try {
-        const deviceId = await getDeviceId()
-        await invoke('delete_snippet', { id, deviceId })
-        await triggerSync()
-        setSnippets(snippets.filter((s) => s.id !== id))
-        if (selectedSnippet?.id === id) {
-          setSelectedSnippet(null)
-        }
-        onMutation?.()
-      } catch (error) {
-        console.error('Failed to delete snippet:', error)
-      }
-    }
-  }
-
-  const handleCopy = (command: string) => {
-    navigator.clipboard.writeText(command)
-  }
+    fetchSnippets();
+  }, [fetchSnippets]);
 
   const filteredSnippets = snippets.filter(
-    (snippet) =>
-      snippet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      snippet.command.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+    (s) =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.command.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const handleDelete = async (snippet: Snippet) => {
+    if (
+      await confirmDelete(
+        `Delete snippet "${snippet.name}"? This cannot be undone.`,
+      )
+    ) {
+      setSnippets((prev) => prev.filter((s) => s.id !== snippet.id));
+      toast.success(`Deleted "${snippet.name}"`);
+    }
+  };
+
+  const handleCopy = (command: string) => {
+    navigator.clipboard.writeText(command);
+    toast.success("Copied to clipboard");
+  };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 border-b border-dark-700">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-white">Snippets</h2>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg text-sm"
-          >
-            + New Snippet
-          </button>
-        </div>
-        <input
-          type="text"
-          placeholder="Search snippets..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-dark-800 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-        />
-      </div>
+    <div className="flex-1 p-4 space-y-6 overflow-y-auto">
+      <div>
+        <SectionHeader
+          title="Snippets"
+          level="h3"
+          className="text-sm tracking-wider uppercase text-dark-400 mb-3"
+        >
+          <Button type="button" onClick={onNew} variant="default" size="sm">
+            <PlusIcon className="w-3 h-3" weight="bold" />
+            New Snippet
+          </Button>
+        </SectionHeader>
 
-      <div className="flex-1 overflow-y-auto p-2">
-        {filteredSnippets.length === 0 ? (
-          <div className="text-center text-dark-400 py-8">
-            <TerminalWindow
-              className="w-12 h-12 mx-auto mb-4 text-dark-600"
-              weight="bold"
-            />
-            <p>No snippets yet</p>
-            <p className="text-sm mt-2">Save commands for quick access</p>
-          </div>
+        {snippets.length > 0 && (
+          <Input
+            type="text"
+            placeholder="Search snippets..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3 py-2 text-sm mb-3"
+          />
+        )}
+
+        {snippets.length === 0 ? (
+          <EmptyActionState
+            icon={PlusIcon}
+            message="No snippets yet — click to create one"
+            onClick={onNew}
+          />
+        ) : filteredSnippets.length === 0 ? (
+          <EmptyState
+            icon={FileTextIcon}
+            title="No matches"
+            description={`No snippets match "${searchQuery}"`}
+          />
         ) : (
-          filteredSnippets.map((snippet) => (
-            // biome-ignore lint/a11y/useSemanticElements: contains nested <button> elements for copy/delete
-            <div
-              key={snippet.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedSnippet(snippet)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setSelectedSnippet(snippet)
-                }
-              }}
-              className={`p-3 rounded-lg cursor-pointer mb-2 ${
-                selectedSnippet?.id === snippet.id
-                  ? 'bg-primary-600/20 border border-primary-500/50'
-                  : 'bg-dark-800 hover:bg-dark-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="text-white font-medium truncate">
+          <div className="grid grid-cols-3 gap-2">
+            {filteredSnippets.map((snippet) => (
+              // biome-ignore lint/a11y/useSemanticElements: snippet card contains nested button elements
+              <div
+                key={snippet.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onEdit(snippet)}
+                onKeyDown={accessibleClickHandler(() => onEdit(snippet))}
+                className="relative p-3 transition-colors rounded-lg cursor-pointer bg-dark-800/50 hover:bg-dark-800 group"
+              >
+                <div className="flex items-center gap-2">
+                  <FileTextIcon className="w-3.5 h-3.5 text-dark-500 shrink-0" />
+                  <span className="text-sm font-medium text-white truncate">
                     {snippet.name}
-                  </div>
-                  <div className="text-dark-400 text-sm font-mono truncate">
-                    {snippet.command}
-                  </div>
+                  </span>
                 </div>
-                <div className="flex gap-1">
-                  <button
+                <p className="text-dark-500 text-xs mt-1 ml-[22px] truncate font-mono">
+                  {snippet.command}
+                </p>
+                {snippet.tags.length > 0 && (
+                  <div className="flex gap-1 mt-2 ml-[22px]">
+                    {snippet.tags.map((tag) => (
+                      <Badge key={tag}>{tag}</Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="absolute flex items-center gap-1 transition-opacity opacity-0 top-2 right-2 group-hover:opacity-100">
+                  <Button
                     type="button"
                     onClick={(e) => {
-                      e.stopPropagation()
-                      handleCopy(snippet.command)
+                      e.stopPropagation();
+                      handleCopy(snippet.command);
                     }}
-                    className="text-dark-400 hover:text-primary-500 p-1"
+                    variant="ghost"
+                    size="icon-sm"
                     title="Copy command"
                   >
-                    <Copy className="w-4 h-4" weight="bold" />
-                  </button>
-                  <button
+                    <CopyIcon className="w-3 h-3" />
+                  </Button>
+                  <Button
                     type="button"
                     onClick={(e) => {
-                      e.stopPropagation()
-                      handleDelete(snippet.id)
+                      e.stopPropagation();
+                      onEdit(snippet);
                     }}
-                    className="text-dark-400 hover:text-red-500 p-1"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Edit snippet"
+                  >
+                    <PencilSimpleIcon className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(snippet);
+                    }}
+                    variant="ghost"
+                    size="icon-sm"
+                    className="hover:text-red-500"
                     title="Delete snippet"
                   >
-                    <Trash className="w-4 h-4" weight="bold" />
-                  </button>
+                    <TrashIcon className="w-3 h-3" />
+                  </Button>
                 </div>
               </div>
-              {snippet.tags && snippet.tags.length > 0 && (
-                <div className="flex gap-1 mt-2">
-                  {snippet.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 bg-dark-700 text-dark-300 text-xs rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
-
-      {showCreateModal && (
-        <CreateSnippetModal
-          onClose={() => setShowCreateModal(false)}
-          onCreate={async (snippet) => {
-            const deviceId = await getDeviceId()
-            const result = await invoke<Snippet>('create_snippet', {
-              snippet: {
-                userId: '',
-                vaultId: currentVaultId || null,
-                name: snippet.name,
-                command: snippet.command,
-                description: snippet.description,
-                tags: JSON.stringify(snippet.tags || []),
-              },
-              deviceId,
-            })
-            await triggerSync()
-            setSnippets((prev) => [...prev, result])
-            setShowCreateModal(false)
-            onMutation?.()
-          }}
-        />
-      )}
     </div>
-  )
+  );
 }
 
-function CreateSnippetModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void
-  onCreate: (snippet: {
-    name: string
-    command: string
-    description: string
-    tags: string[]
-  }) => Promise<void>
-}) {
-  const [name, setName] = useState('')
-  const [command, setCommand] = useState('')
-  const [description, setDescription] = useState('')
-  const [tags, setTags] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await onCreate({
-      name,
-      command,
-      description,
-      tags: tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-    })
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <div className="bg-dark-900 rounded-xl p-6 w-full max-w-md">
-        <h3 className="text-xl font-semibold text-white mb-4">
-          Create Snippet
-        </h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="snippet-name"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Name
-            </label>
-            <input
-              id="snippet-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Check disk usage"
-              required
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="snippet-command"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Command
-            </label>
-            <textarea
-              id="snippet-command"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono text-sm"
-              placeholder="df -h"
-              rows={3}
-              required
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="snippet-description"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Description
-            </label>
-            <input
-              id="snippet-description"
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Show disk usage in human-readable format"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="snippet-tags"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Tags (comma-separated)
-            </label>
-            <input
-              id="snippet-tags"
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="monitoring, disk"
-            />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-dark-400 hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
-            >
-              Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </Modal>
-  )
-}
+export type { Snippet };

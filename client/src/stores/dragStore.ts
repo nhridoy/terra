@@ -1,29 +1,31 @@
-import { create } from 'zustand'
+import { create } from "zustand";
 
-export type DropSide = 'left' | 'right' | 'top' | 'bottom'
+export type DropSide = "left" | "right" | "top" | "bottom";
 
 interface DropPane {
-  tabId: string
-  paneId: string
-  side: DropSide
+  tabId: string;
+  paneId: string;
+  side: DropSide;
 }
 
 interface DragState {
-  dropPane: DropPane | null
-  setDropPane: (p: DropPane | null) => void
-
-  // Set when a pane (within a tab) is being dragged for reordering.
-  sourcePaneId: string | null
-  sourceTabId: string | null
-  setSourcePane: (paneId: string | null, tabId: string | null) => void
+  dropPane: DropPane | null;
+  setDropPane: (p: DropPane | null) => void;
+  draggedTabId: string | null;
+  setDraggedTabId: (id: string | null) => void;
+  draggedPaneId: string | null;
+  setDraggedPaneId: (id: string | null) => void;
+  sourcePane: { tabId: string; paneId: string } | null;
+  setSourcePane: (pane: { tabId: string; paneId: string } | null) => void;
 }
 
 export const useDragStore = create<DragState>((set) => ({
   dropPane: null,
   setDropPane: (p) => set({ dropPane: p }),
-
-  sourcePaneId: null,
-  sourceTabId: null,
-  setSourcePane: (paneId, tabId) =>
-    set({ sourcePaneId: paneId, sourceTabId: tabId }),
-}))
+  draggedTabId: null,
+  setDraggedTabId: (id) => set({ draggedTabId: id }),
+  draggedPaneId: null,
+  setDraggedPaneId: (id) => set({ draggedPaneId: id }),
+  sourcePane: null,
+  setSourcePane: (pane) => set({ sourcePane: pane }),
+}));
