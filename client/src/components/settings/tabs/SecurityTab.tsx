@@ -70,14 +70,12 @@ export default function SecurityTab({
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       {error && <Alert variant="error">{error}</Alert>}
       {success && <Alert variant="success">{success}</Alert>}
 
-      <div className="bg-dark-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">
-          Change Password
-        </h3>
+      <div>
+        <h3 className="text-sm font-medium text-white mb-3">Change Password</h3>
         <form
           onSubmit={passwordForm.handleSubmit(handlePasswordChange)}
           className="space-y-4"
@@ -103,14 +101,14 @@ export default function SecurityTab({
             type="password"
             required
           />
-          <Button type="submit" disabled={isLoading} className="w-full">
+          <Button type="submit" size="sm" disabled={isLoading}>
             {isLoading ? "Changing..." : "Change Password"}
           </Button>
         </form>
       </div>
 
-      <div className="bg-dark-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Profile</h3>
+      <div className="border-t border-dark-700 pt-6">
+        <h3 className="text-sm font-medium text-white mb-3">Profile</h3>
         <form
           onSubmit={profileForm.handleSubmit(handleProfileUpdate)}
           className="space-y-4"
@@ -126,19 +124,19 @@ export default function SecurityTab({
             control={profileForm.control}
             type="email"
           />
-          <Button type="submit" disabled={isLoading} className="w-full">
+          <Button type="submit" size="sm" disabled={isLoading}>
             {isLoading ? "Saving..." : "Save Profile"}
           </Button>
         </form>
       </div>
 
-      <div className="bg-dark-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Sessions</h3>
+      <div className="border-t border-dark-700 pt-6">
+        <h3 className="text-sm font-medium text-white mb-3">Sessions</h3>
         <Button
           type="button"
           onClick={onClearAllSessions}
           variant="soft-destructive"
-          className="w-full"
+          size="sm"
         >
           Close All Sessions ({tabs.length})
         </Button>

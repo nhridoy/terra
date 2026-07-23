@@ -7,9 +7,9 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   return (
-    <Modal onClose={onClose} maxWidth="max-w-4xl">
+    <Modal onClose={onClose} title="Settings" maxWidth="max-w-4xl">
       <div className="h-[70vh]">
-        <SettingsPanel onClose={onClose} />
+        <SettingsPanel />
       </div>
     </Modal>
   );

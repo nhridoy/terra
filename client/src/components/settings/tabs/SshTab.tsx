@@ -10,21 +10,20 @@ export default function SshTab({
   onClearAllKnownHosts,
 }: SshTabProps) {
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h3 className="text-lg font-semibold text-white">SSH Configuration</h3>
-      <div className="bg-dark-800 rounded-lg p-4 space-y-4">
-        <h4 className="text-white font-medium">SSH Client Settings</h4>
-        <div className="space-y-3 text-sm text-dark-300">
-          <p>
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-white mb-3">SSH Configuration</h3>
+        <div className="bg-dark-800 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-dark-300">
             SSH client options are configured per-host in the host settings.
           </p>
-          <p className="text-dark-500">
+          <p className="text-xs text-dark-500">
             Global SSH options will be available in a future update.
           </p>
         </div>
       </div>
 
-      <div className="border-t border-dark-700 pt-4">
+      <div className="border-t border-dark-700 pt-6">
         <SectionHeader title="Known Hosts" level="h4" className="mb-3">
           <div className="flex gap-2">
             <Button

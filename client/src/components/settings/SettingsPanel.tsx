@@ -10,17 +10,13 @@ import SecurityTab from "./tabs/SecurityTab";
 import SshTab from "./tabs/SshTab";
 import TerminalTab from "./tabs/TerminalTab";
 
-interface SettingsPanelProps {
-  onClose: () => void;
-}
-
 interface KnownHost {
   host: string;
   port: number;
   fingerprint: string;
 }
 
-export default function SettingsPanel({ onClose }: SettingsPanelProps) {
+export default function SettingsPanel() {
   const { currentTheme, setTheme } = useThemeStore();
   const { tabs, closeAllTabs } = useTerminalStore();
 
@@ -225,12 +221,6 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
         )}
       </div>
 
-      {/* Common footer */}
-      <div className="pt-6 border-t border-dark-700 flex justify-end">
-        <Button type="button" onClick={onClose} variant="ghost">
-          Done
-        </Button>
-      </div>
     </div>
   );
 }

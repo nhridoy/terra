@@ -1,6 +1,7 @@
 import { type Theme, themes } from "../../../stores/themeStore";
 import { Button } from "../../ui/Button";
 import Select from "../../ui/Select";
+import Slider from "../../ui/Slider";
 import type { AppearanceTabProps } from "./types";
 
 export default function AppearanceTab({
@@ -12,34 +13,36 @@ export default function AppearanceTab({
   setFontFamily,
 }: AppearanceTabProps) {
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h3 className="text-lg font-semibold text-white">Theme</h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {Object.entries(themes).map(([id, theme]) => (
-          <Button
-            key={id}
-            variant="secondary"
-            onClick={() => setTheme(id as Theme)}
-            className={`p-4 h-auto ${
-              currentTheme === id
-                ? "border-primary-500 ring-2 ring-primary-500/20 border-2"
-                : "border-dark-700"
-            }`}
-          >
-            <div
-              className="w-full h-12 rounded mb-2"
-              style={{ background: theme.colors.background }}
-            />
-            <div className="text-sm font-medium text-white capitalize">
-              {theme.name}
-            </div>
-            <div className="text-xs text-dark-400 mt-1">{id}</div>
-          </Button>
-        ))}
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-white mb-3">Theme</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Object.entries(themes).map(([id, theme]) => (
+            <Button
+              key={id}
+              type="button"
+              variant="outline"
+              onClick={() => setTheme(id as Theme)}
+              className={`p-3 h-auto flex-col ${
+                currentTheme === id
+                  ? "border-primary-500 ring-2 ring-primary-500/20"
+                  : "border-dark-700"
+              }`}
+            >
+              <div
+                className="w-full h-10 rounded mb-2"
+                style={{ background: theme.colors.background }}
+              />
+              <span className="text-xs font-medium text-white">
+                {theme.name}
+              </span>
+            </Button>
+          ))}
+        </div>
       </div>
 
       <div className="border-t border-dark-700 pt-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Editor Font</h3>
+        <h3 className="text-sm font-medium text-white mb-3">Editor Font</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label
@@ -65,20 +68,22 @@ export default function AppearanceTab({
             />
           </div>
           <div>
-            <label
-              htmlFor="font-size"
-              className="block text-dark-300 text-sm mb-2"
-            >
-              Font Size: {fontSize}px
-            </label>
-            <input
+            <div className="flex items-center justify-between mb-2">
+              <label
+                htmlFor="font-size"
+                className="text-dark-300 text-sm"
+              >
+                Font Size
+              </label>
+              <span className="text-xs text-dark-400 tabular-nums">{fontSize}px</span>
+            </div>
+            <Slider
               id="font-size"
-              type="range"
-              min="10"
-              max="24"
               value={fontSize}
-              onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
-              className="w-full h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+              onValueChange={setFontSize}
+              min={10}
+              max={24}
+              step={1}
             />
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { confirmDelete } from "../../../lib/confirmDelete";
 import { Alert } from "../../ui/Alert";
 import { Button } from "../../ui/Button";
@@ -22,6 +22,7 @@ export default function AdvancedTab({
 }: AdvancedTabProps) {
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportSettings = () => {
     const settings = {
@@ -71,47 +72,64 @@ export default function AdvancedTab({
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       {error && <Alert variant="error">{error}</Alert>}
       {success && <Alert variant="success">{success}</Alert>}
 
-      <div className="bg-dark-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">
+      <div>
+        <h3 className="text-sm font-medium text-white mb-3">
           Import / Export Settings
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Button
-            type="button"
-            onClick={handleExportSettings}
-            variant="secondary"
-            className="text-left py-3"
-          >
-            <p className="font-medium">Export Settings</p>
-            <p className="text-sm text-dark-400">
+          <div className="bg-dark-800 rounded-lg p-4">
+            <p className="text-sm text-white font-medium mb-1">
+              Export Settings
+            </p>
+            <p className="text-xs text-dark-400 mb-3">
               Download current settings as JSON
             </p>
-          </Button>
-          <div>
-            <label
-              htmlFor="import-settings"
-              className="block text-dark-300 text-sm mb-2"
+            <Button
+              type="button"
+              onClick={handleExportSettings}
+              variant="secondary"
+              size="sm"
             >
+              Export
+            </Button>
+          </div>
+          <div className="bg-dark-800 rounded-lg p-4">
+            <p className="text-sm text-white font-medium mb-1">
               Import Settings
-            </label>
+            </p>
+            <p className="text-xs text-dark-400 mb-3">
+              Load settings from a JSON file
+            </p>
             <input
-              id="import-settings"
+              ref={fileInputRef}
               type="file"
               accept=".json"
               onChange={handleImportSettings}
-              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              className="hidden"
             />
+            <Button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              variant="secondary"
+              size="sm"
+            >
+              Import
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="bg-dark-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Danger Zone</h3>
-        <div className="space-y-4">
+      <div className="border-t border-dark-700 pt-6">
+        <h3 className="text-sm font-medium text-white mb-3">Danger Zone</h3>
+        <div className="bg-dark-800 rounded-lg p-4">
+          <p className="text-sm text-white font-medium mb-1">Delete All Data</p>
+          <p className="text-xs text-dark-400 mb-3">
+            Permanently delete all hosts, keys, snippets, and settings
+          </p>
           <Button
             type="button"
             onClick={async () => {
@@ -123,13 +141,10 @@ export default function AdvancedTab({
                 // TODO: Implement data deletion
               }
             }}
-            variant="soft-destructive"
-            className="w-full text-left py-3"
+            variant="destructive"
+            size="sm"
           >
-            <p className="font-medium">Delete All Data</p>
-            <p className="text-sm text-red-500">
-              Permanently delete all hosts, keys, snippets, and settings
-            </p>
+            Delete All Data
           </Button>
         </div>
       </div>
