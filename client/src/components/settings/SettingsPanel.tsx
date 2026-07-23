@@ -148,15 +148,15 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Settings Navigation */}
-      <div className="flex flex-col border-b border-dark-700">
+      <div className="flex flex-row border-b border-dark-700">
         {settingsTabs.map((tab) => (
           <Button
             key={tab.id}
             variant="ghost"
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={`gap-2 px-4 py-2.5 rounded-none justify-start ${
+            className={`gap-2 px-4 py-2.5 rounded-none flex-1 justify-start ${
               activeTab === tab.id
-                ? "text-primary-500 bg-dark-800 border-l-2 border-primary-500"
+                ? "text-primary-500 bg-dark-800 border-b-2 border-primary-500"
                 : "text-dark-400 hover:text-white"
             }`}
           >
