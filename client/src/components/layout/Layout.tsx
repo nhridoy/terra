@@ -235,7 +235,7 @@ export default function Layout() {
                       {host.name}
                     </span>
                   </div>
-                  <p className="text-dark-400 text-xs mt-1 ml-[18px] truncate">
+                  <p className="text-dark-400 text-xs mt-1 ml-4.5 truncate">
                     {host.username ? `${host.username}@` : ""}
                     {host.address}:{host.port}
                   </p>

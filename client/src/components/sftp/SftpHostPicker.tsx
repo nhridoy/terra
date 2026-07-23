@@ -35,7 +35,7 @@ export default function SftpHostPicker({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, []);
+  }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {

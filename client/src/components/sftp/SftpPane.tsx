@@ -20,6 +20,7 @@ interface SftpPaneProps {
   pane: SftpLeafNode;
   isActive: boolean;
   closable: boolean;
+  draggable?: boolean;
   dropSide: DropSide | null;
   onConnectHost: (host: Host) => void;
 }
@@ -28,10 +29,14 @@ export default function SftpPane({
   pane,
   isActive,
   closable,
+  draggable = false,
   dropSide,
   onConnectHost,
 }: SftpPaneProps) {
-  const { splitPane, removePane, setActivePane, connectLocal } = useSftpStore();
+  const splitPane = useSftpStore((s) => s.splitPane);
+  const removePane = useSftpStore((s) => s.removePane);
+  const setActivePane = useSftpStore((s) => s.setActivePane);
+  const connectLocal = useSftpStore((s) => s.connectLocal);
   const [showHostPicker, setShowHostPicker] = useState(false);
 
   const { ref, isDragging } = useDraggable({
@@ -66,6 +71,7 @@ export default function SftpPane({
         title={displayName}
         isActive={isActive}
         closable={closable}
+        draggable={draggable}
         dragHandleRef={ref}
         onSplitH={() => splitPane(pane.id, "horizontal")}
         onSplitV={() => splitPane(pane.id, "vertical")}
@@ -112,7 +118,9 @@ export default function SftpPane({
                       const path = await openDirectoryPicker();
                       if (path) connectLocal(pane.id, path);
                     } catch (err) {
-                      toast.error(extractError(err, "Failed to open directory picker"));
+                      toast.error(
+                        extractError(err, "Failed to open directory picker"),
+                      );
                     }
                   }}
                 >

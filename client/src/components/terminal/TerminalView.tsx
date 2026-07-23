@@ -11,9 +11,14 @@ interface TerminalViewProps {
   onSetActiveView?: (view: string) => void;
 }
 
-export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
-  const { tabs, activeTabId, connectActivePane, splitPane, removePane } =
-    useTerminalStore();
+export default function TerminalView({
+  onSetActiveView,
+}: Readonly<TerminalViewProps>) {
+  const tabs = useTerminalStore((s) => s.tabs);
+  const activeTabId = useTerminalStore((s) => s.activeTabId);
+  const connectActivePane = useTerminalStore((s) => s.connectActivePane);
+  const splitPane = useTerminalStore((s) => s.splitPane);
+  const removePane = useTerminalStore((s) => s.removePane);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -40,9 +45,11 @@ export default function TerminalView({ onSetActiveView }: TerminalViewProps) {
       useTerminalStore.getState().setActiveTab(prevTab.id);
       onSetActiveView?.(prevTab.id);
     } else if (tabs.length > 0) {
-      const lastTab = tabs[tabs.length - 1];
-      useTerminalStore.getState().setActiveTab(lastTab.id);
-      onSetActiveView?.(lastTab.id);
+      const lastTab = tabs.at(-1);
+      if (lastTab) {
+        useTerminalStore.getState().setActiveTab(lastTab.id);
+        onSetActiveView?.(lastTab.id);
+      }
     }
   }, [tabs, activeTabId, onSetActiveView]);
 

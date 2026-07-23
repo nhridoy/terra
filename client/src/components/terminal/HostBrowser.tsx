@@ -98,7 +98,7 @@ export default function HostBrowser({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, []);
+  }, [query]);
 
   const noExactHost = !hosts.some(
     (h) => h.name.toLowerCase() === q || h.address.toLowerCase() === q,

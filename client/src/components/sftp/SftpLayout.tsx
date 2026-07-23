@@ -7,7 +7,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/react";
 import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type FileDragState, useSftpStore } from "../../stores/sftpStore";
 import FileTransfer from "./FileTransfer";
 import SftpPaneTree from "./SftpPaneTree";
@@ -24,6 +24,34 @@ export default function SftpLayout() {
     paneId: string;
     side: DropSide;
   } | null>(null);
+
+  useEffect(() => {
+    if (!useSftpStore.getState().root) {
+      const firstId = `sftp-pane-${Date.now()}`;
+      const secondId = `sftp-pane-${Date.now() + 1}`;
+      const split = {
+        type: "split" as const,
+        id: `sftp-split-${Date.now()}`,
+        direction: "horizontal" as const,
+        children: [
+          {
+            type: "leaf" as const,
+            id: firstId,
+            connectionType: null,
+            size: 50,
+          },
+          {
+            type: "leaf" as const,
+            id: secondId,
+            connectionType: null,
+            size: 50,
+          },
+        ],
+        size: 100,
+      };
+      useSftpStore.setState({ root: split, activePaneId: firstId });
+    }
+  }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
     const source = event.operation.source;

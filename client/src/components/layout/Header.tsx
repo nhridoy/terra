@@ -31,17 +31,15 @@ export default function Header({
   onSaveWorkspace,
   onSavePreset,
   onSavePresetChanges,
-}: HeaderProps) {
+}: Readonly<HeaderProps>) {
   const navigate = useNavigate();
-  const {
-    tabs,
-    addEmptyTab,
-    removeTab,
-    setActiveTab,
-    activeWorkspaceId,
-    isDirty,
-    activeWorkspaceName,
-  } = useTerminalStore();
+  const tabs = useTerminalStore((s) => s.tabs);
+  const addEmptyTab = useTerminalStore((s) => s.addEmptyTab);
+  const removeTab = useTerminalStore((s) => s.removeTab);
+  const setActiveTab = useTerminalStore((s) => s.setActiveTab);
+  const activeWorkspaceId = useTerminalStore((s) => s.activeWorkspaceId);
+  const isDirty = useTerminalStore((s) => s.isDirty);
+  const activeWorkspaceName = useTerminalStore((s) => s.activeWorkspaceName);
 
   const handleSaveCurrentWorkspace = () => {
     useTerminalStore.getState().saveCurrentWorkspace();
@@ -115,6 +113,7 @@ export default function Header({
             onActivate={() => {
               setActiveTab(tab.id);
               setActiveView(tab.id);
+              navigate("/terminal");
             }}
             onSavePreset={onSavePreset}
             onSavePresetChanges={onSavePresetChanges}
@@ -124,7 +123,11 @@ export default function Header({
               if (isClosingActive) {
                 const { tabs: remainingTabs } = useTerminalStore.getState();
                 if (remainingTabs.length > 0) {
-                  setActiveView(remainingTabs[remainingTabs.length - 1].id);
+                  const lastTab = remainingTabs.at(-1);
+                  if (lastTab) {
+                    setActiveView(lastTab.id);
+                  }
+                  navigate("/terminal");
                 } else {
                   setActiveView("vault");
                   navigate("/hosts");
@@ -143,6 +146,7 @@ export default function Header({
         onClick={() => {
           const newTabId = addEmptyTab();
           setActiveView(newTabId);
+          navigate("/terminal");
         }}
         className="shrink-0 rounded"
         title="New Tab"
@@ -158,7 +162,7 @@ export default function Header({
         {/* Workspace save group (far right) */}
         {activeWorkspaceId && (
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="flex items-center gap-1.5 max-w-[140px] px-2 py-0.5 text-xs text-dark-300 bg-dark-800 rounded">
+            <span className="flex items-center gap-1.5 max-w-35 px-2 py-0.5 text-xs text-dark-300 bg-dark-800 rounded">
               <span className="truncate">{activeWorkspaceName}</span>
               {isDirty && (
                 <span

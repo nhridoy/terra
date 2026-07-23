@@ -7,7 +7,8 @@ import type {
   FileSortField,
   FileViewMode,
 } from "../../../lib/sftpTypes";
-import { findAllLeaves, useSftpStore } from "../../../stores/sftpStore";
+import { findAllLeaves } from "../../../lib/treeUtils";
+import { useSftpStore } from "../../../stores/sftpStore";
 import { generateAutoName } from "./helpers";
 
 interface UseFileOperationsOptions {

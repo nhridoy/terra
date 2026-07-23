@@ -18,6 +18,7 @@ interface PaneProps {
   pane: import("../../stores/terminalStore").LeafNode;
   isActive: boolean;
   closable: boolean;
+  draggable?: boolean;
   isActiveTab: boolean;
   onRestorePreset: (
     preset: { id?: string; name?: string; layout: string },
@@ -30,11 +31,14 @@ export default function Pane({
   pane,
   isActive,
   closable,
+  draggable = false,
   isActiveTab,
   onRestorePreset,
 }: PaneProps) {
-  const { setActivePane, splitPane, removePane, connectPane } =
-    useTerminalStore();
+  const setActivePane = useTerminalStore((s) => s.setActivePane);
+  const splitPane = useTerminalStore((s) => s.splitPane);
+  const removePane = useTerminalStore((s) => s.removePane);
+  const connectPane = useTerminalStore((s) => s.connectPane);
   const dropPane = useDragStore((s) => s.dropPane);
   const dropSide: DropSide | null =
     dropPane && dropPane.tabId === tabId && dropPane.paneId === pane.id
@@ -87,6 +91,7 @@ export default function Pane({
         title={pane.hostName || "Empty pane"}
         isActive={isActive}
         closable={closable}
+        draggable={draggable}
         connectionStatus={pane.connectionStatus}
         dragHandleRef={ref}
         onSplitH={() => splitPane(tabId, pane.id, "horizontal")}

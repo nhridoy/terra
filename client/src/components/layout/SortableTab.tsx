@@ -57,7 +57,7 @@ export default function SortableTab({
       tabIndex={0}
       onClick={onActivate}
       onKeyDown={accessibleClickHandler(onActivate)}
-      className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-opacity duration-150 max-w-[140px] shrink-0 select-none ${
+      className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded rounded-b-none cursor-grab active:cursor-grabbing transition-opacity duration-150 max-w-35 shrink-0 select-none ${
         isActive
           ? "bg-dark-800 text-white"
           : "text-dark-400 hover:text-white hover:bg-dark-800/50"
@@ -135,10 +135,10 @@ export default function SortableTab({
   );
 }
 
-export function TabPreview({ tab }: { tab: TerminalTab }) {
+export function TabPreview({ tab }: Readonly<{ tab: TerminalTab }>) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800/50">
-      <span className="text-xs text-dark-300 truncate max-w-[160px]">
+      <span className="text-xs text-dark-300 truncate max-w-40">
         {tab.title}
       </span>
     </div>

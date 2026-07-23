@@ -47,8 +47,9 @@ export default function PaneTree({
   onRestorePreset,
 }: PaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { setPaneSizes } = useTerminalStore();
+  const setPaneSizes = useTerminalStore((s) => s.setPaneSizes);
   const closable = countLeaves(node) > 1;
+  const draggable = countLeaves(node) > 1;
 
   const panes: PlacedPane[] = [];
   const dividers: PlacedDivider[] = [];
@@ -75,6 +76,7 @@ export default function PaneTree({
               pane={leaf}
               isActive={p.id === activePaneId}
               closable={closable}
+              draggable={draggable}
               isActiveTab={isActiveTab}
               onRestorePreset={onRestorePreset}
             />

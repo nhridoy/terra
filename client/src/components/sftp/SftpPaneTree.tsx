@@ -27,8 +27,10 @@ export default function SftpPaneTree({
   dropTarget,
 }: SftpPaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { connectHost, setPaneSizes } = useSftpStore();
-  const closable = countLeaves(node) > 1;
+  const connectHost = useSftpStore((s) => s.connectHost);
+  const setPaneSizes = useSftpStore((s) => s.setPaneSizes);
+  const closable = countLeaves(node) > 2;
+  const draggable = countLeaves(node) > 1;
 
   const panes: PlacedPane[] = [];
   const dividers: PlacedDivider[] = [];
@@ -67,6 +69,7 @@ export default function SftpPaneTree({
               pane={leaf}
               isActive={p.id === activePaneId}
               closable={closable}
+              draggable={draggable}
               dropSide={dropTarget?.paneId === p.id ? dropTarget.side : null}
               onConnectHost={(host) =>
                 connectHost(

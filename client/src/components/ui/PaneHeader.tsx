@@ -13,6 +13,7 @@ interface PaneHeaderProps {
   title: string;
   isActive: boolean;
   closable: boolean;
+  draggable?: boolean;
   connectionStatus?: ConnectionStatus;
   dragHandleRef?: Ref<HTMLButtonElement>;
   onSplitH?: () => void;
@@ -25,6 +26,7 @@ export default function PaneHeader({
   title,
   isActive,
   closable,
+  draggable = false,
   connectionStatus,
   dragHandleRef,
   onSplitH,
@@ -40,7 +42,7 @@ export default function PaneHeader({
     >
       {connectionStatus && <StatusDot status={connectionStatus} size="xs" />}
 
-      {closable && (
+      {draggable && (
         <Button
           type="button"
           variant="ghost"

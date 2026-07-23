@@ -120,7 +120,7 @@ export default function CommandAutocomplete({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, []);
+  }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -142,7 +142,12 @@ export default function CommandAutocomplete({
   return (
     <>
       {/* Backdrop */}
-      <button type="button" aria-label="Close" className="fixed inset-0 z-40" onClick={onClose} />
+      <button
+        type="button"
+        aria-label="Close"
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+      />
 
       {/* Autocomplete panel */}
       <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl">
