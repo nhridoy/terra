@@ -18,19 +18,20 @@ const sidebarItems = [
   { path: "/snippets", label: "Snippets", icon: FileTextIcon },
   { path: "/keys", label: "Keys", icon: KeyIcon },
   { path: "/history", label: "History", icon: ClockCounterClockwiseIcon },
-  { path: "/settings", label: "Settings", icon: GearSixIcon },
 ] as const;
 
 interface AppSidebarProps {
   isOpen: boolean;
   isMobile: boolean;
   onClose: () => void;
+  onOpenSettings: () => void;
 }
 
 export default function AppSidebar({
   isOpen,
   isMobile,
   onClose,
+  onOpenSettings,
 }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -69,8 +70,23 @@ export default function AppSidebar({
         ))}
       </nav>
 
-      {/* Bottom: UserIcon & Actions */}
+      {/* Bottom: Settings, UserInfo & Actions */}
       <div className="p-3 space-y-2 border-t border-dark-800">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            onOpenSettings();
+            if (isMobile) onClose();
+          }}
+          className="w-full justify-start px-3 py-2.5 rounded-lg text-sm font-medium"
+        >
+          <span className="flex items-center justify-center shrink-0 w-5 h-5">
+            <GearSixIcon className="w-5 h-5" />
+          </span>
+          <span className="flex-1 text-left">Settings</span>
+        </Button>
+
         <div className="flex items-center gap-3 p-2 rounded-lg bg-dark-800/50">
           <div className="flex items-center justify-center shrink-0 w-8 h-8 rounded-full bg-primary-600/20">
             <UserIcon className="w-4 h-4 text-primary-500" />

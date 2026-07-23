@@ -16,6 +16,7 @@ interface HeaderProps {
   setActiveView: (view: string) => void;
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  onOpenSettings: () => void;
   onSaveWorkspace: () => void;
   onSavePreset: (tabId: string) => void;
   onSavePresetChanges: (tabId: string) => void;
@@ -26,6 +27,7 @@ export default function Header({
   setActiveView,
   sidebarOpen,
   setSidebarOpen,
+  onOpenSettings,
   onSaveWorkspace,
   onSavePreset,
   onSavePresetChanges,
@@ -227,7 +229,7 @@ export default function Header({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => navigate("/settings")}
+          onClick={onOpenSettings}
           className="rounded"
           title="Settings"
         >

@@ -14,6 +14,7 @@ import {
 import { useVaultStore } from "../../stores/vaultStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import WorkspaceForm from "../workspace/WorkspaceForm";
+import SettingsModal from "../settings/SettingsModal";
 import AppSidebar from "./AppSidebar";
 import Header from "./Header";
 import { TabPreview } from "./SortableTab";
@@ -30,6 +31,7 @@ export default function Layout() {
 
   const workspaceModal = useModal();
   const presetModal = useModal();
+  const settingsModal = useModal();
   const [presetTargetTabId, setPresetTargetTabId] = useState<string | null>(
     null,
   );
@@ -40,7 +42,6 @@ export default function Layout() {
     "/snippets",
     "/keys",
     "/history",
-    "/settings",
   ].includes(location.pathname);
 
   useEffect(() => {
@@ -125,6 +126,7 @@ export default function Layout() {
           setActiveView={setActiveView}
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
+          onOpenSettings={settingsModal.show}
           onSaveWorkspace={() => {
             const currentTabs = useTerminalStore.getState().tabs;
             const payload = serializeWorkspaceLayout(currentTabs);
@@ -145,6 +147,7 @@ export default function Layout() {
             isOpen={sidebarOpen}
             isMobile={isMobile}
             onClose={() => setSidebarOpen(false)}
+            onOpenSettings={settingsModal.show}
           />
         )}
 
@@ -190,6 +193,10 @@ export default function Layout() {
               setPresetTargetTabId(null);
             }}
           />
+        )}
+
+        {settingsModal.open && (
+          <SettingsModal onClose={() => settingsModal.hide()} />
         )}
 
         <DragOverlay>

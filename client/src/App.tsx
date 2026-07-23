@@ -9,7 +9,6 @@ import HostsPage from "./pages/HostsPage";
 import KeysPage from "./pages/KeysPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import SettingsPage from "./pages/SettingsPage";
 import SftpPage from "./pages/SftpPage";
 import SnippetsPage from "./pages/SnippetsPage";
 import TerminalPage from "./pages/TerminalPage";
@@ -40,7 +39,6 @@ function App() {
             <Route path="snippets" element={<SnippetsPage />} />
             <Route path="keys" element={<KeysPage />} />
             <Route path="history" element={<HistoryPage />} />
-            <Route path="settings" element={<SettingsPage />} />
             <Route path="terminal" element={<TerminalPage />} />
             <Route path="sftp" element={<SftpPage />} />
             <Route path="*" element={<Navigate to="/hosts" replace />} />
