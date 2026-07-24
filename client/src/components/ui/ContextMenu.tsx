@@ -126,9 +126,7 @@ export default function ContextMenu({
                     : "text-dark-200 hover:bg-dark-700"
             }`}
           >
-            {item.icon && (
-              <span className="w-4 h-4 shrink-0">{item.icon}</span>
-            )}
+            {item.icon && <span className="w-4 h-4 shrink-0">{item.icon}</span>}
             <span className="flex-1">{item.label}</span>
             {item.shortcut && (
               <span className="text-xs text-dark-500 ml-4">

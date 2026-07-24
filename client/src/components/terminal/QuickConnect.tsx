@@ -5,15 +5,11 @@ import {
   TerminalIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { detectShells, type ShellInfo } from "../../lib/shellDetection";
 import { type Host, useHostStore } from "../../stores/hostStore";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
-
-interface ShellInfo {
-  name: string;
-  path: string;
-}
 
 interface QuickConnectProps {
   onConnect: (host: Host) => void;
@@ -65,31 +61,62 @@ export default function QuickConnect({
   }, [isOpen]);
 
   useEffect(() => {
-    setLocalShells([]);
+    detectShells().then(setLocalShells);
   }, []);
 
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
 
+  const noExactHost = !hosts.some(
+    (h) =>
+      h.name.toLowerCase() === query.toLowerCase() ||
+      h.address.toLowerCase() === query.toLowerCase(),
+  );
+
+  type SelectableItem =
+    | { type: "direct"; query: string }
+    | { type: "shell"; shell: ShellInfo }
+    | { type: "host"; host: Host };
+
+  const selectableItems: SelectableItem[] = [];
+  if (query && noExactHost) {
+    selectableItems.push({ type: "direct", query });
+  }
+  for (const s of filteredShells) {
+    selectableItems.push({ type: "shell", shell: s });
+  }
+  for (const h of filteredHosts) {
+    selectableItems.push({ type: "host", host: h });
+  }
+
+  const close = () => {
+    setIsOpen(false);
+    setQuery("");
+    setSelectedIndex(0);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((prev) => Math.min(prev + 1, filteredHosts.length - 1));
+      setSelectedIndex((prev) =>
+        Math.min(prev + 1, selectableItems.length - 1),
+      );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) => Math.max(prev - 1, 0));
-    } else if (e.key === "Enter" && filteredHosts[selectedIndex]) {
-      onConnect(filteredHosts[selectedIndex]);
-      setIsOpen(false);
-      setQuery("");
+    } else if (e.key === "Enter" && selectableItems[selectedIndex]) {
+      const item = selectableItems[selectedIndex];
+      if (item.type === "direct") {
+        handleDirectConnect();
+      } else if (item.type === "shell") {
+        if (onConnectLocal) onConnectLocal(item.shell.path);
+        close();
+      } else if (item.type === "host") {
+        onConnect(item.host);
+        close();
+      }
     }
-  };
-
-  const handleSelect = (host: Host) => {
-    onConnect(host);
-    setIsOpen(false);
-    setQuery("");
   };
 
   // Handle direct connection with user@host:port format
@@ -189,26 +216,33 @@ export default function QuickConnect({
               <div className="px-4 pt-3 pb-1 text-xs font-semibold tracking-wider uppercase text-dark-500">
                 Local Shell
               </div>
-              {filteredShells.map((shell) => (
-                <Button
-                  key={shell.path}
-                  variant="ghost"
-                  onClick={() => {
-                    if (onConnectLocal) onConnectLocal(shell.path);
-                    setIsOpen(false);
-                    setQuery("");
-                  }}
-                  className="w-full px-4 py-3 justify-start"
-                >
-                  <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
-                    <DesktopIcon className="w-4 h-4 text-white" weight="bold" />
-                  </div>
-                  <div>
-                    <div className="text-white text-sm">{shell.name}</div>
-                    <div className="text-dark-400 text-xs">{shell.path}</div>
-                  </div>
-                </Button>
-              ))}
+              {filteredShells.map((shell, shellIdx) => {
+                const flatIdx = (query && noExactHost ? 1 : 0) + shellIdx;
+                return (
+                  <Button
+                    key={shell.path}
+                    variant="ghost"
+                    onClick={() => {
+                      if (onConnectLocal) onConnectLocal(shell.path);
+                      close();
+                    }}
+                    className={`w-full px-4 py-3 justify-start ${
+                      flatIdx === selectedIndex ? "bg-dark-800" : ""
+                    }`}
+                  >
+                    <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                      <DesktopIcon
+                        className="w-4 h-4 text-white"
+                        weight="bold"
+                      />
+                    </div>
+                    <div>
+                      <div className="text-white text-sm">{shell.name}</div>
+                      <div className="text-dark-400 text-xs">{shell.path}</div>
+                    </div>
+                  </Button>
+                );
+              })}
             </div>
           )}
 
@@ -220,44 +254,53 @@ export default function QuickConnect({
                   Remote Hosts
                 </div>
               )}
-              {filteredHosts.map((host, index) => (
-                <Button
-                  key={host.id}
-                  variant="ghost"
-                  onClick={() => handleSelect(host)}
-                  className={`w-full px-4 py-3 justify-start ${
-                    index === selectedIndex ? "bg-dark-800" : ""
-                  }`}
-                >
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: host.color || "#64748b" }}
+              {filteredHosts.map((host, hostIdx) => {
+                const flatIdx =
+                  (query && noExactHost ? 1 : 0) +
+                  filteredShells.length +
+                  hostIdx;
+                return (
+                  <Button
+                    key={host.id}
+                    variant="ghost"
+                    onClick={() => {
+                      onConnect(host);
+                      close();
+                    }}
+                    className={`w-full px-4 py-3 justify-start ${
+                      flatIdx === selectedIndex ? "bg-dark-800" : ""
+                    }`}
                   >
-                    <TerminalIcon
-                      className="w-4 h-4 text-white"
-                      weight="bold"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white text-sm">{host.name}</div>
-                    <div className="text-dark-400 text-xs">
-                      {host.username}@{host.address}:{host.port}
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: host.color || "#64748b" }}
+                    >
+                      <TerminalIcon
+                        className="w-4 h-4 text-white"
+                        weight="bold"
+                      />
                     </div>
-                  </div>
-                  {host.tags && host.tags.length > 0 && (
-                    <div className="flex gap-1">
-                      {host.tags.slice(0, 2).map((tag: string) => (
-                        <span
-                          key={tag}
-                          className="px-1.5 py-0.5 bg-dark-700 text-dark-300 text-xs rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white text-sm">{host.name}</div>
+                      <div className="text-dark-400 text-xs">
+                        {host.username}@{host.address}:{host.port}
+                      </div>
                     </div>
-                  )}
-                </Button>
-              ))}
+                    {host.tags && host.tags.length > 0 && (
+                      <div className="flex gap-1">
+                        {host.tags.slice(0, 2).map((tag: string) => (
+                          <span
+                            key={tag}
+                            className="px-1.5 py-0.5 bg-dark-700 text-dark-300 text-xs rounded"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </Button>
+                );
+              })}
             </div>
           )}
 

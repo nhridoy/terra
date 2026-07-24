@@ -47,12 +47,15 @@ export default function FileGridItem({
         isRenaming
           ? undefined
           : (e) =>
-              onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles)
+              onSelect(
+                file.name,
+                e.ctrlKey || e.metaKey,
+                e.shiftKey,
+                sortedFiles,
+              )
       }
       onKeyDown={
-        isRenaming
-          ? undefined
-          : accessibleClickHandler(() => onDoubleClick())
+        isRenaming ? undefined : accessibleClickHandler(() => onDoubleClick())
       }
       onContextMenu={(e) => onContextMenu(e, file)}
       className={`p-3 rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${

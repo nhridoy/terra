@@ -1,13 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import { extractError } from "../../lib/extractError";
 import {
   type ImportKeyFormSchema,
   importKeyFormDefaultValues,
   importKeyFormSchema,
 } from "../../lib/schema/importKeyFormSchema";
-import { extractError } from "../../lib/extractError";
 import { looksLikePrivateKey } from "../../lib/validate";
 import { Button } from "../ui/Button";
 import FileInput from "../ui/FileInput";
@@ -203,11 +202,7 @@ export default function ImportKeyModal({
 
       <div className="mt-4">
         {mode === "upload" ? (
-          <Button
-            type="button"
-            onClick={() => setMode("paste")}
-            variant="link"
-          >
+          <Button type="button" onClick={() => setMode("paste")} variant="link">
             or paste key manually
           </Button>
         ) : (
@@ -218,11 +213,22 @@ export default function ImportKeyModal({
       </div>
 
       <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-dark-700">
-        <Button type="button" onClick={onClose} variant="ghost" size="sm" disabled={isPending}>
+        <Button
+          type="button"
+          onClick={onClose}
+          variant="ghost"
+          size="sm"
+          disabled={isPending}
+        >
           Cancel
         </Button>
         {mode === "paste" && (
-          <Button type="submit" onClick={handleSubmit(onSubmit)} size="sm" disabled={isPending}>
+          <Button
+            type="submit"
+            onClick={handleSubmit(onSubmit)}
+            size="sm"
+            disabled={isPending}
+          >
             {getButtonText()}
           </Button>
         )}

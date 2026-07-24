@@ -12,7 +12,9 @@ export default function SshTab({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-medium text-white mb-3">SSH Configuration</h3>
+        <h3 className="text-sm font-medium text-white mb-3">
+          SSH Configuration
+        </h3>
         <div className="bg-dark-800 rounded-lg p-4 space-y-3">
           <p className="text-sm text-dark-300">
             SSH client options are configured per-host in the host settings.

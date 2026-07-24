@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
 import { confirmDelete } from "../../lib/confirmDelete";
+import { detectShells, type ShellInfo } from "../../lib/shellDetection";
 import { type Host, useHostStore } from "../../stores/hostStore";
 import { useTabGroupStore } from "../../stores/tabGroupStore";
 import type { PaneNode } from "../../stores/terminalStore";
@@ -18,11 +19,6 @@ import { useVaultStore } from "../../stores/vaultStore";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import WorkspaceForm from "../workspace/WorkspaceForm";
-
-interface ShellInfo {
-  name: string;
-  path: string;
-}
 
 interface HostBrowserProps {
   onConnect: (host: Host) => void;
@@ -79,7 +75,7 @@ export default function HostBrowser({
   }, [currentVaultId, fetchTabGroups]);
 
   useEffect(() => {
-    setLocalShells([]);
+    detectShells().then(setLocalShells);
   }, []);
 
   const q = query.toLowerCase();
@@ -104,19 +100,49 @@ export default function HostBrowser({
     (h) => h.name.toLowerCase() === q || h.address.toLowerCase() === q,
   );
 
+  // Build a flat list of all selectable items for keyboard navigation
+  type SelectableItem =
+    | { type: "direct"; query: string }
+    | { type: "preset"; preset: (typeof tabGroups)[number] }
+    | { type: "shell"; shell: ShellInfo }
+    | { type: "host"; host: Host };
+
+  const selectableItems: SelectableItem[] = [];
+  if (query && noExactHost) {
+    selectableItems.push({ type: "direct", query });
+  }
+  for (const g of presetMatches) {
+    selectableItems.push({ type: "preset", preset: g });
+  }
+  if (!query) {
+    for (const s of localShells) {
+      selectableItems.push({ type: "shell", shell: s });
+    }
+  }
+  if (query) {
+    for (const s of localShells) {
+      selectableItems.push({ type: "shell", shell: s });
+    }
+  }
+  for (const h of filteredHosts) {
+    selectableItems.push({ type: "host", host: h });
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((prev) => Math.min(prev + 1, filteredHosts.length - 1));
+      setSelectedIndex((prev) =>
+        Math.min(prev + 1, selectableItems.length - 1),
+      );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) => Math.max(prev - 1, 0));
-    } else if (e.key === "Enter") {
-      if (filteredHosts[selectedIndex]) {
-        onConnect(filteredHosts[selectedIndex]);
-      } else if (query) {
-        handleDirectConnect();
-      }
+    } else if (e.key === "Enter" && selectableItems[selectedIndex]) {
+      const item = selectableItems[selectedIndex];
+      if (item.type === "direct") handleDirectConnect();
+      else if (item.type === "preset") onRestorePreset(item.preset);
+      else if (item.type === "shell") onConnectLocal(item.shell.path);
+      else if (item.type === "host") onConnect(item.host);
     }
   };
 

@@ -1,24 +1,21 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
 import { useTransition } from "react";
+import { useForm } from "react-hook-form";
 import {
   type CreateTeamFormSchema,
   createTeamFormDefaultValues,
   createTeamFormSchema,
 } from "../../lib/schema/createTeamFormSchema";
+import ModalForm from "../shared/ModalForm";
 import { FormInput } from "../ui/forms/FormInput";
 import { FormTextarea } from "../ui/forms/FormTextarea";
-import ModalForm from "../shared/ModalForm";
 
 interface TeamFormProps {
   onClose: () => void;
   onSubmit: (data: CreateTeamFormSchema) => void;
 }
 
-export default function TeamForm({
-  onClose,
-  onSubmit,
-}: TeamFormProps) {
+export default function TeamForm({ onClose, onSubmit }: TeamFormProps) {
   const [isPending, startTransition] = useTransition();
 
   const { control, handleSubmit, reset } = useForm<CreateTeamFormSchema>({

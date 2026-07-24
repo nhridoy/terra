@@ -64,7 +64,9 @@ function parseValue(
 ): string | number | boolean | null {
   if (value === null || value === undefined) return null;
   if (key === "fontSize" || key === "scrollback") {
-    return typeof value === "number" ? value : Number.parseInt(String(value), 10);
+    return typeof value === "number"
+      ? value
+      : Number.parseInt(String(value), 10);
   }
   if (key === "cursorBlink") {
     return typeof value === "boolean" ? value : value === "true";

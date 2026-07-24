@@ -17,7 +17,8 @@ export const loginFormSchema = z.object({
 export type LoginFormSchema = z.infer<typeof loginFormSchema>;
 
 export const requiredFields = Object.entries(loginFormSchema.shape).reduce(
-  (acc, [key, schema]) => (!schema.safeParse(undefined).success ? [...acc, key] : acc),
+  (acc, [key, schema]) =>
+    !schema.safeParse(undefined).success ? [...acc, key] : acc,
   [] as string[],
 );
 

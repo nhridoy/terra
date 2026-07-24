@@ -265,7 +265,15 @@ export function VaultSelector() {
 
       {formModal.open && (
         <VaultForm
-          vault={editingVault ? { id: editingVault.id, name: editingVault.name, description: editingVault.description } : undefined}
+          vault={
+            editingVault
+              ? {
+                  id: editingVault.id,
+                  name: editingVault.name,
+                  description: editingVault.description,
+                }
+              : undefined
+          }
           onClose={() => {
             formModal.hide();
             setEditingVault(null);

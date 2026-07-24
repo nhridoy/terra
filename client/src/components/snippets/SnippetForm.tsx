@@ -1,20 +1,26 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
 import { useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { parseTags } from "../../lib/parseTags";
 import {
   type SnippetFormSchema,
   snippetFormDefaultValues,
   snippetFormSchema,
 } from "../../lib/schema/snippetFormSchema";
-import { parseTags } from "../../lib/parseTags";
 import { useSnippetStore } from "../../stores/snippetStore";
 import { useVaultStore } from "../../stores/vaultStore";
+import ModalForm from "../shared/ModalForm";
 import { FormInput } from "../ui/forms/FormInput";
 import { FormTextarea } from "../ui/forms/FormTextarea";
-import ModalForm from "../shared/ModalForm";
 
 interface SnippetFormProps {
-  snippet?: { id: string; name: string; command: string; description?: string; tags?: string[] };
+  snippet?: {
+    id: string;
+    name: string;
+    command: string;
+    description?: string;
+    tags?: string[];
+  };
   onClose: () => void;
 }
 
@@ -29,7 +35,9 @@ export default function SnippetForm({ snippet, onClose }: SnippetFormProps) {
       name: snippet?.name || snippetFormDefaultValues.name,
       command: snippet?.command || snippetFormDefaultValues.command,
       description: snippet?.description || snippetFormDefaultValues.description,
-      tags: snippet?.tags ? parseTags(snippet.tags) : snippetFormDefaultValues.tags,
+      tags: snippet?.tags
+        ? parseTags(snippet.tags)
+        : snippetFormDefaultValues.tags,
     },
   });
 

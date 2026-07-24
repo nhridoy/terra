@@ -60,31 +60,32 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
 
   return (
     <div className="flex-1 p-4 overflow-y-auto">
-
-        <SectionHeader title="Keychain" level="h3"
-          className="text-sm tracking-wider uppercase text-dark-400 mb-3">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              onClick={importModal.show}
-              variant="secondary"
-              size="sm"
-            >
-              <PlusIcon className="w-3 h-3" weight="bold" />
-              Import
-            </Button>
-            <Button
-              type="button"
-              onClick={generateModal.show}
-              variant="secondary"
-              size="sm"
-            >
-              <PlusIcon className="w-3 h-3" weight="bold" />
-              Generate
-            </Button>
-          </div>
-        </SectionHeader>
-      
+      <SectionHeader
+        title="Keychain"
+        level="h3"
+        className="text-sm tracking-wider uppercase text-dark-400 mb-3"
+      >
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            onClick={importModal.show}
+            variant="secondary"
+            size="sm"
+          >
+            <PlusIcon className="w-3 h-3" weight="bold" />
+            Import
+          </Button>
+          <Button
+            type="button"
+            onClick={generateModal.show}
+            variant="secondary"
+            size="sm"
+          >
+            <PlusIcon className="w-3 h-3" weight="bold" />
+            Generate
+          </Button>
+        </div>
+      </SectionHeader>
 
       <div className="flex-1 p-4 overflow-y-auto">
         {keys.length === 0 ? (

@@ -65,7 +65,6 @@ export default function SftpPane({
           ? "ring-1 ring-inset ring-primary-600/60"
           : "ring-1 ring-inset ring-dark-800"
       } ${isDragging ? "opacity-40" : ""}`}
-      onMouseDown={() => setActivePane(pane.id)}
     >
       <PaneHeader
         title={displayName}

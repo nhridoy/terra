@@ -69,13 +69,12 @@ export default function AppearanceTab({
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label
-                htmlFor="font-size"
-                className="text-dark-300 text-sm"
-              >
+              <label htmlFor="font-size" className="text-dark-300 text-sm">
                 Font Size
               </label>
-              <span className="text-xs text-dark-400 tabular-nums">{fontSize}px</span>
+              <span className="text-xs text-dark-400 tabular-nums">
+                {fontSize}px
+              </span>
             </div>
             <Slider
               id="font-size"

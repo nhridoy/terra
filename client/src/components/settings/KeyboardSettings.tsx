@@ -47,13 +47,14 @@ export default function KeyboardSettings({ onClose }: KeyboardSettingsProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {Object.entries(shortcutsByCategory).map(([category, categoryShortcuts]) => (
-            <div key={category} className="mb-6">
-              <h4 className="text-dark-400 text-sm font-medium mb-3 uppercase tracking-wider">
-                {category}
-              </h4>
-              <div className="space-y-2">
-                {categoryShortcuts.map((shortcut) => (
+          {Object.entries(shortcutsByCategory).map(
+            ([category, categoryShortcuts]) => (
+              <div key={category} className="mb-6">
+                <h4 className="text-dark-400 text-sm font-medium mb-3 uppercase tracking-wider">
+                  {category}
+                </h4>
+                <div className="space-y-2">
+                  {categoryShortcuts.map((shortcut) => (
                     <div
                       key={shortcut.id}
                       className="flex items-center justify-between p-3 bg-dark-800 rounded-lg hover:bg-dark-700"
@@ -100,9 +101,10 @@ export default function KeyboardSettings({ onClose }: KeyboardSettingsProps) {
                       </div>
                     </div>
                   ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
 
         {/* Footer */}

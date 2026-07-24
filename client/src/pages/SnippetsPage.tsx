@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { useModal } from "../hooks/useModal";
 import SnippetForm from "../components/snippets/SnippetForm";
-import SnippetList, {
-  type Snippet,
-} from "../components/snippets/SnippetList";
+import SnippetList, { type Snippet } from "../components/snippets/SnippetList";
+import { useModal } from "../hooks/useModal";
 
 export default function SnippetsPage() {
   const formModal = useModal();

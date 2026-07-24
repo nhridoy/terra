@@ -47,10 +47,7 @@ export function formatDate(dateStr: string) {
 export function getFileIcon(file: FileItem) {
   if (file.type === "directory") {
     return (
-      <FolderIcon
-        className="w-5 h-5 text-yellow-500 shrink-0"
-        weight="fill"
-      />
+      <FolderIcon className="w-5 h-5 text-yellow-500 shrink-0" weight="fill" />
     );
   }
   const ext = file.name.split(".").pop()?.toLowerCase() || "";

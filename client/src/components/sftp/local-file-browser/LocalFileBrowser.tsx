@@ -1,4 +1,5 @@
 import { FolderIcon } from "@phosphor-icons/react";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirmDelete } from "../../../lib/confirmDelete";
@@ -90,7 +91,13 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     const sep = currentPath.includes("\\") ? "\\" : "/";
     const parts = currentPath.split(sep);
     parts.pop();
-    navigateTo(parts.join(sep) || sep);
+    const parent = parts.join(sep);
+    // On Windows "C:" alone means current dir on C: — always keep trailing sep
+    if (sep === "\\" && parent && !parent.endsWith("\\")) {
+      navigateTo(`${parent}\\`);
+    } else {
+      navigateTo(parent || sep);
+    }
   }, [currentPath, navigateTo]);
 
   const handleDoubleClick = (file: FileItem) => {
@@ -115,9 +122,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       toast.success(`Created folder ${name}`);
       loadDirectory(currentPath);
     } catch (err: unknown) {
-      toast.error(
-        `Failed to create folder: ${extractError(err)}`,
-      );
+      toast.error(`Failed to create folder: ${extractError(err)}`);
     }
   };
 
@@ -128,9 +133,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       toast.success(`Deleted ${file.name}`);
       loadDirectory(currentPath);
     } catch (err: unknown) {
-      toast.error(
-        `Failed to delete ${file.name}: ${extractError(err)}`,
-      );
+      toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
     }
   };
 
@@ -153,9 +156,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       toast.success(`Renamed to ${renameValue.trim()}`);
       loadDirectory(currentPath);
     } catch (err: unknown) {
-      toast.error(
-        `Failed to rename: ${extractError(err)}`,
-      );
+      toast.error(`Failed to rename: ${extractError(err)}`);
     } finally {
       setRenamingPath(null);
     }
@@ -184,8 +185,14 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     }
   }, []);
 
-  const handleRefresh = useCallback(() => loadDirectory(currentPath), [currentPath, loadDirectory]);
-  const handleClearSelection = useCallback(() => setSelectedFiles(new Set()), []);
+  const handleRefresh = useCallback(
+    () => loadDirectory(currentPath),
+    [currentPath, loadDirectory],
+  );
+  const handleClearSelection = useCallback(
+    () => setSelectedFiles(new Set()),
+    [],
+  );
 
   useLocalKeyboard({
     selectedFiles,
@@ -227,6 +234,27 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
 
   const contextMenuItems: ContextMenuItem[] = contextMenu
     ? [
+        {
+          label: "Open",
+          onClick: async () => {
+            try {
+              await openPath(contextMenu.file.path);
+            } catch (err) {
+              toast.error(extractError(err, "Failed to open file"));
+            }
+          },
+        },
+        {
+          label: "Show in Explorer",
+          onClick: async () => {
+            try {
+              await revealItemInDir(contextMenu.file.path);
+            } catch (err) {
+              toast.error(extractError(err, "Failed to reveal in Explorer"));
+            }
+          },
+        },
+        { type: "separator" as const },
         {
           label: "Rename",
           onClick: () => startRename(contextMenu.file),

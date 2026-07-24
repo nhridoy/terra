@@ -1,18 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
 import { useTransition } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { parseTags } from "../../lib/parseTags";
 import {
   type HostFormSchema,
   hostFormDefaultValues,
   hostFormSchema,
 } from "../../lib/schema/hostFormSchema";
-import { parseTags } from "../../lib/parseTags";
 import { useHostStore } from "../../stores/hostStore";
 import { useVaultStore } from "../../stores/vaultStore";
+import ModalForm from "../shared/ModalForm";
 import { Button } from "../ui/Button";
 import { FormInput } from "../ui/forms/FormInput";
 import { FormSelect } from "../ui/forms/FormSelect";
-import ModalForm from "../shared/ModalForm";
 
 export interface HostData {
   id: string;
@@ -157,14 +157,21 @@ export default function HostForm({
       />
 
       <div>
-        <label id="auth-type-label" className="block text-dark-300 text-sm mb-2">
+        <label
+          id="auth-type-label"
+          className="block text-dark-300 text-sm mb-2"
+        >
           Authentication <span className="text-red-400 ml-0.5">*</span>
         </label>
         <Controller
           name="authType"
           control={control}
           render={({ field }) => (
-            <div role="group" aria-labelledby="auth-type-label" className="flex gap-2">
+            <div
+              role="group"
+              aria-labelledby="auth-type-label"
+              className="flex gap-2"
+            >
               <Button
                 type="button"
                 onClick={() => field.onChange("password")}
@@ -206,12 +213,18 @@ export default function HostForm({
       )}
 
       <div>
-        <label id="color-label" className="block text-dark-300 text-sm mb-2">Color</label>
+        <label id="color-label" className="block text-dark-300 text-sm mb-2">
+          Color
+        </label>
         <Controller
           name="color"
           control={control}
           render={({ field }) => (
-            <div role="group" aria-labelledby="color-label" className="flex gap-2">
+            <div
+              role="group"
+              aria-labelledby="color-label"
+              className="flex gap-2"
+            >
               {colors.map((c) => (
                 <button
                   key={c}

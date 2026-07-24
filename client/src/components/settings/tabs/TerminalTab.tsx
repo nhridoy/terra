@@ -52,13 +52,12 @@ export default function TerminalTab({
         <h3 className="text-sm font-medium text-white mb-3">Scrollback</h3>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label
-              htmlFor="scrollback"
-              className="text-dark-300 text-sm"
-            >
+            <label htmlFor="scrollback" className="text-dark-300 text-sm">
               Scrollback Lines
             </label>
-            <span className="text-xs text-dark-400 tabular-nums">{scrollback.toLocaleString()}</span>
+            <span className="text-xs text-dark-400 tabular-nums">
+              {scrollback.toLocaleString()}
+            </span>
           </div>
           <Slider
             id="scrollback"

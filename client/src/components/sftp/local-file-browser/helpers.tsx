@@ -1,1 +1,1 @@
-export { formatSize, formatDate, getFileIcon } from "../../../lib/fileHelpers";
+export { formatDate, formatSize, getFileIcon } from "../../../lib/fileHelpers";

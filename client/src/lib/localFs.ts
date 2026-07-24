@@ -1,53 +1,131 @@
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  exists,
+  mkdir,
+  readDir,
+  readFile,
+  remove,
+  rename,
+  stat,
+  writeFile,
+} from "@tauri-apps/plugin-fs";
 import type { FileItem } from "./sftpTypes";
 
-export async function listLocalFiles(_dirPath: string): Promise<FileItem[]> {
-  throw new Error("Not implemented");
+export async function listLocalFiles(dirPath: string): Promise<FileItem[]> {
+  const entries = await readDir(dirPath);
+  const items: FileItem[] = [];
+
+  for (const entry of entries) {
+    const fullPath = dirPath.endsWith("/")
+      ? `${dirPath}${entry.name}`
+      : `${dirPath}/${entry.name}`;
+
+    let fileStat: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      fileStat = await stat(fullPath);
+    } catch {
+      // stat can fail on broken symlinks
+    }
+
+    items.push({
+      name: entry.name,
+      path: fullPath,
+      type: entry.isDirectory
+        ? "directory"
+        : entry.isSymlink
+          ? "symlink"
+          : "file",
+      size: fileStat?.size ?? 0,
+      permissions: "",
+      owner: "",
+      group: "",
+      modifiedAt: fileStat?.mtime?.toISOString() ?? new Date().toISOString(),
+      isHidden: entry.name.startsWith("."),
+    });
+  }
+
+  return items;
 }
 
-export async function readLocalFile(_filePath: string): Promise<string> {
-  throw new Error("Not implemented");
+export async function readLocalFile(filePath: string): Promise<string> {
+  const content = await readFile(filePath);
+  return new TextDecoder().decode(content);
+}
+
+export async function readLocalFileBytes(
+  filePath: string,
+): Promise<Uint8Array> {
+  return readFile(filePath);
 }
 
 export async function writeLocalFile(
-  _filePath: string,
-  _content: string,
+  filePath: string,
+  content: string,
 ): Promise<void> {
-  throw new Error("Not implemented");
+  await writeFile(filePath, new TextEncoder().encode(content));
 }
 
-export async function createLocalDir(_dirPath: string): Promise<void> {
-  throw new Error("Not implemented");
+export async function writeLocalFileBytes(
+  filePath: string,
+  data: Uint8Array,
+): Promise<void> {
+  await writeFile(filePath, data);
 }
 
-export async function removeLocalFile(_filePath: string): Promise<void> {
-  throw new Error("Not implemented");
+export async function createLocalDir(dirPath: string): Promise<void> {
+  await mkdir(dirPath, { recursive: true });
+}
+
+export async function removeLocalFile(filePath: string): Promise<void> {
+  await remove(filePath, { recursive: true });
 }
 
 export async function renameLocalFile(
-  _oldPath: string,
-  _newPath: string,
+  oldPath: string,
+  newPath: string,
 ): Promise<void> {
-  throw new Error("Not implemented");
+  await rename(oldPath, newPath);
 }
 
-export async function localFileExists(_filePath: string): Promise<boolean> {
-  throw new Error("Not implemented");
+export async function localFileExists(filePath: string): Promise<boolean> {
+  return exists(filePath);
+}
+
+export async function getLocalFileStat(filePath: string) {
+  return stat(filePath);
 }
 
 export async function openDirectoryPicker(): Promise<string | null> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: "Select Directory",
+  });
+  if (typeof selected === "string") return selected;
   return null;
 }
 
 export async function openFilePicker(): Promise<string | null> {
+  const selected = await open({
+    multiple: false,
+    title: "Select File",
+  });
+  if (typeof selected === "string") return selected;
   return null;
 }
 
 export async function saveFilePicker(
-  _defaultName?: string,
+  defaultName?: string,
 ): Promise<string | null> {
-  return null;
+  return save({
+    defaultPath: defaultName,
+    title: "Save File",
+  });
 }
 
 export function isTauriAvailable(): boolean {
-  return false;
+  return (
+    typeof window !== "undefined" &&
+    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
+  );
 }

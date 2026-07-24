@@ -39,12 +39,21 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
     }
   }, [error, clearError]);
 
-  const onSubmit = async (data: { localPort: number; remoteHost: string; remotePort: number }) => {
+  const onSubmit = async (data: {
+    localPort: number;
+    remoteHost: string;
+    remotePort: number;
+  }) => {
     if (!hostId) {
       toast.error("Connect to a host first");
       return;
     }
-    await startForward(hostId, data.localPort, data.remoteHost, data.remotePort);
+    await startForward(
+      hostId,
+      data.localPort,
+      data.remoteHost,
+      data.remotePort,
+    );
     toast.success(`Port forward started on :${data.localPort}`);
   };
 
@@ -98,12 +107,9 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
           </div>
         )}
       </div>
-{createModal.open && (
-      <PortForwardForm
-        onClose={createModal.hide}
-        onSubmit={onSubmit}
-      />
-    )}
+      {createModal.open && (
+        <PortForwardForm onClose={createModal.hide} onSubmit={onSubmit} />
+      )}
     </div>
   );
 }

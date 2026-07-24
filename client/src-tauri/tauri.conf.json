@@ -50,6 +50,9 @@
     }
   },
   "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    },
     "updater": {
       "endpoints": ["https://releases.termvault.app/{{target}}/{{arch}}/{{current_version}}"],
       "pubkey": "dW50cnVzdGVkIGZvciBkZXZlbG9wbWVudCwgbm90IHByb2R1Y3Rpb24="

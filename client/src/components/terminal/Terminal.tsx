@@ -7,6 +7,7 @@ import {
   fitSession,
   getOrCreateSession,
   type Session,
+  updateSessionParams,
 } from "./sessionManager";
 
 interface TerminalProps {
@@ -40,9 +41,9 @@ export default function Terminal({
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Attach to (or create) the persistent session for this pane. The effect is
-  // keyed on paneId only — moving the pane between tabs changes tabId but must
-  // NOT reconnect, so the WebSocket/xterm session is reused.
+  // Attach to (or create) the persistent session for this pane. Keyed on
+  // paneId only — moving the pane between tabs or updating connection params
+  // must NOT reconnect; the PTY session is reused.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -71,25 +72,14 @@ export default function Terminal({
         .tabs.some((t) => paneExistsInTree(t.root, paneId));
       if (!exists) destroySession(paneId);
     };
+    // paneId never changes for a given component instance
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    paneId,
-    hostName,
-    hostUsername,
-    hostAddress,
-    hostPort,
-    hostId,
-    tabId,
-    authType,
-    keyId,
-    connectionType,
-    shell,
-  ]);
+  }, [paneId]);
 
-  // Keep status routing pointed at the current owning tab and re-fit on active.
+  // When connection params change, update the session metadata without
+  // re-attaching (the PTY is already running).
   useEffect(() => {
-    const session = getOrCreateSession({
-      paneId,
+    updateSessionParams(paneId, {
       tabId,
       hostId,
       hostName,
@@ -101,26 +91,27 @@ export default function Terminal({
       connectionType,
       shell,
     });
-    session.params.tabId = tabId;
-    if (isActive) {
-      const timer = setTimeout(() => fitSession(paneId), 50);
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isActive,
-    tabId,
     paneId,
+    tabId,
     hostId,
-    hostUsername,
     hostName,
-    hostPort,
     hostAddress,
+    hostPort,
+    hostUsername,
     authType,
     keyId,
     connectionType,
     shell,
   ]);
+
+  // Re-fit when this tab becomes active.
+  useEffect(() => {
+    if (isActive) {
+      const timer = setTimeout(() => fitSession(paneId), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive, paneId]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }

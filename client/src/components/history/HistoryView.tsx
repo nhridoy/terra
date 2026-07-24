@@ -79,8 +79,11 @@ export default function HistoryView() {
   return (
     <div className="flex-1 p-4 overflow-y-auto">
       {/* Header */}
-      <SectionHeader title="Session History" level="h3"
-          className="text-sm tracking-wider uppercase text-dark-400 mb-3">
+      <SectionHeader
+        title="Session History"
+        level="h3"
+        className="text-sm tracking-wider uppercase text-dark-400 mb-3"
+      >
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 border border-dark-700 rounded-lg overflow-hidden">
             <MagnifyingGlassIcon

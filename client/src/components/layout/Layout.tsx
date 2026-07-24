@@ -13,8 +13,8 @@ import {
 } from "../../stores/terminalStore";
 import { useVaultStore } from "../../stores/vaultStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
-import WorkspaceForm from "../workspace/WorkspaceForm";
 import SettingsModal from "../settings/SettingsModal";
+import WorkspaceForm from "../workspace/WorkspaceForm";
 import AppSidebar from "./AppSidebar";
 import Header from "./Header";
 import { TabPreview } from "./SortableTab";

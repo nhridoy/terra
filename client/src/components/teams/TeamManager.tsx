@@ -7,8 +7,8 @@ import type { InviteMemberFormSchema } from "../../lib/schema/inviteMemberFormSc
 import { useTeamStore } from "../../stores/teamStore";
 import { Button } from "../ui/Button";
 import Select from "../ui/Select";
-import TeamForm from "./TeamForm";
 import InviteMemberForm from "./InviteMemberForm";
+import TeamForm from "./TeamForm";
 
 export default function TeamManager() {
   const {
@@ -239,10 +239,7 @@ export default function TeamManager() {
       </div>
 
       {createModal.open && (
-        <TeamForm
-          onSubmit={handleCreateTeam}
-          onClose={createModal.hide}
-        />
+        <TeamForm onSubmit={handleCreateTeam} onClose={createModal.hide} />
       )}
 
       {inviteModal.open && (

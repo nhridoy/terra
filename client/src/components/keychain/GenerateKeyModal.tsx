@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { extractError } from "../../lib/extractError";
 import {
@@ -66,7 +65,11 @@ export default function GenerateKeyModal({
 
   if (generatedPrivKey) {
     return (
-      <Modal onClose={() => onClose(savedKey || undefined)} title="Key Generated Successfully" maxWidth="max-w-lg">
+      <Modal
+        onClose={() => onClose(savedKey || undefined)}
+        title="Key Generated Successfully"
+        maxWidth="max-w-lg"
+      >
         <p className="mb-4 text-sm text-dark-400">
           Copy and save your private key now. It will not be shown again.
         </p>
@@ -98,7 +101,11 @@ export default function GenerateKeyModal({
   }
 
   return (
-    <Modal onClose={() => onClose()} title="Generate SSH Key" maxWidth="max-w-md">
+    <Modal
+      onClose={() => onClose()}
+      title="Generate SSH Key"
+      maxWidth="max-w-md"
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <FormInput
           name="name"
@@ -125,7 +132,13 @@ export default function GenerateKeyModal({
         />
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex justify-end gap-3">
-          <Button type="button" onClick={() => onClose()} variant="ghost" size="sm" disabled={isPending}>
+          <Button
+            type="button"
+            onClick={() => onClose()}
+            variant="ghost"
+            size="sm"
+            disabled={isPending}
+          >
             Cancel
           </Button>
           <Button type="submit" size="sm" disabled={isPending}>
