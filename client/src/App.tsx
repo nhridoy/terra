@@ -14,13 +14,19 @@ import SnippetsPage from "./pages/SnippetsPage";
 import TerminalPage from "./pages/TerminalPage";
 import WorkspacesPage from "./pages/WorkspacesPage";
 import { useAuthStore } from "./stores/authStore";
+import { useSettingsStore } from "./stores/settingsStore";
+import { useThemeStore } from "./stores/themeStore";
 
 function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
+  const initSettings = useSettingsStore((s) => s.initSettings);
+  const initTheme = useThemeStore((s) => s.initTheme);
 
   useEffect(() => {
     restoreSession();
-  }, [restoreSession]);
+    initSettings();
+    initTheme();
+  }, [restoreSession, initSettings, initTheme]);
 
   return (
     <BrowserRouter>

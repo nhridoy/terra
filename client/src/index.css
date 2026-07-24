@@ -11,6 +11,15 @@
   --color-primary-700: #0369a1;
   --color-primary-800: #075985;
   --color-primary-900: #0c4a6e;
+  --color-primary-text: #ffffff;
+
+  --color-danger-300: #fca5a5;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
+  --color-danger-text: #ffffff;
 
   --color-dark-50: #f8fafc;
   --color-dark-100: #f1f5f9;

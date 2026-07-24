@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { confirmDelete } from "../../lib/confirmDelete";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useTerminalStore } from "../../stores/terminalStore";
-import { useThemeStore } from "../../stores/themeStore";
+import { type Theme, useThemeStore } from "../../stores/themeStore";
 import { Button } from "../ui/Button";
 import settingsTabs from "./SettingsTabs";
 import AdvancedTab from "./tabs/AdvancedTab";
@@ -18,23 +19,14 @@ interface KnownHost {
 
 export default function SettingsPanel() {
   const { currentTheme, setTheme } = useThemeStore();
-  const { tabs, closeAllTabs } = useTerminalStore();
+  const { settings, updateSetting } = useSettingsStore();
+  const closeAllTabs = useTerminalStore((s) => s.closeAllTabs);
+  const tabs = useTerminalStore((s) => s.tabs);
 
   const [activeTab, setActiveTab] = useState<
     "appearance" | "terminal" | "ssh" | "security" | "advanced"
   >("appearance");
 
-  // Appearance state
-  const [fontSize, setFontSize] = useState(14);
-  const [fontFamily, setFontFamily] = useState("JetBrains Mono");
-
-  // Terminal state
-  const [cursorStyle, setCursorStyle] = useState("block");
-  const [cursorBlink, setCursorBlink] = useState(true);
-  const [scrollback, setScrollback] = useState(10000);
-  const [bellStyle, setBellStyle] = useState("none");
-
-  // SSH known hosts state
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [knownHostsLoading, setKnownHostsLoading] = useState(false);
 
@@ -76,59 +68,35 @@ export default function SettingsPanel() {
   };
 
   useEffect(() => {
-    const savedFontSize = localStorage.getItem("termvault.fontSize");
-    const savedFontFamily = localStorage.getItem("termvault.fontFamily");
-    const savedCursorStyle = localStorage.getItem("termvault.cursorStyle");
-    const savedCursorBlink = localStorage.getItem("termvault.cursorBlink");
-    const savedScrollback = localStorage.getItem("termvault.scrollback");
-    const savedBellStyle = localStorage.getItem("termvault.bellStyle");
-
-    if (savedFontSize) setFontSize(parseInt(savedFontSize, 10));
-    if (savedFontFamily) setFontFamily(savedFontFamily);
-    if (savedCursorStyle)
-      setCursorStyle(savedCursorStyle as "block" | "underline" | "bar");
-    if (savedCursorBlink) setCursorBlink(savedCursorBlink === "true");
-    if (savedScrollback) setScrollback(parseInt(savedScrollback, 10));
-    if (savedBellStyle)
-      setBellStyle(savedBellStyle as "none" | "sound" | "visual");
-  }, []);
-
-  useEffect(() => {
     if (activeTab === "ssh") loadKnownHosts();
   }, [activeTab, loadKnownHosts]);
 
-  const saveSetting = (key: string, value: string) => {
-    localStorage.setItem(`termvault.${key}`, value);
+  const handleSetTheme = (theme: Theme) => {
+    setTheme(theme);
   };
 
   const handleFontSizeChange = (value: number) => {
-    setFontSize(value);
-    saveSetting("fontSize", value.toString());
+    updateSetting("fontSize", value);
   };
 
   const handleFontFamilyChange = (value: string) => {
-    setFontFamily(value);
-    saveSetting("fontFamily", value);
+    updateSetting("fontFamily", value);
   };
 
   const handleCursorStyleChange = (value: string) => {
-    setCursorStyle(value);
-    saveSetting("cursorStyle", value);
+    updateSetting("cursorStyle", value as "block" | "underline" | "bar");
   };
 
   const handleCursorBlinkChange = (value: boolean) => {
-    setCursorBlink(value);
-    saveSetting("cursorBlink", value.toString());
+    updateSetting("cursorBlink", value);
   };
 
   const handleScrollbackChange = (value: number) => {
-    setScrollback(value);
-    saveSetting("scrollback", value.toString());
+    updateSetting("scrollback", value);
   };
 
   const handleBellStyleChange = (value: string) => {
-    setBellStyle(value);
-    saveSetting("bellStyle", value);
+    updateSetting("bellStyle", value as "none" | "sound" | "visual");
   };
 
   const handleClearAllSessions = async () => {
@@ -167,19 +135,19 @@ export default function SettingsPanel() {
         {activeTab === "appearance" && (
           <AppearanceTab
             currentTheme={currentTheme}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            setTheme={setTheme}
+            fontSize={settings.fontSize}
+            fontFamily={settings.fontFamily}
+            setTheme={handleSetTheme}
             setFontSize={handleFontSizeChange}
             setFontFamily={handleFontFamilyChange}
           />
         )}
         {activeTab === "terminal" && (
           <TerminalTab
-            cursorStyle={cursorStyle}
-            cursorBlink={cursorBlink}
-            scrollback={scrollback}
-            bellStyle={bellStyle}
+            cursorStyle={settings.cursorStyle}
+            cursorBlink={settings.cursorBlink}
+            scrollback={settings.scrollback}
+            bellStyle={settings.bellStyle}
             setCursorStyle={handleCursorStyleChange}
             setCursorBlink={handleCursorBlinkChange}
             setScrollback={handleScrollbackChange}
@@ -204,13 +172,13 @@ export default function SettingsPanel() {
         {activeTab === "advanced" && (
           <AdvancedTab
             currentTheme={currentTheme}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            cursorStyle={cursorStyle}
-            cursorBlink={cursorBlink}
-            scrollback={scrollback}
-            bellStyle={bellStyle}
-            setTheme={setTheme}
+            fontSize={settings.fontSize}
+            fontFamily={settings.fontFamily}
+            cursorStyle={settings.cursorStyle}
+            cursorBlink={settings.cursorBlink}
+            scrollback={settings.scrollback}
+            bellStyle={settings.bellStyle}
+            setTheme={handleSetTheme}
             setFontSize={handleFontSizeChange}
             setFontFamily={handleFontFamilyChange}
             setCursorStyle={handleCursorStyleChange}
@@ -220,7 +188,6 @@ export default function SettingsPanel() {
           />
         )}
       </div>
-
     </div>
   );
 }

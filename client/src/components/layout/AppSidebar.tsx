@@ -60,7 +60,7 @@ export default function AppSidebar({
               navigate(item.path);
               if (isMobile) onClose();
             }}
-            className={`w-full justify-start px-3 py-2.5 rounded-lg text-sm font-medium ${isActive(item.path) ? "bg-primary-600/20 text-primary-400" : ""}`}
+            className={`w-full justify-start px-3 py-2.5 rounded-lg text-sm font-medium ${isActive(item.path) ? "bg-dark-800 text-primary-500" : ""}`}
           >
             <span className="flex items-center justify-center shrink-0 w-5 h-5">
               <item.icon className="w-5 h-5" />
