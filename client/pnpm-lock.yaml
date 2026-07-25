@@ -86,6 +86,9 @@ importers:
       react-hook-form:
         specifier: ^7.82.0
         version: 7.82.0(react@19.2.8)
+      react-material-icon-theme:
+        specifier: ^1.2.0
+        version: 1.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react-router:
         specifier: ^8.2.0
         version: 8.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1054,6 +1057,13 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17 || ^18 || ^19
 
+  react-material-icon-theme@1.2.0:
+    resolution: {integrity: sha512-nagDJHXw/nn+7K4HhasyH8yr3C3hJb6kBFHPnR5QIui4dySAHjTJP8u13rI42smS8PHQBhL+/TOZJfG4YYOGgw==}
+    engines: {node: '>=18.0.0', npm: '>=9.0.0'}
+    peerDependencies:
+      react: ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
+
   react-router@8.2.0:
     resolution: {integrity: sha512-uP1LgGNHyilL1u+ZkecQk74DJOKOb6q4NLNYLRJcD/fjoogftNb5/Rj/07o/QBFsY/5MbAKPm1peTCQuVPv9cQ==}
     engines: {node: '>=22.22.0'}
@@ -1952,6 +1962,11 @@ snapshots:
   react-hook-form@7.82.0(react@19.2.8):
     dependencies:
       react: 19.2.8
+
+  react-material-icon-theme@1.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+    dependencies:
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   react-router@8.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:

@@ -15,7 +15,7 @@ interface LocalFileBrowserListProps {
   renameValue: string;
   sortField: FileSortField;
   sortDirection: "asc" | "desc";
-  onSelect: (fileName: string, isMultiSelect: boolean) => void;
+  onSelect: (fileName: string, isMultiSelect: boolean, isRangeSelect: boolean) => void;
   onDoubleClick: (file: FileItem) => void;
   onContextMenu: (e: React.MouseEvent, file: FileItem) => void;
   onSortFieldChange: (field: FileSortField) => void;
@@ -46,7 +46,7 @@ export default function LocalFileBrowserList({
 }: LocalFileBrowserListProps) {
   if (viewMode === "list") {
     return (
-      <table className="w-full">
+      <table className="w-full border-separate border-spacing-y-1">
         <thead className="bg-dark-800 sticky top-0">
           <tr className="text-left text-dark-400 text-xs">
             <th className="p-2 w-8" />
@@ -101,16 +101,18 @@ export default function LocalFileBrowserList({
           {files.map((file) => (
             <tr
               key={file.path}
+              data-file-item
+              data-file-name={file.name}
               onDoubleClick={() => onDoubleClick(file)}
-              onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey)}
+              onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onSelect(file.name, e.ctrlKey || e.metaKey);
+                  onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey);
                 }
               }}
               onContextMenu={(e) => onContextMenu(e, file)}
-              className={`border-t border-dark-800 hover:bg-dark-800/50 cursor-pointer select-none ${selectedFiles.has(file.name) ? "bg-primary-600/15" : ""}`}
+              className={`hover:bg-dark-600 cursor-pointer select-none rounded ${selectedFiles.has(file.name) ? "bg-primary-600/25" : ""}`}
             >
               <td className="p-2">{getFileIcon(file)}</td>
               <td className="p-2 text-white text-sm">
@@ -157,11 +159,13 @@ export default function LocalFileBrowserList({
         <Button
           key={file.path}
           variant="secondary"
+          data-file-item
+          data-file-name={file.name}
           onKeyDown={accessibleClickHandler(() => onDoubleClick(file))}
           onDoubleClick={() => onDoubleClick(file)}
-          onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey)}
+          onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey)}
           onContextMenu={(e) => onContextMenu(e, file)}
-          className={`p-3 h-auto rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${selectedFiles.has(file.name) ? "bg-primary-600/15 border border-primary-500/50" : ""}`}
+          className={`p-3 h-auto rounded-lg cursor-pointer select-none flex flex-col items-center text-center transition-colors ${selectedFiles.has(file.name) ? "bg-primary-600/25 ring-1 ring-primary-500/50" : ""}`}
         >
           {getFileIcon(file)}
           <div className="text-white text-xs mt-2 truncate w-full">

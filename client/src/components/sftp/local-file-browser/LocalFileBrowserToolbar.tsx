@@ -1,5 +1,7 @@
 import {
   ArrowsClockwiseIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ArrowUpIcon,
   GridFourIcon,
   HouseIcon,
@@ -16,10 +18,14 @@ interface LocalFileBrowserToolbarProps {
   searchQuery: string;
   showHidden: boolean;
   viewMode: FileViewMode;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
   onPathInputChange: (value: string) => void;
   onPathInputKeyDown: (e: React.KeyboardEvent) => void;
   onPathInputBlur: () => void;
   onNavigateRoot: () => void;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
   onNavigateUp: () => void;
   onRefresh: () => void;
   onNewFolder: () => void;
@@ -30,8 +36,12 @@ interface LocalFileBrowserToolbarProps {
 
 export default function LocalFileBrowserToolbar({
   onNavigateRoot,
+  onNavigateBack,
+  onNavigateForward,
   onNavigateUp,
   onRefresh,
+  canNavigateBack,
+  canNavigateForward,
   pathInput,
   searchQuery,
   showHidden,
@@ -51,9 +61,27 @@ export default function LocalFileBrowserToolbar({
           variant="ghost"
           size="icon"
           onClick={onNavigateRoot}
-          title="Root"
+          title="Home"
         >
           <HouseIcon className="w-4 h-4 text-dark-300" weight="bold" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onNavigateBack}
+          disabled={!canNavigateBack}
+          title="Back"
+        >
+          <ArrowLeftIcon className="w-4 h-4 text-dark-300" weight="bold" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onNavigateForward}
+          disabled={!canNavigateForward}
+          title="Forward"
+        >
+          <ArrowRightIcon className="w-4 h-4 text-dark-300" weight="bold" />
         </Button>
         <Button variant="ghost" size="icon" onClick={onNavigateUp} title="Up">
           <ArrowUpIcon className="w-4 h-4 text-dark-300" weight="bold" />

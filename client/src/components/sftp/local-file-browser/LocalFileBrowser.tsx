@@ -51,8 +51,16 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     file?: FileItem;
   } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
+    null,
+  );
+  const [isMarqueeDragging, setIsMarqueeDragging] = useState(false);
+  const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
+  const [marqueeCurrent, setMarqueeCurrent] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [history, setHistory] = useState<string[]>([rootPath]);
+  const [historyIndex, setHistoryIndex] = useState(0);
 
   const loadDirectory = useCallback(async (path: string) => {
     setIsLoading(true);
@@ -84,11 +92,32 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     }
   }, [renamingPath]);
 
-  const navigateTo = useCallback((path: string) => {
-    setCurrentPath(path);
-    setSelectedFiles(new Set());
-    setSearchQuery("");
-  }, []);
+  const navigateTo = useCallback(
+    (path: string, skipHistory = false) => {
+      setCurrentPath(path);
+      setSelectedFiles(new Set());
+      setSearchQuery("");
+      if (!skipHistory) {
+        setHistory((prev) => [...prev.slice(0, historyIndex + 1), path]);
+        setHistoryIndex((prev) => prev + 1);
+      }
+    },
+    [historyIndex],
+  );
+
+  const navigateBack = useCallback(() => {
+    if (historyIndex <= 0) return;
+    const newIndex = historyIndex - 1;
+    setHistoryIndex(newIndex);
+    navigateTo(history[newIndex], true);
+  }, [history, historyIndex, navigateTo]);
+
+  const navigateForward = useCallback(() => {
+    if (historyIndex >= history.length - 1) return;
+    const newIndex = historyIndex + 1;
+    setHistoryIndex(newIndex);
+    navigateTo(history[newIndex], true);
+  }, [history, historyIndex, navigateTo]);
 
   const navigateUp = useCallback(() => {
     const sep = currentPath.includes("\\") ? "\\" : "/";
@@ -107,13 +136,33 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     if (file.type === "directory") navigateTo(file.path);
   };
 
-  const handleSelect = (fileName: string, isMultiSelect: boolean) => {
+  const handleSelect = (
+    fileName: string,
+    isMultiSelect: boolean,
+    isRangeSelect: boolean,
+  ) => {
+    if (isRangeSelect && lastSelectedIndex !== null) {
+      const clickedIndex = sortedFiles.findIndex((f) => f.name === fileName);
+      if (clickedIndex === -1) return;
+      const start = Math.min(lastSelectedIndex, clickedIndex);
+      const end = Math.max(lastSelectedIndex, clickedIndex);
+      const rangeNames = sortedFiles
+        .slice(start, end + 1)
+        .map((f) => f.name);
+      setSelectedFiles((prev) => {
+        const newSet = new Set(prev);
+        for (const name of rangeNames) newSet.add(name);
+        return newSet;
+      });
+      return;
+    }
     setSelectedFiles((prev) => {
       const newSet = new Set(isMultiSelect ? prev : []);
       if (newSet.has(fileName)) newSet.delete(fileName);
       else newSet.add(fileName);
       return newSet;
     });
+    setLastSelectedIndex(sortedFiles.findIndex((f) => f.name === fileName));
   };
 
   const handleNewFolder = async () => {
@@ -188,6 +237,70 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     }
   }, []);
 
+  const handleMarqueeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      if (
+        !(e.target as HTMLElement).closest("[data-file-item]") &&
+        !(e.target as HTMLElement).closest("[data-marquee]")
+      ) {
+        setIsMarqueeDragging(true);
+        setMarqueeStart({ x: e.clientX, y: e.clientY });
+        setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          setSelectedFiles(new Set());
+          setLastSelectedIndex(null);
+        }
+      }
+    },
+    [],
+  );
+
+  const handleMarqueeMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isMarqueeDragging) return;
+      setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+    },
+    [isMarqueeDragging],
+  );
+
+  const handleMarqueeMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isMarqueeDragging || !marqueeStart || !marqueeCurrent) return;
+      setIsMarqueeDragging(false);
+
+      const minX = Math.min(marqueeStart.x, e.clientX);
+      const maxX = Math.max(marqueeStart.x, e.clientX);
+      const minY = Math.min(marqueeStart.y, e.clientY);
+      const maxY = Math.max(marqueeStart.y, e.clientY);
+
+      if (maxX - minX < 3 && maxY - minY < 3) {
+        setMarqueeStart(null);
+        setMarqueeCurrent(null);
+        return;
+      }
+
+      const items = containerRef.current?.querySelectorAll("[data-file-item]");
+      const newSelected = new Set(e.ctrlKey || e.metaKey ? selectedFiles : []);
+      items?.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const overlaps =
+          rect.left < maxX &&
+          rect.right > minX &&
+          rect.top < maxY &&
+          rect.bottom > minY;
+        if (overlaps) {
+          const name = item.getAttribute("data-file-name");
+          if (name) newSelected.add(name);
+        }
+      });
+      setSelectedFiles(newSelected);
+      setMarqueeStart(null);
+      setMarqueeCurrent(null);
+    },
+    [isMarqueeDragging, marqueeStart, marqueeCurrent, selectedFiles],
+  );
+
   const handleRefresh = useCallback(
     () => loadDirectory(currentPath),
     [currentPath, loadDirectory],
@@ -227,7 +340,6 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   };
 
   const handleBackgroundContextMenu = (e: React.MouseEvent) => {
-    if (e.target !== e.currentTarget) return;
     e.preventDefault();
     setSelectedFiles(new Set());
     setContextMenu({ x: e.clientX, y: e.clientY });
@@ -421,6 +533,9 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onContextMenu={handleBackgroundContextMenu}
+      onMouseDown={handleMarqueeMouseDown}
+      onMouseMove={handleMarqueeMouseMove}
+      onMouseUp={handleMarqueeMouseUp}
     >
       {isDragOver && (
         <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center pointer-events-none">
@@ -441,6 +556,10 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
         onPathInputKeyDown={handlePathKeyDown}
         onPathInputBlur={() => setPathInput(currentPath)}
         onNavigateRoot={() => navigateTo(rootPath)}
+        onNavigateBack={navigateBack}
+        onNavigateForward={navigateForward}
+        canNavigateBack={historyIndex > 0}
+        canNavigateForward={historyIndex < history.length - 1}
         onNavigateUp={navigateUp}
         onRefresh={() => loadDirectory(currentPath)}
         onNewFolder={handleNewFolder}
@@ -514,6 +633,19 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
         totalCount={sortedFiles.length}
         selectedCount={selectedFiles.size}
       />
+
+      {isMarqueeDragging && marqueeStart && marqueeCurrent && (
+        <div
+          data-marquee
+          className="fixed z-50 border border-primary-500 bg-primary-500/10 pointer-events-none"
+          style={{
+            left: Math.min(marqueeStart.x, marqueeCurrent.x),
+            top: Math.min(marqueeStart.y, marqueeCurrent.y),
+            width: Math.abs(marqueeCurrent.x - marqueeStart.x),
+            height: Math.abs(marqueeCurrent.y - marqueeStart.y),
+          }}
+        />
+      )}
 
       {contextMenu && (
         <ContextMenu
