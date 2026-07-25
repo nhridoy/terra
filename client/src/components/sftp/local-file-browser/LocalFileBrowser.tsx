@@ -1,9 +1,15 @@
+import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
 import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
+import {
+  joinPath,
+  LocalFileProvider,
+  transferFiles,
+} from "../../../lib/fileTransfer";
 import {
   copyLocalFile,
   createLocalDir,
@@ -12,6 +18,7 @@ import {
   moveLocalFile,
   removeLocalFile,
   renameLocalFile,
+  writeLocalFileBytes,
 } from "../../../lib/localFs";
 import type {
   FileItem,
@@ -19,19 +26,32 @@ import type {
   FileSortField,
   FileViewMode,
 } from "../../../lib/sftpTypes";
+import {
+  showTransferError,
+  showTransferProgress,
+  showTransferStart,
+  showTransferSuccess,
+} from "../../../lib/transferToast";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
+import PasteConflictDialog from "../file-browser/PasteConflictDialog";
 import LocalFileBrowserList from "./LocalFileBrowserList";
 import LocalFileBrowserStatusBar from "./LocalFileBrowserStatusBar";
 import LocalFileBrowserToolbar from "./LocalFileBrowserToolbar";
 import { useLocalKeyboard } from "./useLocalKeyboard";
 
 interface LocalFileBrowserProps {
+  paneId: string;
   rootPath: string;
 }
 
-export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
+const localProvider = new LocalFileProvider("local");
+
+export default function LocalFileBrowser({
+  paneId,
+  rootPath,
+}: LocalFileBrowserProps) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState(rootPath);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,16 +71,36 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     file?: FileItem;
   } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
     null,
   );
   const [isMarqueeDragging, setIsMarqueeDragging] = useState(false);
-  const [marqueeStart, setMarqueeStart] = useState<{ x: number; y: number } | null>(null);
-  const [marqueeCurrent, setMarqueeCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [marqueeStart, setMarqueeStart] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [marqueeCurrent, setMarqueeCurrent] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<string[]>([rootPath]);
   const [historyIndex, setHistoryIndex] = useState(0);
+
+  const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
+  const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop);
+  const fileDragState = useSftpStore((s) => s.fileDragState);
+
+  const [pasteConflicts, setPasteConflicts] = useState<
+    { srcPath: string; dstPath: string; dstName: string }[] | null
+  >(null);
+  const [pendingDrop, setPendingDrop] = useState<{
+    files: FileItem[];
+    destDirPath: string;
+    mode: "move" | "copy";
+  } | null>(null);
 
   const loadDirectory = useCallback(async (path: string) => {
     setIsLoading(true);
@@ -146,9 +186,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       if (clickedIndex === -1) return;
       const start = Math.min(lastSelectedIndex, clickedIndex);
       const end = Math.max(lastSelectedIndex, clickedIndex);
-      const rangeNames = sortedFiles
-        .slice(start, end + 1)
-        .map((f) => f.name);
+      const rangeNames = sortedFiles.slice(start, end + 1).map((f) => f.name);
       setSelectedFiles((prev) => {
         const newSet = new Set(prev);
         for (const name of rangeNames) newSet.add(name);
@@ -214,47 +252,278 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     }
   };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  // Desktop file drop (native HTML DnD)
+  const handleDesktopDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragOver(true);
+    }
   }, []);
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDesktopDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.currentTarget === containerRef.current) setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      toast.info(
-        "Drag-and-drop from desktop to local filesystem is not yet supported",
-      );
-    }
-  }, []);
+  const handleDesktopDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
 
-  const handleMarqueeMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button !== 0) return;
-      if (
-        !(e.target as HTMLElement).closest("[data-file-item]") &&
-        !(e.target as HTMLElement).closest("[data-marquee]")
-      ) {
-        setIsMarqueeDragging(true);
-        setMarqueeStart({ x: e.clientX, y: e.clientY });
-        setMarqueeCurrent({ x: e.clientX, y: e.clientY });
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-          setSelectedFiles(new Set());
-          setLastSelectedIndex(null);
+      const droppedFiles = e.dataTransfer.files;
+      if (droppedFiles.length === 0) return;
+
+      const fileItems: FileItem[] = [];
+      for (let i = 0; i < droppedFiles.length; i++) {
+        const f = droppedFiles[i];
+        fileItems.push({
+          name: f.name,
+          path: f.name,
+          type: "file",
+          size: f.size,
+          permissions: "",
+          owner: "",
+          group: "",
+          modifiedAt: new Date(f.lastModified).toISOString(),
+          isHidden: f.name.startsWith("."),
+        });
+      }
+
+      const toastId = showTransferStart(fileItems, "copy");
+
+      let totalLoaded = 0;
+      const totalSize = fileItems.reduce((s, f) => s + f.size, 0);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < droppedFiles.length; i++) {
+        const f = droppedFiles[i];
+        const destPath = joinPath(currentPath, f.name);
+        try {
+          const arrayBuffer = await f.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          await writeLocalFileBytes(destPath, bytes);
+          totalLoaded += f.size;
+          showTransferProgress(
+            toastId,
+            fileItems,
+            totalLoaded,
+            totalSize,
+            "copy",
+          );
+          successCount++;
+        } catch (_err) {
+          failCount++;
         }
       }
+
+      if (failCount === 0) {
+        showTransferSuccess(toastId, fileItems, "copy");
+      } else if (successCount === 0) {
+        showTransferError(toastId, fileItems, "copy", "All files failed");
+      } else {
+        showTransferSuccess(toastId, fileItems, "copy");
+      }
+
+      loadDirectory(currentPath);
     },
-    [],
+    [currentPath, loadDirectory],
   );
+
+  // @dnd-kit: register this container as a droppable zone
+  const droppable = useDroppable({
+    id: `file-drop-${paneId}`,
+    data: { type: "file-drop", paneId, hostId: "local", path: currentPath },
+  });
+
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      droppable.ref(node);
+    },
+    [droppable.ref],
+  );
+
+  // @dnd-kit: monitor drag events for in-app file drops
+  useDragDropMonitor({
+    onDragOver(event) {
+      const source = event.operation.source;
+      const target = event.operation.target;
+      if (
+        source?.data?.type === "file-drag" &&
+        target?.data?.type === "file-drop"
+      ) {
+        const sourceHostId = source.data.hostId as string;
+        const destHostId = target.data.hostId as string;
+        const files = source.data.files as FileItem[];
+        const destDirPath = target.data.path as string;
+        const sep = destDirPath.includes("\\") ? "\\" : "/";
+        const srcDir =
+          files[0]?.path.split(/[/\\]/).slice(0, -1).join(sep) || sep;
+        const isNoop = sourceHostId === destHostId && srcDir === destDirPath;
+        setIsDropTarget(!isNoop && destDirPath === currentPath);
+      } else {
+        setIsDropTarget(false);
+      }
+    },
+    onDragEnd() {
+      setIsDropTarget(false);
+    },
+  });
+
+  // Execute a transfer with progress toasts
+  const executeTransfer = useCallback(
+    async (
+      dragFiles: FileItem[],
+      destDirPath: string,
+      mode: "move" | "copy",
+      overrides?: Map<
+        string,
+        { action: "replace" | "rename" | "auto" | "skip"; newName?: string }
+      >,
+    ) => {
+      const toastId = showTransferStart(dragFiles, mode);
+      const totalSize = dragFiles.reduce((s, f) => s + f.size, 0);
+      let loaded = 0;
+
+      const results = await transferFiles({
+        source: localProvider,
+        dest: localProvider,
+        files: dragFiles,
+        destPath: destDirPath,
+        mode,
+        overrides,
+        onFileProgress: (_file, _index, fileLoaded) => {
+          loaded += fileLoaded;
+          showTransferProgress(toastId, dragFiles, loaded, totalSize, mode);
+        },
+      });
+
+      const errors = results.filter((r) => r.error);
+      if (errors.length === 0) {
+        showTransferSuccess(toastId, dragFiles, mode);
+      } else if (errors.length === dragFiles.length) {
+        showTransferError(
+          toastId,
+          dragFiles,
+          mode,
+          errors[0].error || "Unknown error",
+        );
+      } else {
+        showTransferSuccess(toastId, dragFiles, mode);
+      }
+
+      loadDirectory(currentPath);
+    },
+    [currentPath, loadDirectory],
+  );
+
+  // Handle pending file drops from SftpLayout
+  useEffect(() => {
+    if (!pendingFileDrop) return;
+    if (pendingFileDrop.destPaneId !== paneId) return;
+
+    const {
+      files: dragFiles,
+      sourceHostId,
+      destHostId,
+      destDirPath,
+      sourcePaneId,
+    } = pendingFileDrop;
+
+    if (!dragFiles || !destDirPath) {
+      setPendingFileDrop(null);
+      return;
+    }
+
+    const isLocalToLocal = sourceHostId === "local" && destHostId === "local";
+    if (!isLocalToLocal) {
+      toast.error("Cross-provider transfer not yet supported");
+      setPendingFileDrop(null);
+      return;
+    }
+
+    const isSamePane = sourcePaneId === paneId;
+    const isSameDir =
+      dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join("/") === destDirPath;
+
+    if (isSamePane && isSameDir) {
+      setPendingFileDrop(null);
+      return;
+    }
+
+    const mode = isSamePane ? "move" : "copy";
+
+    // Check for conflicts before transferring
+    (async () => {
+      let destFiles: FileItem[];
+      try {
+        destFiles = await listLocalFiles(destDirPath);
+      } catch {
+        destFiles = [];
+      }
+      const destNames = new Set(destFiles.map((f) => f.name));
+      const conflicts = dragFiles.filter((f) => destNames.has(f.name));
+
+      if (conflicts.length > 0) {
+        setPasteConflicts(
+          conflicts.map((f) => ({
+            srcPath: f.path,
+            dstPath: joinPath(destDirPath, f.name),
+            dstName: f.name,
+          })),
+        );
+        setPendingDrop({ files: dragFiles, destDirPath, mode });
+      } else {
+        await executeTransfer(dragFiles, destDirPath, mode);
+      }
+    })();
+
+    setPendingFileDrop(null);
+  }, [pendingFileDrop, paneId, executeTransfer, setPendingFileDrop]);
+
+  // Called when user resolves conflict dialog
+  const handleConflictConfirm = useCallback(
+    async (
+      overrides: Map<
+        string,
+        { action: "replace" | "rename" | "auto" | "skip"; newName?: string }
+      >,
+    ) => {
+      if (!pendingDrop) return;
+      const { files: dragFiles, destDirPath, mode } = pendingDrop;
+      setPasteConflicts(null);
+      setPendingDrop(null);
+      await executeTransfer(dragFiles, destDirPath, mode, overrides);
+    },
+    [pendingDrop, executeTransfer],
+  );
+
+  // Called when user cancels conflict dialog
+  const handleConflictCancel = useCallback(() => {
+    setPasteConflicts(null);
+    setPendingDrop(null);
+  }, []);
+
+  const handleMarqueeMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (
+      !(e.target as HTMLElement).closest("[data-file-item]") &&
+      !(e.target as HTMLElement).closest("[data-marquee]")
+    ) {
+      setIsMarqueeDragging(true);
+      setMarqueeStart({ x: e.clientX, y: e.clientY });
+      setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        setSelectedFiles(new Set());
+        setLastSelectedIndex(null);
+      }
+    }
+  }, []);
 
   const handleMarqueeMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -348,8 +617,8 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   const getSelectedPaths = useCallback(() => {
     return [...selectedFiles]
       .map((name) => files.find((f) => f.name === name))
-      .filter(Boolean)
-      .map((f) => f!.path);
+      .filter((f): f is FileItem => !!f)
+      .map((f) => f.path);
   }, [selectedFiles, files]);
 
   const handleCopy = useCallback(() => {
@@ -374,19 +643,24 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       return;
     }
     let pasted = 0;
-    let failed = 0;
     for (const srcPath of clipboard.paths) {
       const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
-      const destPath = currentPath.endsWith("\\") || currentPath.endsWith("/")
-        ? `${currentPath}${fileName}`
-        : `${currentPath}\\${fileName}`;
+      const destPath =
+        currentPath.endsWith("\\") || currentPath.endsWith("/")
+          ? `${currentPath}${fileName}`
+          : `${currentPath}\\${fileName}`;
       try {
         if (clipboardMode === "copy") {
           if (srcPath === destPath) {
-            const dir = destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
+            const dir =
+              destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
               destPath.substring(0, destPath.lastIndexOf("/") + 1);
-            const ext = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
-            const base = ext ? fileName.substring(0, fileName.length - ext.length) : fileName;
+            const ext = fileName.includes(".")
+              ? fileName.substring(fileName.lastIndexOf("."))
+              : "";
+            const base = ext
+              ? fileName.substring(0, fileName.length - ext.length)
+              : fileName;
             await copyLocalFile(srcPath, `${dir}${base} (copy)${ext}`);
           } else {
             await copyLocalFile(srcPath, destPath);
@@ -396,12 +670,13 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
         }
         pasted++;
       } catch (err) {
-        failed++;
         toast.error(extractError(err, `Failed to paste ${fileName}`));
       }
     }
     if (pasted > 0) {
-      toast.success(`${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`);
+      toast.success(
+        `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
+      );
       loadDirectory(currentPath);
     }
     if (clipboardMode === "cut") {
@@ -427,8 +702,9 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
           {
             label: "Open",
             onClick: async () => {
+              if (!contextMenu.file) return;
               try {
-                await openPath(contextMenu.file!.path);
+                await openPath(contextMenu.file.path);
               } catch (err) {
                 toast.error(extractError(err, "Failed to open file"));
               }
@@ -437,12 +713,11 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
           {
             label: "Show in Explorer",
             onClick: async () => {
+              if (!contextMenu.file) return;
               try {
-                await revealItemInDir(contextMenu.file!.path);
+                await revealItemInDir(contextMenu.file.path);
               } catch (err) {
-                toast.error(
-                  extractError(err, "Failed to reveal in Explorer"),
-                );
+                toast.error(extractError(err, "Failed to reveal in Explorer"));
               }
             },
           },
@@ -468,14 +743,18 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
           {
             label: "Rename",
             shortcut: "F2",
-            onClick: () => startRename(contextMenu.file!),
+            onClick: () => {
+              if (contextMenu.file) startRename(contextMenu.file);
+            },
           },
           { type: "separator" as const },
           {
             label: "Delete",
             danger: true,
             shortcut: "Del",
-            onClick: () => handleDelete(contextMenu.file!),
+            onClick: () => {
+              if (contextMenu.file) handleDelete(contextMenu.file);
+            },
           },
         ]
       : [
@@ -524,23 +803,33 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: main file browser container with drag-and-drop
     <div
-      ref={containerRef}
+      ref={setContainerRef}
       className="h-full flex flex-col bg-dark-900 relative"
       role="button"
       tabIndex={0}
       onKeyDown={() => {}}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragOver={handleDesktopDragOver}
+      onDragLeave={handleDesktopDragLeave}
+      onDrop={handleDesktopDrop}
       onContextMenu={handleBackgroundContextMenu}
       onMouseDown={handleMarqueeMouseDown}
       onMouseMove={handleMarqueeMouseMove}
       onMouseUp={handleMarqueeMouseUp}
     >
-      {isDragOver && (
+      {isDragOver && !fileDragState?.isDragging && (
         <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center pointer-events-none">
           <p className="text-primary-300 text-lg font-medium">
-            Drop files here
+            Drop files to import
+          </p>
+        </div>
+      )}
+
+      {isDropTarget && fileDragState?.isDragging && (
+        <div className="absolute inset-0 z-50 bg-green-600/20 border-2 border-dashed border-green-500 rounded-lg flex items-center justify-center pointer-events-none">
+          <p className="text-green-300 text-lg font-medium">
+            {fileDragState.sourceHostId === "local"
+              ? "Drop to move"
+              : "Drop to copy"}
           </p>
         </div>
       )}
@@ -612,6 +901,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
             files={sortedFiles}
             viewMode={viewMode}
             selectedFiles={selectedFiles}
+            paneId={paneId}
             renamingPath={renamingPath}
             renameValue={renameValue}
             sortField={sortField}
@@ -653,6 +943,14 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {pasteConflicts && (
+        <PasteConflictDialog
+          conflicts={pasteConflicts}
+          onConfirm={handleConflictConfirm}
+          onCancel={handleConflictCancel}
         />
       )}
     </div>

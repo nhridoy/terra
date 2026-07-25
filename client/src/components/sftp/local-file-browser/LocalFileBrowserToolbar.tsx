@@ -1,7 +1,7 @@
 import {
-  ArrowsClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowsClockwiseIcon,
   ArrowUpIcon,
   GridFourIcon,
   HouseIcon,

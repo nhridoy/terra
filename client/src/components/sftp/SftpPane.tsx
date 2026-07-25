@@ -89,7 +89,7 @@ export default function SftpPane({
             onFileSelect={() => {}}
           />
         ) : pane.connectionType === "local" ? (
-          <LocalFileBrowser rootPath={pane.localPath || "/"} />
+          <LocalFileBrowser paneId={pane.id} rootPath={pane.localPath || "/"} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
