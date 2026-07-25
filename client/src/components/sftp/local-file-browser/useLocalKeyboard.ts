@@ -8,6 +8,9 @@ interface UseLocalKeyboardOptions {
   onNavigateUp: () => void;
   onRefresh: () => void;
   onClearSelection: () => void;
+  onCopy: () => void;
+  onCut: () => void;
+  onPaste: () => void;
 }
 
 export function useLocalKeyboard({
@@ -17,12 +20,27 @@ export function useLocalKeyboard({
   onNavigateUp,
   onRefresh,
   onClearSelection,
+  onCopy,
+  onCut,
+  onPaste,
 }: UseLocalKeyboardOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
-      if (e.key === "F2" && selectedFiles.size === 1) {
+
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (ctrl && e.key === "c") {
+        e.preventDefault();
+        onCopy();
+      } else if (ctrl && e.key === "x") {
+        e.preventDefault();
+        onCut();
+      } else if (ctrl && e.key === "v") {
+        e.preventDefault();
+        onPaste();
+      } else if (e.key === "F2" && selectedFiles.size === 1) {
         e.preventDefault();
         const name = [...selectedFiles][0];
         const file = files.find((f) => f.name === name);
@@ -46,5 +64,8 @@ export function useLocalKeyboard({
     onNavigateUp,
     onRefresh,
     onClearSelection,
+    onCopy,
+    onCut,
+    onPaste,
   ]);
 }

@@ -5,9 +5,11 @@ import { toast } from "sonner";
 import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
 import {
+  copyLocalFile,
   createLocalDir,
   isTauriAvailable,
   listLocalFiles,
+  moveLocalFile,
   removeLocalFile,
   renameLocalFile,
 } from "../../../lib/localFs";
@@ -17,6 +19,7 @@ import type {
   FileSortField,
   FileViewMode,
 } from "../../../lib/sftpTypes";
+import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import LocalFileBrowserList from "./LocalFileBrowserList";
@@ -194,15 +197,6 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     [],
   );
 
-  useLocalKeyboard({
-    selectedFiles,
-    files,
-    onRename: startRename,
-    onNavigateUp: navigateUp,
-    onRefresh: handleRefresh,
-    onClearSelection: handleClearSelection,
-  });
-
   const sortedFiles = useMemo(() => {
     return [...files]
       .filter(
@@ -232,6 +226,82 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     setContextMenu({ x: e.clientX, y: e.clientY, file });
   };
 
+  const getSelectedPaths = useCallback(() => {
+    return [...selectedFiles]
+      .map((name) => files.find((f) => f.name === name))
+      .filter(Boolean)
+      .map((f) => f!.path);
+  }, [selectedFiles, files]);
+
+  const handleCopy = useCallback(() => {
+    const paths = getSelectedPaths();
+    if (paths.length === 0) return;
+    useSftpStore.getState().setClipboard("local", paths, "copy");
+    toast.success(`Copied ${paths.length} item${paths.length > 1 ? "s" : ""}`);
+  }, [getSelectedPaths]);
+
+  const handleCut = useCallback(() => {
+    const paths = getSelectedPaths();
+    if (paths.length === 0) return;
+    useSftpStore.getState().setClipboard("local", paths, "cut");
+    toast.success(`Cut ${paths.length} item${paths.length > 1 ? "s" : ""}`);
+  }, [getSelectedPaths]);
+
+  const handlePaste = useCallback(async () => {
+    const { clipboard, clipboardMode } = useSftpStore.getState();
+    if (!clipboard || !clipboardMode) return;
+    if (clipboard.hostId !== "local") {
+      toast.error("Cannot paste remote files to local filesystem");
+      return;
+    }
+    let pasted = 0;
+    let failed = 0;
+    for (const srcPath of clipboard.paths) {
+      const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
+      const destPath = currentPath.endsWith("\\") || currentPath.endsWith("/")
+        ? `${currentPath}${fileName}`
+        : `${currentPath}\\${fileName}`;
+      try {
+        if (clipboardMode === "copy") {
+          if (srcPath === destPath) {
+            const dir = destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
+              destPath.substring(0, destPath.lastIndexOf("/") + 1);
+            const ext = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
+            const base = ext ? fileName.substring(0, fileName.length - ext.length) : fileName;
+            await copyLocalFile(srcPath, `${dir}${base} (copy)${ext}`);
+          } else {
+            await copyLocalFile(srcPath, destPath);
+          }
+        } else {
+          await moveLocalFile(srcPath, destPath);
+        }
+        pasted++;
+      } catch (err) {
+        failed++;
+        toast.error(extractError(err, `Failed to paste ${fileName}`));
+      }
+    }
+    if (pasted > 0) {
+      toast.success(`${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`);
+      loadDirectory(currentPath);
+    }
+    if (clipboardMode === "cut") {
+      useSftpStore.getState().clearClipboard();
+    }
+  }, [currentPath, loadDirectory]);
+
+  useLocalKeyboard({
+    selectedFiles,
+    files,
+    onRename: startRename,
+    onNavigateUp: navigateUp,
+    onRefresh: handleRefresh,
+    onClearSelection: handleClearSelection,
+    onCopy: handleCopy,
+    onCut: handleCut,
+    onPaste: handlePaste,
+  });
+
   const contextMenuItems: ContextMenuItem[] = contextMenu
     ? [
         {
@@ -256,13 +326,33 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
         },
         { type: "separator" as const },
         {
+          label: "Copy",
+          shortcut: "Ctrl+C",
+          onClick: handleCopy,
+        },
+        {
+          label: "Cut",
+          shortcut: "Ctrl+X",
+          onClick: handleCut,
+        },
+        { type: "separator" as const },
+        {
+          label: "Paste",
+          shortcut: "Ctrl+V",
+          disabled: !useSftpStore.getState().clipboard,
+          onClick: handlePaste,
+        },
+        { type: "separator" as const },
+        {
           label: "Rename",
+          shortcut: "F2",
           onClick: () => startRename(contextMenu.file),
         },
         { type: "separator" as const },
         {
           label: "Delete",
           danger: true,
+          shortcut: "Del",
           onClick: () => handleDelete(contextMenu.file),
         },
       ]

@@ -1,5 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
+  copyFile as fsCopyFile,
   exists,
   mkdir,
   readDir,
@@ -85,6 +86,20 @@ export async function renameLocalFile(
   newPath: string,
 ): Promise<void> {
   await rename(oldPath, newPath);
+}
+
+export async function copyLocalFile(
+  source: string,
+  destination: string,
+): Promise<void> {
+  await fsCopyFile(source, destination);
+}
+
+export async function moveLocalFile(
+  source: string,
+  destination: string,
+): Promise<void> {
+  await rename(source, destination);
 }
 
 export async function localFileExists(filePath: string): Promise<boolean> {
