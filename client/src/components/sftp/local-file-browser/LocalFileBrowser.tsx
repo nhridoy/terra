@@ -211,7 +211,22 @@ export default function LocalFileBrowser({
     try {
       await createLocalDir(currentPath + sep + name);
       toast.success(`Created folder ${name}`);
-      loadDirectory(currentPath);
+      setFiles((prev) => [
+        ...prev,
+        {
+          name,
+          path: currentPath.endsWith("/")
+            ? `${currentPath}${name}`
+            : `${currentPath}/${name}`,
+          type: "directory",
+          size: 0,
+          permissions: "",
+          owner: "",
+          group: "",
+          modifiedAt: new Date().toISOString(),
+          isHidden: name.startsWith("."),
+        },
+      ]);
     } catch (err: unknown) {
       toast.error(`Failed to create folder: ${extractError(err)}`);
     }
@@ -222,7 +237,7 @@ export default function LocalFileBrowser({
     try {
       await removeLocalFile(file.path);
       toast.success(`Deleted ${file.name}`);
-      loadDirectory(currentPath);
+      setFiles((prev) => prev.filter((f) => f.path !== file.path));
     } catch (err: unknown) {
       toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
     }
@@ -238,9 +253,11 @@ export default function LocalFileBrowser({
       return;
     let deleted = 0;
     let failed = 0;
+    const deletedPaths = new Set<string>();
     for (const file of selected) {
       try {
         await removeLocalFile(file.path);
+        deletedPaths.add(file.path);
         deleted++;
       } catch {
         failed++;
@@ -248,12 +265,12 @@ export default function LocalFileBrowser({
     }
     if (deleted > 0) {
       toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
-      loadDirectory(currentPath);
+      setFiles((prev) => prev.filter((f) => !deletedPaths.has(f.path)));
     }
     if (failed > 0) {
       toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
     }
-  }, [selectedFiles, files, currentPath, loadDirectory]);
+  }, [selectedFiles, files]);
 
   const startRename = useCallback((file: FileItem) => {
     setRenamingPath(file.path);
@@ -267,12 +284,18 @@ export default function LocalFileBrowser({
       setRenamingPath(null);
       return;
     }
-    const sep = currentPath.includes("\\") ? "\\" : "/";
-    const newPath = currentPath + sep + renameValue.trim();
     try {
+      const sep = currentPath.includes("\\") ? "\\" : "/";
+      const newPath = currentPath + sep + renameValue.trim();
       await renameLocalFile(file.path, newPath);
       toast.success(`Renamed to ${renameValue.trim()}`);
-      loadDirectory(currentPath);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.path === renamingPath
+            ? { ...f, name: renameValue.trim(), path: newPath }
+            : f,
+        ),
+      );
     } catch (err: unknown) {
       toast.error(`Failed to rename: ${extractError(err)}`);
     } finally {
@@ -450,9 +473,33 @@ export default function LocalFileBrowser({
         showTransferSuccess(toastId, dragFiles, mode);
       }
 
-      loadDirectory(currentPath);
+      // Optimistic UI update
+      const isDestCurrentDir = destDirPath === currentPath;
+      const isSourceCurrentDir = dragFiles.some(
+        (f) => f.path.split(/[/\\]/).slice(0, -1).join("/") === currentPath,
+      );
+
+      setFiles((prev) => {
+        let next = prev;
+        // Remove moved source files from current view
+        if (mode === "move" && isSourceCurrentDir) {
+          const movedPaths = new Set(results.map((r) => r.file.path));
+          next = next.filter((f) => !movedPaths.has(f.path));
+        }
+        // Add copied files to current view if dest is current dir
+        if (mode === "copy" && isDestCurrentDir) {
+          const added = results
+            .filter((r) => r.action !== "skipped")
+            .map((r) => ({
+              ...r.file,
+              path: joinPath(destDirPath, r.file.name),
+            }));
+          next = [...next, ...added];
+        }
+        return next;
+      });
     },
-    [currentPath, loadDirectory],
+    [currentPath],
   );
 
   // Handle pending file drops from SftpLayout
@@ -721,6 +768,7 @@ export default function LocalFileBrowser({
       return;
     }
     let pasted = 0;
+    const copiedPaths = new Set<string>();
     for (const srcPath of clipboard.paths) {
       const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
       const destPath =
@@ -743,6 +791,7 @@ export default function LocalFileBrowser({
           } else {
             await copyLocalFile(srcPath, destPath);
           }
+          copiedPaths.add(srcPath);
         } else {
           await moveLocalFile(srcPath, destPath);
         }
@@ -755,12 +804,20 @@ export default function LocalFileBrowser({
       toast.success(
         `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
       );
-      loadDirectory(currentPath);
+      // Optimistic UI update
+      setFiles((prev) => {
+        let next = prev;
+        if (clipboardMode === "cut") {
+          const movedPaths = new Set(copiedPaths);
+          next = next.filter((f) => !movedPaths.has(f.path));
+        }
+        return next;
+      });
     }
     if (clipboardMode === "cut") {
       useSftpStore.getState().clearClipboard();
     }
-  }, [currentPath, loadDirectory]);
+  }, [currentPath]);
 
   useLocalKeyboard({
     selectedFiles,
