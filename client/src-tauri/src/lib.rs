@@ -259,6 +259,35 @@ fn detect_shells() -> Vec<ShellInfo> {
     detect_shells_platform()
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn is_same_volume(path1: String, path2: String) -> Result<bool, String> {
+    // Canonicalize both paths, then compare their root (e.g. "C:\")
+    let canon1 = std::fs::canonicalize(&path1).map_err(|e| e.to_string())?;
+    let canon2 = std::fs::canonicalize(&path2).map_err(|e| e.to_string())?;
+
+    // Get the root directory of each path (e.g. C:\ or \\server\share)
+    let root1 = canon1.ancestors().last().unwrap_or(&canon1);
+    let root2 = canon2.ancestors().last().unwrap_or(&canon2);
+
+    Ok(root1 == root2)
+}
+
+#[cfg(unix)]
+#[tauri::command]
+fn is_same_volume(path1: String, path2: String) -> Result<bool, String> {
+    use std::os::unix::fs::MetadataExt;
+    let meta1 = std::fs::metadata(&path1).map_err(|e| e.to_string())?;
+    let meta2 = std::fs::metadata(&path2).map_err(|e| e.to_string())?;
+    Ok(meta1.dev() == meta2.dev())
+}
+
+#[cfg(not(any(target_os = "windows", unix)))]
+#[tauri::command]
+fn is_same_volume(_path1: String, _path2: String) -> Result<bool, String> {
+    Ok(false)
+}
+
 fn get_or_create_device_id() -> String {
     let dirs = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let path = dirs.join("termvault").join("device_id");
@@ -302,6 +331,7 @@ pub fn run() {
             get_api_url,
             write_file,
             detect_shells,
+            is_same_volume,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

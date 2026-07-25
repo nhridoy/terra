@@ -13,6 +13,7 @@ import {
 import {
   copyLocalFile,
   createLocalDir,
+  isSameVolume,
   isTauriAvailable,
   listLocalFiles,
   moveLocalFile,
@@ -227,6 +228,33 @@ export default function LocalFileBrowser({
     }
   };
 
+  const handleDeleteSelected = useCallback(async () => {
+    const selected = [...selectedFiles]
+      .map((name) => files.find((f) => f.name === name))
+      .filter((f): f is FileItem => !!f);
+    if (selected.length === 0) return;
+    const count = selected.length;
+    if (!(await confirmDelete(`Delete ${count} item${count > 1 ? "s" : ""}?`)))
+      return;
+    let deleted = 0;
+    let failed = 0;
+    for (const file of selected) {
+      try {
+        await removeLocalFile(file.path);
+        deleted++;
+      } catch {
+        failed++;
+      }
+    }
+    if (deleted > 0) {
+      toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
+      loadDirectory(currentPath);
+    }
+    if (failed > 0) {
+      toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
+    }
+  }, [selectedFiles, files, currentPath, loadDirectory]);
+
   const startRename = useCallback((file: FileItem) => {
     setRenamingPath(file.path);
     setRenameValue(file.name);
@@ -361,10 +389,15 @@ export default function LocalFileBrowser({
         const destHostId = target.data.hostId as string;
         const files = source.data.files as FileItem[];
         const destDirPath = target.data.path as string;
-        const sep = destDirPath.includes("\\") ? "\\" : "/";
+        const normalize = (p: string) => p.replace(/\\/g, "/");
         const srcDir =
-          files[0]?.path.split(/[/\\]/).slice(0, -1).join(sep) || sep;
-        const isNoop = sourceHostId === destHostId && srcDir === destDirPath;
+          normalize(files[0]?.path ?? "")
+            .split("/")
+            .slice(0, -1)
+            .join("/") || "/";
+        const isNoop =
+          sourceHostId === destHostId &&
+          normalize(srcDir) === normalize(destDirPath);
         setIsDropTarget(!isNoop && destDirPath === currentPath);
       } else {
         setIsDropTarget(false);
@@ -448,18 +481,30 @@ export default function LocalFileBrowser({
     }
 
     const isSamePane = sourcePaneId === paneId;
+    const sep = destDirPath.includes("\\") ? "\\" : "/";
     const isSameDir =
-      dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join("/") === destDirPath;
+      dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join(sep) === destDirPath;
 
     if (isSamePane && isSameDir) {
       setPendingFileDrop(null);
       return;
     }
 
-    const mode = isSamePane ? "move" : "copy";
-
     // Check for conflicts before transferring
     (async () => {
+      // Determine move vs copy based on volume (same volume = move, cross-volume = copy)
+      let mode: "move" | "copy";
+      try {
+        const same = await isSameVolume(
+          dragFiles[0]?.path ?? destDirPath,
+          destDirPath,
+        );
+        mode = same ? "move" : "copy";
+      } catch {
+        // Fallback: same pane = move, cross-pane = copy
+        mode = isSamePane ? "move" : "copy";
+      }
+
       let destFiles: FileItem[];
       try {
         destFiles = await listLocalFiles(destDirPath);
@@ -515,6 +560,7 @@ export default function LocalFileBrowser({
       !(e.target as HTMLElement).closest("[data-file-item]") &&
       !(e.target as HTMLElement).closest("[data-marquee]")
     ) {
+      e.preventDefault();
       setIsMarqueeDragging(true);
       setMarqueeStart({ x: e.clientX, y: e.clientY });
       setMarqueeCurrent({ x: e.clientX, y: e.clientY });
@@ -527,16 +573,47 @@ export default function LocalFileBrowser({
 
   const handleMarqueeMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!isMarqueeDragging) return;
-      setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+      if (!isMarqueeDragging || !marqueeStart) return;
+      const current = { x: e.clientX, y: e.clientY };
+      setMarqueeCurrent(current);
+
+      const minX = Math.min(marqueeStart.x, current.x);
+      const maxX = Math.max(marqueeStart.x, current.x);
+      const minY = Math.min(marqueeStart.y, current.y);
+      const maxY = Math.max(marqueeStart.y, current.y);
+
+      if (maxX - minX < 3 && maxY - minY < 3) return;
+
+      const items = containerRef.current?.querySelectorAll("[data-file-item]");
+      const base = e.ctrlKey || e.metaKey ? selectedFiles : [];
+      const newSelected = new Set(base);
+      items?.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const overlaps =
+          rect.left < maxX &&
+          rect.right > minX &&
+          rect.top < maxY &&
+          rect.bottom > minY;
+        if (overlaps) {
+          const name = item.getAttribute("data-file-name");
+          if (name) newSelected.add(name);
+        }
+      });
+      setSelectedFiles(newSelected);
     },
-    [isMarqueeDragging],
+    [isMarqueeDragging, marqueeStart, selectedFiles],
   );
 
   const handleMarqueeMouseUp = useCallback(
     (e: React.MouseEvent) => {
-      if (!isMarqueeDragging || !marqueeStart || !marqueeCurrent) return;
+      if (!isMarqueeDragging) return;
       setIsMarqueeDragging(false);
+
+      if (!marqueeStart) {
+        setMarqueeStart(null);
+        setMarqueeCurrent(null);
+        return;
+      }
 
       const minX = Math.min(marqueeStart.x, e.clientX);
       const maxX = Math.max(marqueeStart.x, e.clientX);
@@ -550,7 +627,8 @@ export default function LocalFileBrowser({
       }
 
       const items = containerRef.current?.querySelectorAll("[data-file-item]");
-      const newSelected = new Set(e.ctrlKey || e.metaKey ? selectedFiles : []);
+      const base = e.ctrlKey || e.metaKey ? selectedFiles : [];
+      const newSelected = new Set(base);
       items?.forEach((item) => {
         const rect = item.getBoundingClientRect();
         const overlaps =
@@ -567,7 +645,7 @@ export default function LocalFileBrowser({
       setMarqueeStart(null);
       setMarqueeCurrent(null);
     },
-    [isMarqueeDragging, marqueeStart, marqueeCurrent, selectedFiles],
+    [isMarqueeDragging, marqueeStart, selectedFiles],
   );
 
   const handleRefresh = useCallback(
@@ -694,6 +772,7 @@ export default function LocalFileBrowser({
     onCopy: handleCopy,
     onCut: handleCut,
     onPaste: handlePaste,
+    onDelete: handleDeleteSelected,
   });
 
   const contextMenuItems: ContextMenuItem[] = contextMenu
@@ -804,7 +883,7 @@ export default function LocalFileBrowser({
     // biome-ignore lint/a11y/useSemanticElements: main file browser container with drag-and-drop
     <div
       ref={setContainerRef}
-      className="h-full flex flex-col bg-dark-900 relative"
+      className="h-full flex flex-col bg-dark-900 relative select-none"
       role="button"
       tabIndex={0}
       onKeyDown={() => {}}

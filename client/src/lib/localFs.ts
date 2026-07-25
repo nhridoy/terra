@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
-  copyFile as fsCopyFile,
   exists,
+  copyFile as fsCopyFile,
   mkdir,
   readDir,
   readFile,
@@ -143,4 +143,12 @@ export function isTauriAvailable(): boolean {
     typeof window !== "undefined" &&
     ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
   );
+}
+
+export async function isSameVolume(
+  path1: string,
+  path2: string,
+): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("is_same_volume", { path1, path2 });
 }

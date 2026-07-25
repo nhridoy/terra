@@ -93,6 +93,7 @@ export default function ContextMenu({
       className="fixed z-[100] min-w-[180px] py-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl"
       style={{ left: x, top: y }}
       onKeyDown={handleKeyDown}
+      onMouseDown={(e) => e.stopPropagation()}
       tabIndex={-1}
     >
       {items.map((item, index) => {

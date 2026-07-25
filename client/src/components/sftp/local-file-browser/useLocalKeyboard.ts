@@ -11,6 +11,7 @@ interface UseLocalKeyboardOptions {
   onCopy: () => void;
   onCut: () => void;
   onPaste: () => void;
+  onDelete: () => void;
 }
 
 export function useLocalKeyboard({
@@ -23,6 +24,7 @@ export function useLocalKeyboard({
   onCopy,
   onCut,
   onPaste,
+  onDelete,
 }: UseLocalKeyboardOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -48,6 +50,9 @@ export function useLocalKeyboard({
       } else if (e.key === "F5") {
         e.preventDefault();
         onRefresh();
+      } else if (e.key === "Delete" && selectedFiles.size > 0) {
+        e.preventDefault();
+        onDelete();
       } else if (e.key === "Backspace") {
         e.preventDefault();
         onNavigateUp();
@@ -67,5 +72,6 @@ export function useLocalKeyboard({
     onCopy,
     onCut,
     onPaste,
+    onDelete,
   ]);
 }
