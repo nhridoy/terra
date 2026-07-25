@@ -48,7 +48,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    file: FileItem;
+    file?: FileItem;
   } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -226,6 +226,13 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
     setContextMenu({ x: e.clientX, y: e.clientY, file });
   };
 
+  const handleBackgroundContextMenu = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    setSelectedFiles(new Set());
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
   const getSelectedPaths = useCallback(() => {
     return [...selectedFiles]
       .map((name) => files.find((f) => f.name === name))
@@ -303,59 +310,80 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
   });
 
   const contextMenuItems: ContextMenuItem[] = contextMenu
-    ? [
-        {
-          label: "Open",
-          onClick: async () => {
-            try {
-              await openPath(contextMenu.file.path);
-            } catch (err) {
-              toast.error(extractError(err, "Failed to open file"));
-            }
+    ? contextMenu.file
+      ? [
+          {
+            label: "Open",
+            onClick: async () => {
+              try {
+                await openPath(contextMenu.file!.path);
+              } catch (err) {
+                toast.error(extractError(err, "Failed to open file"));
+              }
+            },
           },
-        },
-        {
-          label: "Show in Explorer",
-          onClick: async () => {
-            try {
-              await revealItemInDir(contextMenu.file.path);
-            } catch (err) {
-              toast.error(extractError(err, "Failed to reveal in Explorer"));
-            }
+          {
+            label: "Show in Explorer",
+            onClick: async () => {
+              try {
+                await revealItemInDir(contextMenu.file!.path);
+              } catch (err) {
+                toast.error(
+                  extractError(err, "Failed to reveal in Explorer"),
+                );
+              }
+            },
           },
-        },
-        { type: "separator" as const },
-        {
-          label: "Copy",
-          shortcut: "Ctrl+C",
-          onClick: handleCopy,
-        },
-        {
-          label: "Cut",
-          shortcut: "Ctrl+X",
-          onClick: handleCut,
-        },
-        { type: "separator" as const },
-        {
-          label: "Paste",
-          shortcut: "Ctrl+V",
-          disabled: !useSftpStore.getState().clipboard,
-          onClick: handlePaste,
-        },
-        { type: "separator" as const },
-        {
-          label: "Rename",
-          shortcut: "F2",
-          onClick: () => startRename(contextMenu.file),
-        },
-        { type: "separator" as const },
-        {
-          label: "Delete",
-          danger: true,
-          shortcut: "Del",
-          onClick: () => handleDelete(contextMenu.file),
-        },
-      ]
+          { type: "separator" as const },
+          {
+            label: "Copy",
+            shortcut: "Ctrl+C",
+            onClick: handleCopy,
+          },
+          {
+            label: "Cut",
+            shortcut: "Ctrl+X",
+            onClick: handleCut,
+          },
+          { type: "separator" as const },
+          {
+            label: "Paste",
+            shortcut: "Ctrl+V",
+            disabled: !useSftpStore.getState().clipboard,
+            onClick: handlePaste,
+          },
+          { type: "separator" as const },
+          {
+            label: "Rename",
+            shortcut: "F2",
+            onClick: () => startRename(contextMenu.file!),
+          },
+          { type: "separator" as const },
+          {
+            label: "Delete",
+            danger: true,
+            shortcut: "Del",
+            onClick: () => handleDelete(contextMenu.file!),
+          },
+        ]
+      : [
+          {
+            label: "Paste",
+            shortcut: "Ctrl+V",
+            disabled: !useSftpStore.getState().clipboard,
+            onClick: handlePaste,
+          },
+          { type: "separator" as const },
+          {
+            label: "New Folder",
+            onClick: handleNewFolder,
+          },
+          {
+            label: "Refresh",
+            shortcut: "F5",
+            onClick: handleRefresh,
+          },
+        ]
     : [];
 
   const handlePathKeyDown = (e: React.KeyboardEvent) => {
@@ -392,6 +420,7 @@ export default function LocalFileBrowser({ rootPath }: LocalFileBrowserProps) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onContextMenu={handleBackgroundContextMenu}
     >
       {isDragOver && (
         <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center pointer-events-none">
