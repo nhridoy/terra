@@ -62,14 +62,13 @@ export function buildBaseContextMenuItems({
     });
   }
 
-  if (hasClipboard) {
-    items.push({
-      label: "Paste",
-      icon: <ClipboardTextIcon className="w-4 h-4" />,
-      shortcut: "Ctrl+V",
-      onClick: actions.onPaste,
-    });
-  }
+  items.push({
+    label: "Paste",
+    icon: <ClipboardTextIcon className="w-4 h-4" />,
+    shortcut: "Ctrl+V",
+    disabled: !hasClipboard,
+    onClick: actions.onPaste,
+  });
 
   items.push({ type: "separator" as const });
   items.push({
