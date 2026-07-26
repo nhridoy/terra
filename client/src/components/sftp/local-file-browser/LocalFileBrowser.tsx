@@ -75,6 +75,12 @@ export default function LocalFileBrowser({
   } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [dropMode, setDropMode] = useState<"move" | "copy">("move");
+  const lastVolumeCheck = useRef<{
+    src: string;
+    dest: string;
+    result: boolean;
+  } | null>(null);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
     null,
   );
@@ -456,7 +462,39 @@ export default function LocalFileBrowser({
         const isNoop =
           sourceHostId === destHostId &&
           normalize(srcDir) === normalize(destDirPath);
-        setIsDropTarget(!isNoop && destDirPath === currentPath);
+        const shouldShow = !isNoop && destDirPath === currentPath;
+        setIsDropTarget(shouldShow);
+
+        // Determine move vs copy for the overlay label.
+        // Only local→local needs volume check; cross-host is always copy.
+        if (shouldShow) {
+          if (sourceHostId !== "local" || destHostId !== "local") {
+            setDropMode("copy");
+          } else {
+            const srcPath = files[0]?.path ?? "";
+            const cached = lastVolumeCheck.current;
+            if (
+              cached &&
+              cached.src === srcPath &&
+              cached.dest === destDirPath
+            ) {
+              setDropMode(cached.result ? "move" : "copy");
+            } else {
+              // Fire async; result applied when it resolves. Subsequent
+              // onDragOver calls hit the cache until paths change.
+              isSameVolume(srcPath || destDirPath, destDirPath)
+                .then((same) => {
+                  lastVolumeCheck.current = {
+                    src: srcPath,
+                    dest: destDirPath,
+                    result: same,
+                  };
+                  setDropMode(same ? "move" : "copy");
+                })
+                .catch(() => setDropMode("copy"));
+            }
+          }
+        }
       } else {
         setIsDropTarget(false);
       }
@@ -1007,9 +1045,7 @@ export default function LocalFileBrowser({
       {isDropTarget && fileDragState?.isDragging && (
         <div className="absolute inset-0 z-50 bg-green-600/20 border-2 border-dashed border-green-500 rounded-lg flex items-center justify-center pointer-events-none">
           <p className="text-green-300 text-lg font-medium">
-            {fileDragState.sourceHostId === "local"
-              ? "Drop to move"
-              : "Drop to copy"}
+            {dropMode === "move" ? "Drop to move" : "Drop to copy"}
           </p>
         </div>
       )}
