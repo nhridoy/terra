@@ -23,7 +23,9 @@ export default function Modal({
   return (
     <div
       ref={overlayRef}
+      role="dialog"
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div
         className={`bg-dark-900 rounded-xl shadow-xl w-full ${maxWidth} max-h-[90vh] flex flex-col`}
