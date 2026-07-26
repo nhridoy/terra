@@ -3,6 +3,7 @@ import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useModal } from "../../../hooks/useModal";
 import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
 import {
@@ -36,6 +37,7 @@ import {
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
+import PromptDialog from "../../ui/PromptDialog";
 import PasteConflictDialog from "../file-browser/PasteConflictDialog";
 import LocalFileBrowserList from "./LocalFileBrowserList";
 import LocalFileBrowserStatusBar from "./LocalFileBrowserStatusBar";
@@ -102,6 +104,8 @@ export default function LocalFileBrowser({
     destDirPath: string;
     mode: "move" | "copy";
   } | null>(null);
+  const newFileModal = useModal();
+  const newFolderModal = useModal();
 
   const loadDirectory = useCallback(async (path: string) => {
     setIsLoading(true);
@@ -204,9 +208,11 @@ export default function LocalFileBrowser({
     setLastSelectedIndex(sortedFiles.findIndex((f) => f.name === fileName));
   };
 
-  const handleNewFolder = async () => {
-    const name = window.prompt("Enter folder name:");
-    if (!name) return;
+  const handleNewFolder = () => {
+    newFolderModal.show();
+  };
+
+  const confirmNewFolder = async (name: string) => {
     const sep = currentPath.includes("\\") ? "\\" : "/";
     try {
       await createLocalDir(currentPath + sep + name);
@@ -229,6 +235,35 @@ export default function LocalFileBrowser({
       ]);
     } catch (err: unknown) {
       toast.error(`Failed to create folder: ${extractError(err)}`);
+    }
+  };
+
+  const handleNewFile = () => {
+    newFileModal.show();
+  };
+
+  const confirmNewFile = async (name: string) => {
+    const sep = currentPath.includes("\\") ? "\\" : "/";
+    const filePath = currentPath + sep + name;
+    try {
+      await writeLocalFileBytes(filePath, new Uint8Array(0));
+      toast.success(`Created file ${name}`);
+      setFiles((prev) => [
+        ...prev,
+        {
+          name,
+          path: filePath,
+          type: "file",
+          size: 0,
+          permissions: "",
+          owner: "",
+          group: "",
+          modifiedAt: new Date().toISOString(),
+          isHidden: name.startsWith("."),
+        },
+      ]);
+    } catch (err: unknown) {
+      toast.error(`Failed to create file: ${extractError(err)}`);
     }
   };
 
@@ -830,6 +865,8 @@ export default function LocalFileBrowser({
     onCut: handleCut,
     onPaste: handlePaste,
     onDelete: handleDeleteSelected,
+    onNewFile: handleNewFile,
+    onNewFolder: handleNewFolder,
   });
 
   const contextMenuItems: ContextMenuItem[] = contextMenu
@@ -902,9 +939,16 @@ export default function LocalFileBrowser({
           },
           { type: "separator" as const },
           {
+            label: "New File",
+            shortcut: "Ctrl+N",
+            onClick: handleNewFile,
+          },
+          {
             label: "New Folder",
+            shortcut: "Ctrl+Shift+N",
             onClick: handleNewFolder,
           },
+          { type: "separator" as const },
           {
             label: "Refresh",
             shortcut: "F5",
@@ -1087,6 +1131,28 @@ export default function LocalFileBrowser({
           conflicts={pasteConflicts}
           onConfirm={handleConflictConfirm}
           onCancel={handleConflictCancel}
+        />
+      )}
+
+      {newFileModal.open && (
+        <PromptDialog
+          open={newFileModal.open}
+          title="New File"
+          placeholder="filename.txt"
+          confirmLabel="Create"
+          onConfirm={confirmNewFile}
+          onClose={newFileModal.hide}
+        />
+      )}
+
+      {newFolderModal.open && (
+        <PromptDialog
+          open={newFolderModal.open}
+          title="New Folder"
+          placeholder="folder name"
+          confirmLabel="Create"
+          onConfirm={confirmNewFolder}
+          onClose={newFolderModal.hide}
         />
       )}
     </div>

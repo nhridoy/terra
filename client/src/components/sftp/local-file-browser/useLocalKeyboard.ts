@@ -12,6 +12,8 @@ interface UseLocalKeyboardOptions {
   onCut: () => void;
   onPaste: () => void;
   onDelete: () => void;
+  onNewFile: () => void;
+  onNewFolder: () => void;
 }
 
 export function useLocalKeyboard({
@@ -25,6 +27,8 @@ export function useLocalKeyboard({
   onCut,
   onPaste,
   onDelete,
+  onNewFile,
+  onNewFolder,
 }: UseLocalKeyboardOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -32,16 +36,23 @@ export function useLocalKeyboard({
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
 
       const ctrl = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
 
-      if (ctrl && e.key === "c") {
+      if (ctrl && !shift && e.key === "c") {
         e.preventDefault();
         onCopy();
-      } else if (ctrl && e.key === "x") {
+      } else if (ctrl && !shift && e.key === "x") {
         e.preventDefault();
         onCut();
-      } else if (ctrl && e.key === "v") {
+      } else if (ctrl && !shift && e.key === "v") {
         e.preventDefault();
         onPaste();
+      } else if (ctrl && !shift && e.key === "n") {
+        e.preventDefault();
+        onNewFile();
+      } else if (ctrl && shift && e.key === "N") {
+        e.preventDefault();
+        onNewFolder();
       } else if (e.key === "F2" && selectedFiles.size === 1) {
         e.preventDefault();
         const name = [...selectedFiles][0];
@@ -73,5 +84,7 @@ export function useLocalKeyboard({
     onCut,
     onPaste,
     onDelete,
+    onNewFile,
+    onNewFolder,
   ]);
 }
