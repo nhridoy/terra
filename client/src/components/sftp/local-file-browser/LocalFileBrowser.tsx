@@ -1,9 +1,10 @@
 import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
 import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useModal } from "../../../hooks/useModal";
+import { buildClipboardPaths } from "../../../lib/buildClipboardPaths";
 import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
 import {
@@ -22,27 +23,27 @@ import {
   renameLocalFile,
   writeLocalFileBytes,
 } from "../../../lib/localFs";
-import type {
-  FileItem,
-  FileSortDirection,
-  FileSortField,
-  FileViewMode,
-} from "../../../lib/sftpTypes";
+import type { FileItem } from "../../../lib/sftpTypes";
 import {
   showTransferError,
   showTransferProgress,
   showTransferStart,
   showTransferSuccess,
 } from "../../../lib/transferToast";
+import {
+  fileBrowserActions,
+  useFileBrowserStore,
+} from "../../../stores/fileBrowserStore";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import PromptDialog from "../../ui/PromptDialog";
+import { buildBaseContextMenuItems } from "../buildBaseContextMenuItems";
 import PasteConflictDialog from "../file-browser/PasteConflictDialog";
+import { useFileKeyboardShortcuts } from "../useFileKeyboardShortcuts";
 import LocalFileBrowserList from "./LocalFileBrowserList";
 import LocalFileBrowserStatusBar from "./LocalFileBrowserStatusBar";
 import LocalFileBrowserToolbar from "./LocalFileBrowserToolbar";
-import { useLocalKeyboard } from "./useLocalKeyboard";
 
 interface LocalFileBrowserProps {
   paneId: string;
@@ -55,19 +56,36 @@ export default function LocalFileBrowser({
   paneId,
   rootPath,
 }: LocalFileBrowserProps) {
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [currentPath, setCurrentPath] = useState(rootPath);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<FileViewMode>("list");
-  const [showHidden, setShowHidden] = useState(false);
-  const [sortField, setSortField] = useState<FileSortField>("name");
-  const [sortDirection, setSortDirection] = useState<FileSortDirection>("asc");
-  const [searchQuery, setSearchQuery] = useState("");
+  // ── Store ────────────────────────────────────────────────────────────────
+  const paneState = useFileBrowserStore((s) => s.panes[paneId]);
+  const getOrCreatePane = useFileBrowserStore((s) => s.getOrCreatePane);
+
+  // Initialize pane on first render
+  const initialized = useRef(false);
+  if (!initialized.current) {
+    getOrCreatePane(paneId, rootPath);
+    initialized.current = true;
+  }
+
+  const files = paneState?.files ?? [];
+  const currentPath = paneState?.currentPath ?? rootPath;
+  const isLoading = paneState?.isLoading ?? false;
+  const error = paneState?.error ?? null;
+  const selectedFiles = paneState?.selectedFiles ?? new Set<string>();
+  const viewMode = paneState?.viewMode ?? "list";
+  const showHidden = paneState?.showHidden ?? false;
+  const sortField = paneState?.sortField ?? "name";
+  const sortDirection = paneState?.sortDirection ?? "asc";
+  const searchQuery = paneState?.searchQuery ?? "";
+  const renamingPath = paneState?.renamingPath ?? null;
+  const renameValue = paneState?.renameValue ?? "";
+  const history = paneState?.history ?? [rootPath];
+  const historyIndex = paneState?.historyIndex ?? 0;
+  const pasteConflicts = paneState?.pasteConflicts ?? null;
+  const pendingDrop = paneState?.pendingDrop ?? null;
+
+  // ── Component-only state ─────────────────────────────────────────────────
   const [pathInput, setPathInput] = useState(currentPath);
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -81,9 +99,6 @@ export default function LocalFileBrowser({
     dest: string;
     result: boolean;
   } | null>(null);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
-    null,
-  );
   const [isMarqueeDragging, setIsMarqueeDragging] = useState(false);
   const [marqueeStart, setMarqueeStart] = useState<{
     x: number;
@@ -95,46 +110,25 @@ export default function LocalFileBrowser({
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const [history, setHistory] = useState<string[]>([rootPath]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-
-  const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
-  const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop);
-  const fileDragState = useSftpStore((s) => s.fileDragState);
-
-  const [pasteConflicts, setPasteConflicts] = useState<
-    { srcPath: string; dstPath: string; dstName: string }[] | null
-  >(null);
-  const [pendingDrop, setPendingDrop] = useState<{
-    files: FileItem[];
-    destDirPath: string;
-    mode: "move" | "copy";
-  } | null>(null);
   const newFileModal = useModal();
   const newFolderModal = useModal();
 
-  const loadDirectory = useCallback(async (path: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await listLocalFiles(path);
-      setFiles(result);
-    } catch (err: unknown) {
-      setError(extractError(err, "Failed to load directory"));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const fileDragState = useSftpStore((s) => s.fileDragState);
+  const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
+  const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop);
 
+  const actions = fileBrowserActions;
+
+  // ── Effects ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadDirectory(currentPath);
+    actions.loadFiles(paneId, currentPath, listLocalFiles);
     setPathInput(currentPath);
-  }, [currentPath, loadDirectory]);
+  }, [currentPath, paneId]);
 
   useEffect(() => {
-    setCurrentPath(rootPath);
+    actions.navigateTo(paneId, rootPath, true);
     setPathInput(rootPath);
-  }, [rootPath]);
+  }, [rootPath, paneId]);
 
   useEffect(() => {
     if (renamingPath && renameInputRef.current) {
@@ -143,146 +137,166 @@ export default function LocalFileBrowser({
     }
   }, [renamingPath]);
 
+  // ── Navigation ───────────────────────────────────────────────────────────
   const navigateTo = useCallback(
     (path: string, skipHistory = false) => {
-      setCurrentPath(path);
-      setSelectedFiles(new Set());
-      setSearchQuery("");
-      if (!skipHistory) {
-        setHistory((prev) => [...prev.slice(0, historyIndex + 1), path]);
-        setHistoryIndex((prev) => prev + 1);
-      }
+      actions.navigateTo(paneId, path, skipHistory);
+      setPathInput(path);
     },
-    [historyIndex],
+    [paneId],
   );
 
-  const navigateBack = useCallback(() => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    navigateTo(history[newIndex], true);
-  }, [history, historyIndex, navigateTo]);
+  const navigateBack = useCallback(
+    () => actions.navigateBack(paneId),
+    [paneId],
+  );
 
-  const navigateForward = useCallback(() => {
-    if (historyIndex >= history.length - 1) return;
-    const newIndex = historyIndex + 1;
-    setHistoryIndex(newIndex);
-    navigateTo(history[newIndex], true);
-  }, [history, historyIndex, navigateTo]);
+  const navigateForward = useCallback(
+    () => actions.navigateForward(paneId),
+    [paneId],
+  );
 
-  const navigateUp = useCallback(() => {
-    const sep = currentPath.includes("\\") ? "\\" : "/";
-    const parts = currentPath.split(sep);
-    parts.pop();
-    const parent = parts.join(sep);
-    // On Windows "C:" alone means current dir on C: — always keep trailing sep
-    if (sep === "\\" && parent && !parent.endsWith("\\")) {
-      navigateTo(`${parent}\\`);
-    } else {
-      navigateTo(parent || sep);
-    }
-  }, [currentPath, navigateTo]);
+  const navigateUp = useCallback(() => actions.navigateUp(paneId), [paneId]);
 
-  const handleDoubleClick = (file: FileItem) => {
-    if (file.type === "directory") navigateTo(file.path);
-  };
+  const handleDoubleClick = useCallback(
+    (file: FileItem) => {
+      if (file.type === "directory") navigateTo(file.path);
+    },
+    [navigateTo],
+  );
 
-  const handleSelect = (
-    fileName: string,
-    isMultiSelect: boolean,
-    isRangeSelect: boolean,
-  ) => {
-    if (isRangeSelect && lastSelectedIndex !== null) {
-      const clickedIndex = sortedFiles.findIndex((f) => f.name === fileName);
-      if (clickedIndex === -1) return;
-      const start = Math.min(lastSelectedIndex, clickedIndex);
-      const end = Math.max(lastSelectedIndex, clickedIndex);
-      const rangeNames = sortedFiles.slice(start, end + 1).map((f) => f.name);
-      setSelectedFiles((prev) => {
-        const newSet = new Set(prev);
-        for (const name of rangeNames) newSet.add(name);
-        return newSet;
-      });
+  const sortedFiles = paneState?.sortedFiles ?? [];
+
+  // ── Recompute sorted files when inputs change ────────────────────────────
+  // biome-ignore lint/correctness/useExhaustiveDependencies: we need these to trigger recomputation
+  useEffect(() => {
+    actions.updateSortedFiles(paneId);
+  }, [paneId, files, showHidden, searchQuery, sortField, sortDirection]);
+
+  const handleSelect = useCallback(
+    (fileName: string, isMultiSelect: boolean, isRangeSelect: boolean) => {
+      actions.selectFile(
+        paneId,
+        fileName,
+        isMultiSelect,
+        isRangeSelect,
+        sortedFiles,
+      );
+    },
+    [paneId, sortedFiles],
+  );
+
+  // ── Rename ───────────────────────────────────────────────────────────────
+  const startRename = useCallback(
+    (file: FileItem) => actions.startRename(paneId, file.path, file.name),
+    [paneId],
+  );
+
+  const commitRename = useCallback(async () => {
+    if (!renamingPath) return;
+    const file = files.find((f) => f.path === renamingPath);
+    if (!file || renameValue === file.name || !renameValue.trim()) {
+      actions.cancelRename(paneId);
       return;
     }
-    setSelectedFiles((prev) => {
-      const newSet = new Set(isMultiSelect ? prev : []);
-      if (newSet.has(fileName)) newSet.delete(fileName);
-      else newSet.add(fileName);
-      return newSet;
-    });
-    setLastSelectedIndex(sortedFiles.findIndex((f) => f.name === fileName));
-  };
-
-  const handleNewFolder = () => {
-    newFolderModal.show();
-  };
-
-  const confirmNewFolder = async (name: string) => {
-    const sep = currentPath.includes("\\") ? "\\" : "/";
     try {
-      await createLocalDir(currentPath + sep + name);
-      toast.success(`Created folder ${name}`);
-      setFiles((prev) => [
-        ...prev,
-        {
-          name,
-          path: currentPath.endsWith("/")
-            ? `${currentPath}${name}`
-            : `${currentPath}/${name}`,
-          type: "directory",
-          size: 0,
-          permissions: "",
-          owner: "",
-          group: "",
-          modifiedAt: new Date().toISOString(),
-          isHidden: name.startsWith("."),
-        },
-      ]);
+      const sep = currentPath.includes("\\") ? "\\" : "/";
+      const newPath = currentPath + sep + renameValue.trim();
+      await renameLocalFile(file.path, newPath);
+      toast.success(`Renamed to ${renameValue.trim()}`);
+      actions.setFiles(
+        paneId,
+        files.map((f) =>
+          f.path === renamingPath
+            ? { ...f, name: renameValue.trim(), path: newPath }
+            : f,
+        ),
+      );
     } catch (err: unknown) {
-      toast.error(`Failed to create folder: ${extractError(err)}`);
+      toast.error(`Failed to rename: ${extractError(err)}`);
+    } finally {
+      actions.cancelRename(paneId);
     }
-  };
+  }, [paneId, renamingPath, renameValue, files, currentPath]);
 
-  const handleNewFile = () => {
-    newFileModal.show();
-  };
+  // ── New file / folder ────────────────────────────────────────────────────
+  const handleNewFolder = () => newFolderModal.show();
+  const handleNewFile = () => newFileModal.show();
 
-  const confirmNewFile = async (name: string) => {
-    const sep = currentPath.includes("\\") ? "\\" : "/";
-    const filePath = currentPath + sep + name;
-    try {
-      await writeLocalFileBytes(filePath, new Uint8Array(0));
-      toast.success(`Created file ${name}`);
-      setFiles((prev) => [
-        ...prev,
-        {
-          name,
-          path: filePath,
-          type: "file",
-          size: 0,
-          permissions: "",
-          owner: "",
-          group: "",
-          modifiedAt: new Date().toISOString(),
-          isHidden: name.startsWith("."),
-        },
-      ]);
-    } catch (err: unknown) {
-      toast.error(`Failed to create file: ${extractError(err)}`);
-    }
-  };
+  const confirmNewFolder = useCallback(
+    async (name: string) => {
+      const sep = currentPath.includes("\\") ? "\\" : "/";
+      try {
+        await createLocalDir(currentPath + sep + name);
+        toast.success(`Created folder ${name}`);
+        actions.setFiles(paneId, [
+          ...files,
+          {
+            name,
+            path: currentPath.endsWith("/")
+              ? `${currentPath}${name}`
+              : `${currentPath}/${name}`,
+            type: "directory",
+            size: 0,
+            permissions: "",
+            owner: "",
+            group: "",
+            modifiedAt: new Date().toISOString(),
+            isHidden: name.startsWith("."),
+          },
+        ]);
+      } catch (err: unknown) {
+        toast.error(`Failed to create folder: ${extractError(err)}`);
+      }
+    },
+    [paneId, currentPath, files],
+  );
 
-  const handleDelete = async (file: FileItem) => {
-    if (!(await confirmDelete(`Delete "${file.name}"?`))) return;
-    try {
-      await removeLocalFile(file.path);
-      toast.success(`Deleted ${file.name}`);
-      setFiles((prev) => prev.filter((f) => f.path !== file.path));
-    } catch (err: unknown) {
-      toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
-    }
-  };
+  const confirmNewFile = useCallback(
+    async (name: string) => {
+      const sep = currentPath.includes("\\") ? "\\" : "/";
+      const filePath = currentPath + sep + name;
+      try {
+        await writeLocalFileBytes(filePath, new Uint8Array(0));
+        toast.success(`Created file ${name}`);
+        actions.setFiles(paneId, [
+          ...files,
+          {
+            name,
+            path: filePath,
+            type: "file",
+            size: 0,
+            permissions: "",
+            owner: "",
+            group: "",
+            modifiedAt: new Date().toISOString(),
+            isHidden: name.startsWith("."),
+          },
+        ]);
+      } catch (err: unknown) {
+        toast.error(`Failed to create file: ${extractError(err)}`);
+      }
+    },
+    [paneId, currentPath, files],
+  );
+
+  // ── Delete ───────────────────────────────────────────────────────────────
+  const handleDelete = useCallback(
+    async (file: FileItem) => {
+      if (!(await confirmDelete(`Delete "${file.name}"?`))) return;
+      try {
+        await removeLocalFile(file.path);
+        toast.success(`Deleted ${file.name}`);
+        actions.setFiles(
+          paneId,
+          files.filter((f) => f.path !== file.path),
+        );
+      } catch (err: unknown) {
+        toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
+      }
+    },
+    [paneId, files],
+  );
 
   const handleDeleteSelected = useCallback(async () => {
     const selected = [...selectedFiles]
@@ -306,45 +320,88 @@ export default function LocalFileBrowser({
     }
     if (deleted > 0) {
       toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
-      setFiles((prev) => prev.filter((f) => !deletedPaths.has(f.path)));
+      actions.setFiles(
+        paneId,
+        files.filter((f) => !deletedPaths.has(f.path)),
+      );
     }
     if (failed > 0) {
       toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
     }
+  }, [selectedFiles, files, paneId]);
+
+  // ── Clipboard ────────────────────────────────────────────────────────────
+  const handleCopy = useCallback(() => {
+    const paths = buildClipboardPaths(selectedFiles, files);
+    if (paths.length === 0) return;
+    useSftpStore.getState().setClipboard("local", paths, "copy");
+    toast.success(`Copied ${paths.length} item${paths.length > 1 ? "s" : ""}`);
   }, [selectedFiles, files]);
 
-  const startRename = useCallback((file: FileItem) => {
-    setRenamingPath(file.path);
-    setRenameValue(file.name);
-  }, []);
+  const handleCut = useCallback(() => {
+    const paths = buildClipboardPaths(selectedFiles, files);
+    if (paths.length === 0) return;
+    useSftpStore.getState().setClipboard("local", paths, "cut");
+    toast.success(`Cut ${paths.length} item${paths.length > 1 ? "s" : ""}`);
+  }, [selectedFiles, files]);
 
-  const commitRename = async () => {
-    if (!renamingPath) return;
-    const file = files.find((f) => f.path === renamingPath);
-    if (!file || renameValue === file.name || !renameValue.trim()) {
-      setRenamingPath(null);
+  const handlePaste = useCallback(async () => {
+    const { clipboard, clipboardMode } = useSftpStore.getState();
+    if (!clipboard || !clipboardMode) return;
+    if (clipboard.hostId !== "local") {
+      toast.error("Cannot paste remote files to local filesystem");
       return;
     }
-    try {
-      const sep = currentPath.includes("\\") ? "\\" : "/";
-      const newPath = currentPath + sep + renameValue.trim();
-      await renameLocalFile(file.path, newPath);
-      toast.success(`Renamed to ${renameValue.trim()}`);
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.path === renamingPath
-            ? { ...f, name: renameValue.trim(), path: newPath }
-            : f,
-        ),
-      );
-    } catch (err: unknown) {
-      toast.error(`Failed to rename: ${extractError(err)}`);
-    } finally {
-      setRenamingPath(null);
+    let pasted = 0;
+    const copiedPaths = new Set<string>();
+    for (const srcPath of clipboard.paths) {
+      const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
+      const destPath =
+        currentPath.endsWith("\\") || currentPath.endsWith("/")
+          ? `${currentPath}${fileName}`
+          : `${currentPath}\\${fileName}`;
+      try {
+        if (clipboardMode === "copy") {
+          if (srcPath === destPath) {
+            const dir =
+              destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
+              destPath.substring(0, destPath.lastIndexOf("/") + 1);
+            const ext = fileName.includes(".")
+              ? fileName.substring(fileName.lastIndexOf("."))
+              : "";
+            const base = ext
+              ? fileName.substring(0, fileName.length - ext.length)
+              : fileName;
+            await copyLocalFile(srcPath, `${dir}${base} (copy)${ext}`);
+          } else {
+            await copyLocalFile(srcPath, destPath);
+          }
+          copiedPaths.add(srcPath);
+        } else {
+          await moveLocalFile(srcPath, destPath);
+        }
+        pasted++;
+      } catch (err) {
+        toast.error(extractError(err, `Failed to paste ${fileName}`));
+      }
     }
-  };
+    if (pasted > 0) {
+      toast.success(
+        `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
+      );
+      if (clipboardMode === "cut") {
+        actions.setFiles(
+          paneId,
+          files.filter((f) => !copiedPaths.has(f.path)),
+        );
+      }
+    }
+    if (clipboardMode === "cut") {
+      useSftpStore.getState().clearClipboard();
+    }
+  }, [currentPath, files, paneId]);
 
-  // Desktop file drop (native HTML DnD)
+  // ── Desktop drag-and-drop ────────────────────────────────────────────────
   const handleDesktopDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -385,10 +442,8 @@ export default function LocalFileBrowser({
       }
 
       const toastId = showTransferStart(fileItems, "copy");
-
       let totalLoaded = 0;
       const totalSize = fileItems.reduce((s, f) => s + f.size, 0);
-
       let successCount = 0;
       let failCount = 0;
 
@@ -408,7 +463,7 @@ export default function LocalFileBrowser({
             "copy",
           );
           successCount++;
-        } catch (_err) {
+        } catch {
           failCount++;
         }
       }
@@ -421,12 +476,12 @@ export default function LocalFileBrowser({
         showTransferSuccess(toastId, fileItems, "copy");
       }
 
-      loadDirectory(currentPath);
+      actions.loadFiles(paneId, currentPath, listLocalFiles);
     },
-    [currentPath, loadDirectory],
+    [currentPath, paneId],
   );
 
-  // @dnd-kit: register this container as a droppable zone
+  // ── @dnd-kit droppable ───────────────────────────────────────────────────
   const droppable = useDroppable({
     id: `file-drop-${paneId}`,
     data: { type: "file-drop", paneId, hostId: "local", path: currentPath },
@@ -440,7 +495,7 @@ export default function LocalFileBrowser({
     [droppable.ref],
   );
 
-  // @dnd-kit: monitor drag events for in-app file drops
+  // ── @dnd-kit drag monitor ────────────────────────────────────────────────
   useDragDropMonitor({
     onDragOver(event) {
       const source = event.operation.source;
@@ -451,11 +506,11 @@ export default function LocalFileBrowser({
       ) {
         const sourceHostId = source.data.hostId as string;
         const destHostId = target.data.hostId as string;
-        const files = source.data.files as FileItem[];
+        const dragFiles = source.data.files as FileItem[];
         const destDirPath = target.data.path as string;
         const normalize = (p: string) => p.replace(/\\/g, "/");
         const srcDir =
-          normalize(files[0]?.path ?? "")
+          normalize(dragFiles[0]?.path ?? "")
             .split("/")
             .slice(0, -1)
             .join("/") || "/";
@@ -465,13 +520,11 @@ export default function LocalFileBrowser({
         const shouldShow = !isNoop && destDirPath === currentPath;
         setIsDropTarget(shouldShow);
 
-        // Determine move vs copy for the overlay label.
-        // Only local→local needs volume check; cross-host is always copy.
         if (shouldShow) {
           if (sourceHostId !== "local" || destHostId !== "local") {
             setDropMode("copy");
           } else {
-            const srcPath = files[0]?.path ?? "";
+            const srcPath = dragFiles[0]?.path ?? "";
             const cached = lastVolumeCheck.current;
             if (
               cached &&
@@ -480,8 +533,6 @@ export default function LocalFileBrowser({
             ) {
               setDropMode(cached.result ? "move" : "copy");
             } else {
-              // Fire async; result applied when it resolves. Subsequent
-              // onDragOver calls hit the cache until paths change.
               isSameVolume(srcPath || destDirPath, destDirPath)
                 .then((same) => {
                   lastVolumeCheck.current = {
@@ -504,7 +555,7 @@ export default function LocalFileBrowser({
     },
   });
 
-  // Execute a transfer with progress toasts
+  // ── Transfer execution ───────────────────────────────────────────────────
   const executeTransfer = useCallback(
     async (
       dragFiles: FileItem[],
@@ -552,30 +603,28 @@ export default function LocalFileBrowser({
         (f) => f.path.split(/[/\\]/).slice(0, -1).join("/") === currentPath,
       );
 
-      setFiles((prev) => {
-        let next = prev;
-        // Remove moved source files from current view
-        if (mode === "move" && isSourceCurrentDir) {
-          const movedPaths = new Set(results.map((r) => r.file.path));
-          next = next.filter((f) => !movedPaths.has(f.path));
-        }
-        // Add copied files to current view if dest is current dir
-        if (mode === "copy" && isDestCurrentDir) {
-          const added = results
-            .filter((r) => r.action !== "skipped")
-            .map((r) => ({
-              ...r.file,
-              path: joinPath(destDirPath, r.file.name),
-            }));
-          next = [...next, ...added];
-        }
-        return next;
-      });
+      const prevFiles =
+        useFileBrowserStore.getState().panes[paneId]?.files ?? [];
+      let next = prevFiles;
+      if (mode === "move" && isSourceCurrentDir) {
+        const movedPaths = new Set(results.map((r) => r.file.path));
+        next = next.filter((f) => !movedPaths.has(f.path));
+      }
+      if (mode === "copy" && isDestCurrentDir) {
+        const added = results
+          .filter((r) => r.action !== "skipped")
+          .map((r) => ({
+            ...r.file,
+            path: joinPath(destDirPath, r.file.name),
+          }));
+        next = [...next, ...added];
+      }
+      actions.setFiles(paneId, next);
     },
-    [currentPath],
+    [currentPath, paneId],
   );
 
-  // Handle pending file drops from SftpLayout
+  // ── Handle pending file drops from SftpLayout ────────────────────────────
   useEffect(() => {
     if (!pendingFileDrop) return;
     if (pendingFileDrop.destPaneId !== paneId) return;
@@ -610,9 +659,7 @@ export default function LocalFileBrowser({
       return;
     }
 
-    // Check for conflicts before transferring
     (async () => {
-      // Determine move vs copy based on volume (same volume = move, cross-volume = copy)
       let mode: "move" | "copy";
       try {
         const same = await isSameVolume(
@@ -621,7 +668,6 @@ export default function LocalFileBrowser({
         );
         mode = same ? "move" : "copy";
       } catch {
-        // Fallback: same pane = move, cross-pane = copy
         mode = isSamePane ? "move" : "copy";
       }
 
@@ -635,14 +681,15 @@ export default function LocalFileBrowser({
       const conflicts = dragFiles.filter((f) => destNames.has(f.name));
 
       if (conflicts.length > 0) {
-        setPasteConflicts(
+        actions.setPasteConflicts(
+          paneId,
           conflicts.map((f) => ({
             srcPath: f.path,
             dstPath: joinPath(destDirPath, f.name),
             dstName: f.name,
           })),
         );
-        setPendingDrop({ files: dragFiles, destDirPath, mode });
+        actions.setPendingDrop(paneId, { files: dragFiles, destDirPath, mode });
       } else {
         await executeTransfer(dragFiles, destDirPath, mode);
       }
@@ -651,7 +698,6 @@ export default function LocalFileBrowser({
     setPendingFileDrop(null);
   }, [pendingFileDrop, paneId, executeTransfer, setPendingFileDrop]);
 
-  // Called when user resolves conflict dialog
   const handleConflictConfirm = useCallback(
     async (
       overrides: Map<
@@ -661,35 +707,37 @@ export default function LocalFileBrowser({
     ) => {
       if (!pendingDrop) return;
       const { files: dragFiles, destDirPath, mode } = pendingDrop;
-      setPasteConflicts(null);
-      setPendingDrop(null);
+      actions.setPasteConflicts(paneId, null);
+      actions.setPendingDrop(paneId, null);
       await executeTransfer(dragFiles, destDirPath, mode, overrides);
     },
-    [pendingDrop, executeTransfer],
+    [pendingDrop, executeTransfer, paneId],
   );
 
-  // Called when user cancels conflict dialog
   const handleConflictCancel = useCallback(() => {
-    setPasteConflicts(null);
-    setPendingDrop(null);
-  }, []);
+    actions.setPasteConflicts(paneId, null);
+    actions.setPendingDrop(paneId, null);
+  }, [paneId]);
 
-  const handleMarqueeMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    if (
-      !(e.target as HTMLElement).closest("[data-file-item]") &&
-      !(e.target as HTMLElement).closest("[data-marquee]")
-    ) {
-      e.preventDefault();
-      setIsMarqueeDragging(true);
-      setMarqueeStart({ x: e.clientX, y: e.clientY });
-      setMarqueeCurrent({ x: e.clientX, y: e.clientY });
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        setSelectedFiles(new Set());
-        setLastSelectedIndex(null);
+  // ── Marquee selection ────────────────────────────────────────────────────
+  const handleMarqueeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      if (
+        !(e.target as HTMLElement).closest("[data-file-item]") &&
+        !(e.target as HTMLElement).closest("[data-marquee]")
+      ) {
+        e.preventDefault();
+        setIsMarqueeDragging(true);
+        setMarqueeStart({ x: e.clientX, y: e.clientY });
+        setMarqueeCurrent({ x: e.clientX, y: e.clientY });
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          actions.clearSelection(paneId);
+        }
       }
-    }
-  }, []);
+    },
+    [paneId],
+  );
 
   const handleMarqueeMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -701,7 +749,6 @@ export default function LocalFileBrowser({
       const maxX = Math.max(marqueeStart.x, current.x);
       const minY = Math.min(marqueeStart.y, current.y);
       const maxY = Math.max(marqueeStart.y, current.y);
-
       if (maxX - minX < 3 && maxY - minY < 3) return;
 
       const items = containerRef.current?.querySelectorAll("[data-file-item]");
@@ -719,9 +766,11 @@ export default function LocalFileBrowser({
           if (name) newSelected.add(name);
         }
       });
-      setSelectedFiles(newSelected);
+      useFileBrowserStore.getState().updatePane(paneId, {
+        selectedFiles: newSelected,
+      });
     },
-    [isMarqueeDragging, marqueeStart, selectedFiles],
+    [isMarqueeDragging, marqueeStart, selectedFiles, paneId],
   );
 
   const handleMarqueeMouseUp = useCallback(
@@ -761,144 +810,55 @@ export default function LocalFileBrowser({
           if (name) newSelected.add(name);
         }
       });
-      setSelectedFiles(newSelected);
+      useFileBrowserStore.getState().updatePane(paneId, {
+        selectedFiles: newSelected,
+      });
       setMarqueeStart(null);
       setMarqueeCurrent(null);
     },
-    [isMarqueeDragging, marqueeStart, selectedFiles],
+    [isMarqueeDragging, marqueeStart, selectedFiles, paneId],
   );
 
-  const handleRefresh = useCallback(
-    () => loadDirectory(currentPath),
-    [currentPath, loadDirectory],
-  );
-  const handleClearSelection = useCallback(
-    () => setSelectedFiles(new Set()),
-    [],
-  );
-
-  const sortedFiles = useMemo(() => {
-    return [...files]
-      .filter(
-        (f) =>
-          (showHidden || !f.isHidden) &&
-          (searchQuery === "" ||
-            f.name.toLowerCase().includes(searchQuery.toLowerCase())),
-      )
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
-        let cmp = 0;
-        if (sortField === "name") cmp = a.name.localeCompare(b.name);
-        else if (sortField === "size") cmp = a.size - b.size;
-        else if (sortField === "permissions")
-          cmp = a.permissions.localeCompare(b.permissions);
-        else if (sortField === "modifiedAt")
-          cmp =
-            new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
-        return sortDirection === "asc" ? cmp : -cmp;
-      });
-  }, [files, showHidden, searchQuery, sortField, sortDirection]);
-
-  const handleContextMenu = (e: React.MouseEvent, file: FileItem) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFiles.has(file.name)) setSelectedFiles(new Set([file.name]));
-    setContextMenu({ x: e.clientX, y: e.clientY, file });
-  };
-
-  const handleBackgroundContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setSelectedFiles(new Set());
-    setContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const getSelectedPaths = useCallback(() => {
-    return [...selectedFiles]
-      .map((name) => files.find((f) => f.name === name))
-      .filter((f): f is FileItem => !!f)
-      .map((f) => f.path);
-  }, [selectedFiles, files]);
-
-  const handleCopy = useCallback(() => {
-    const paths = getSelectedPaths();
-    if (paths.length === 0) return;
-    useSftpStore.getState().setClipboard("local", paths, "copy");
-    toast.success(`Copied ${paths.length} item${paths.length > 1 ? "s" : ""}`);
-  }, [getSelectedPaths]);
-
-  const handleCut = useCallback(() => {
-    const paths = getSelectedPaths();
-    if (paths.length === 0) return;
-    useSftpStore.getState().setClipboard("local", paths, "cut");
-    toast.success(`Cut ${paths.length} item${paths.length > 1 ? "s" : ""}`);
-  }, [getSelectedPaths]);
-
-  const handlePaste = useCallback(async () => {
-    const { clipboard, clipboardMode } = useSftpStore.getState();
-    if (!clipboard || !clipboardMode) return;
-    if (clipboard.hostId !== "local") {
-      toast.error("Cannot paste remote files to local filesystem");
-      return;
-    }
-    let pasted = 0;
-    const copiedPaths = new Set<string>();
-    for (const srcPath of clipboard.paths) {
-      const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
-      const destPath =
-        currentPath.endsWith("\\") || currentPath.endsWith("/")
-          ? `${currentPath}${fileName}`
-          : `${currentPath}\\${fileName}`;
-      try {
-        if (clipboardMode === "copy") {
-          if (srcPath === destPath) {
-            const dir =
-              destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
-              destPath.substring(0, destPath.lastIndexOf("/") + 1);
-            const ext = fileName.includes(".")
-              ? fileName.substring(fileName.lastIndexOf("."))
-              : "";
-            const base = ext
-              ? fileName.substring(0, fileName.length - ext.length)
-              : fileName;
-            await copyLocalFile(srcPath, `${dir}${base} (copy)${ext}`);
-          } else {
-            await copyLocalFile(srcPath, destPath);
-          }
-          copiedPaths.add(srcPath);
-        } else {
-          await moveLocalFile(srcPath, destPath);
-        }
-        pasted++;
-      } catch (err) {
-        toast.error(extractError(err, `Failed to paste ${fileName}`));
+  // ── Context menu ─────────────────────────────────────────────────────────
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, file: FileItem) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!selectedFiles.has(file.name)) {
+        useFileBrowserStore.getState().updatePane(paneId, {
+          selectedFiles: new Set([file.name]),
+        });
       }
-    }
-    if (pasted > 0) {
-      toast.success(
-        `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
-      );
-      // Optimistic UI update
-      setFiles((prev) => {
-        let next = prev;
-        if (clipboardMode === "cut") {
-          const movedPaths = new Set(copiedPaths);
-          next = next.filter((f) => !movedPaths.has(f.path));
-        }
-        return next;
-      });
-    }
-    if (clipboardMode === "cut") {
-      useSftpStore.getState().clearClipboard();
-    }
-  }, [currentPath]);
+      setContextMenu({ x: e.clientX, y: e.clientY, file });
+    },
+    [paneId, selectedFiles],
+  );
 
-  useLocalKeyboard({
+  const handleBackgroundContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      actions.clearSelection(paneId);
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    },
+    [paneId],
+  );
+
+  // ── Keyboard ─────────────────────────────────────────────────────────────
+  const handleRefresh = useCallback(
+    () => actions.loadFiles(paneId, currentPath, listLocalFiles),
+    [currentPath, paneId],
+  );
+
+  useFileKeyboardShortcuts({
     selectedFiles,
     files,
     onRename: startRename,
     onNavigateUp: navigateUp,
     onRefresh: handleRefresh,
-    onClearSelection: handleClearSelection,
+    onClearSelection: useCallback(
+      () => actions.clearSelection(paneId),
+      [paneId],
+    ),
     onCopy: handleCopy,
     onCut: handleCut,
     onPaste: handlePaste,
@@ -907,99 +867,78 @@ export default function LocalFileBrowser({
     onNewFolder: handleNewFolder,
   });
 
+  // ── Context menu items ───────────────────────────────────────────────────
   const contextMenuItems: ContextMenuItem[] = contextMenu
     ? contextMenu.file
-      ? [
-          {
-            label: "Open",
-            onClick: async () => {
-              if (!contextMenu.file) return;
-              try {
-                await openPath(contextMenu.file.path);
-              } catch (err) {
-                toast.error(extractError(err, "Failed to open file"));
-              }
+      ? buildBaseContextMenuItems({
+          menuFile: contextMenu.file,
+          hasClipboard: !!useSftpStore.getState().clipboard,
+          actions: {
+            onCopy: handleCopy,
+            onCut: handleCut,
+            onPaste: handlePaste,
+            onDelete: handleDelete,
+            onNewFile: handleNewFile,
+            onNewFolder: handleNewFolder,
+          },
+          onRename: startRename,
+          beforeItems: [
+            {
+              label: "Open",
+              onClick: async () => {
+                if (!contextMenu.file) return;
+                try {
+                  await openPath(contextMenu.file.path);
+                } catch (err) {
+                  toast.error(extractError(err, "Failed to open file"));
+                }
+              },
             },
-          },
-          {
-            label: "Show in Explorer",
-            onClick: async () => {
-              if (!contextMenu.file) return;
-              try {
-                await revealItemInDir(contextMenu.file.path);
-              } catch (err) {
-                toast.error(extractError(err, "Failed to reveal in Explorer"));
-              }
+            {
+              label: "Show in Explorer",
+              onClick: async () => {
+                if (!contextMenu.file) return;
+                try {
+                  await revealItemInDir(contextMenu.file.path);
+                } catch (err) {
+                  toast.error(
+                    extractError(err, "Failed to reveal in Explorer"),
+                  );
+                }
+              },
             },
+          ],
+        })
+      : buildBaseContextMenuItems({
+          menuFile: null,
+          hasClipboard: !!useSftpStore.getState().clipboard,
+          actions: {
+            onCopy: handleCopy,
+            onCut: handleCut,
+            onPaste: handlePaste,
+            onDelete: handleDelete,
+            onNewFile: handleNewFile,
+            onNewFolder: handleNewFolder,
           },
-          { type: "separator" as const },
-          {
-            label: "Copy",
-            shortcut: "Ctrl+C",
-            onClick: handleCopy,
-          },
-          {
-            label: "Cut",
-            shortcut: "Ctrl+X",
-            onClick: handleCut,
-          },
-          { type: "separator" as const },
-          {
-            label: "Paste",
-            shortcut: "Ctrl+V",
-            disabled: !useSftpStore.getState().clipboard,
-            onClick: handlePaste,
-          },
-          { type: "separator" as const },
-          {
-            label: "Rename",
-            shortcut: "F2",
-            onClick: () => {
-              if (contextMenu.file) startRename(contextMenu.file);
+          onRename: startRename,
+          afterItems: [
+            { type: "separator" as const },
+            {
+              label: "Refresh",
+              shortcut: "F5",
+              onClick: handleRefresh,
             },
-          },
-          { type: "separator" as const },
-          {
-            label: "Delete",
-            danger: true,
-            shortcut: "Del",
-            onClick: () => {
-              if (contextMenu.file) handleDelete(contextMenu.file);
-            },
-          },
-        ]
-      : [
-          {
-            label: "Paste",
-            shortcut: "Ctrl+V",
-            disabled: !useSftpStore.getState().clipboard,
-            onClick: handlePaste,
-          },
-          { type: "separator" as const },
-          {
-            label: "New File",
-            shortcut: "Ctrl+N",
-            onClick: handleNewFile,
-          },
-          {
-            label: "New Folder",
-            shortcut: "Ctrl+Shift+N",
-            onClick: handleNewFolder,
-          },
-          { type: "separator" as const },
-          {
-            label: "Refresh",
-            shortcut: "F5",
-            onClick: handleRefresh,
-          },
-        ]
+          ],
+        })
     : [];
 
+  // ── Path bar ─────────────────────────────────────────────────────────────
   const handlePathKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") navigateTo(pathInput);
     else if (e.key === "Escape") setPathInput(currentPath);
   };
 
+  // ── Guard: Tauri only ───────────────────────────────────────────────────
   if (!isTauriAvailable()) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-dark-900 text-center px-6">
@@ -1018,6 +957,7 @@ export default function LocalFileBrowser({
     );
   }
 
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     // biome-ignore lint/a11y/useSemanticElements: main file browser container with drag-and-drop
     <div
@@ -1066,11 +1006,11 @@ export default function LocalFileBrowser({
         canNavigateBack={historyIndex > 0}
         canNavigateForward={historyIndex < history.length - 1}
         onNavigateUp={navigateUp}
-        onRefresh={() => loadDirectory(currentPath)}
+        onRefresh={() => actions.loadFiles(paneId, currentPath, listLocalFiles)}
         onNewFolder={handleNewFolder}
-        onSearchChange={setSearchQuery}
-        onShowHiddenChange={setShowHidden}
-        onViewModeChange={setViewMode}
+        onSearchChange={(q) => actions.setSearchQuery(paneId, q)}
+        onShowHiddenChange={(s) => actions.setShowHidden(paneId, s)}
+        onViewModeChange={(m) => actions.setViewMode(paneId, m)}
       />
 
       {error && (
@@ -1079,7 +1019,7 @@ export default function LocalFileBrowser({
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => setError(null)}
+            onClick={() => actions.clearError(paneId)}
             className="text-red-300 hover:text-red-200"
           >
             &times;
@@ -1125,11 +1065,15 @@ export default function LocalFileBrowser({
             onSelect={handleSelect}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
-            onSortFieldChange={setSortField}
-            onSortDirectionChange={setSortDirection}
-            onRenameValueChange={setRenameValue}
+            onSortFieldChange={(f) => actions.setSortField(paneId, f)}
+            onSortDirectionChange={(fn) =>
+              useFileBrowserStore.getState().updatePane(paneId, {
+                sortDirection: fn(sortDirection),
+              })
+            }
+            onRenameValueChange={(v) => actions.setRenameValue(paneId, v)}
             onCommitRename={commitRename}
-            onSetRenamingPath={setRenamingPath}
+            onSetRenamingPath={(p) => actions.setRenamingPath(paneId, p)}
             renameInputRef={renameInputRef}
           />
         </div>
