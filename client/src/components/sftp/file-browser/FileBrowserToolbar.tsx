@@ -125,17 +125,21 @@ export default function FileBrowserToolbar({
             variant="ghost"
             size="icon-sm"
             onClick={() => setViewMode("list")}
-            className={viewMode === "list" ? "bg-primary-600" : ""}
+            className={
+              viewMode === "list" ? "bg-primary-600/15 text-primary-500" : ""
+            }
           >
-            <ListIcon className="w-4 h-4 text-white" />
+            <ListIcon className="w-4 h-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={() => setViewMode("grid")}
-            className={viewMode === "grid" ? "bg-primary-600" : ""}
+            className={
+              viewMode === "grid" ? "bg-primary-600/15 text-primary-500" : ""
+            }
           >
-            <SquaresFourIcon className="w-4 h-4 text-white" />
+            <SquaresFourIcon className="w-4 h-4" />
           </Button>
         </div>
       </div>

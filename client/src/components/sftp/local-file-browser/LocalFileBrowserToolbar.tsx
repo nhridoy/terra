@@ -131,17 +131,21 @@ export default function LocalFileBrowserToolbar({
             variant="ghost"
             size="icon-sm"
             onClick={() => onViewModeChange("list")}
-            className={viewMode === "list" ? "bg-primary-600" : ""}
+            className={
+              viewMode === "list" ? "bg-primary-600/15 text-primary-500" : ""
+            }
           >
-            <ListDashesIcon className="w-4 h-4 text-white" weight="bold" />
+            <ListDashesIcon className="w-4 h-4" weight="bold" />
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={() => onViewModeChange("grid")}
-            className={viewMode === "grid" ? "bg-primary-600" : ""}
+            className={
+              viewMode === "grid" ? "bg-primary-600/15 text-primary-500" : ""
+            }
           >
-            <GridFourIcon className="w-4 h-4 text-white" weight="bold" />
+            <GridFourIcon className="w-4 h-4" weight="bold" />
           </Button>
         </div>
       </div>

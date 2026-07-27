@@ -1,7 +1,6 @@
 import { FileIcon, FolderIcon } from "react-material-icon-theme";
 import type { FileItem } from "./sftpTypes";
 
-
 export function formatSize(bytes: number) {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -20,19 +19,14 @@ export function formatDate(dateStr: string) {
   });
 }
 
-export function getFileIcon(file: FileItem) {
+export function getFileIcon(file: FileItem, size = 20) {
   if (file.type === "directory") {
-    return <FolderIcon folderName={file.name} size={20} />;
+    return <FolderIcon folderName={file.name} size={size} />;
   }
 
-  const ext = file.name.includes(".") ? file.name.split(".").pop() || "" : undefined;
+  const ext = file.name.includes(".")
+    ? file.name.split(".").pop() || ""
+    : undefined;
 
-  // Pass all three props for maximum detection
-  return (
-    <FileIcon
-      fileName={file.name}
-      fileExtension={ext}
-      size={20}
-    />
-  );
+  return <FileIcon fileName={file.name} fileExtension={ext} size={size} />;
 }
