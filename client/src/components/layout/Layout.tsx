@@ -1,5 +1,5 @@
 import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
-import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
+import { DragDropProvider, DragOverlay, KeyboardSensor } from "@dnd-kit/react";
 import { FolderIcon, TerminalIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
@@ -101,7 +101,9 @@ export default function Layout() {
   return (
     <DragDropProvider
       sensors={(defaults) => [
-        ...defaults.filter((sensor) => sensor !== PointerSensor),
+        ...defaults.filter(
+          (sensor) => sensor !== PointerSensor && sensor !== KeyboardSensor,
+        ),
         PointerSensor.configure({
           activationConstraints: (event) => {
             if (event.pointerType === "touch") {

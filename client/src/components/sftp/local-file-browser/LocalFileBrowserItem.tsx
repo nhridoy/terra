@@ -81,6 +81,7 @@ export default function LocalFileBrowserItem({
               onKeyDown={(e) => {
                 if (e.key === "Enter") onCommitRename();
                 if (e.key === "Escape") onSetRenamingPath(null);
+                if (e.key === " ") e.stopPropagation();
               }}
               onBlur={onCommitRename}
               onClick={(e) => e.stopPropagation()}

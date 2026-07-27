@@ -57,13 +57,16 @@ export function useFileOperations({
     [paneId],
   );
 
+  const renamingInProgress = useRef(false);
+
   const commitRename = useCallback(async () => {
-    if (!renamingPath) return;
+    if (!renamingPath || renamingInProgress.current) return;
     const file = files.find((f) => f.path === renamingPath);
     if (!file || renameValue === file.name || !renameValue.trim()) {
       actions.cancelRename(paneId);
       return;
     }
+    renamingInProgress.current = true;
     try {
       const sep = currentPath.includes("\\") ? "\\" : "/";
       const newPath = currentPath + sep + renameValue.trim();
@@ -73,6 +76,7 @@ export function useFileOperations({
     } catch (err: unknown) {
       toast.error(`Failed to rename: ${extractError(err)}`);
     } finally {
+      renamingInProgress.current = false;
       actions.cancelRename(paneId);
     }
   }, [paneId, renamingPath, renameValue, files, currentPath, reload]);

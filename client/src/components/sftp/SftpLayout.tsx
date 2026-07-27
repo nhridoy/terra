@@ -5,6 +5,7 @@ import {
   type DragOverEvent,
   DragOverlay,
   type DragStartEvent,
+  KeyboardSensor,
 } from "@dnd-kit/react";
 import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -137,7 +138,9 @@ export default function SftpLayout() {
   return (
     <DragDropProvider
       sensors={(defaults) => [
-        ...defaults.filter((sensor) => sensor !== PointerSensor),
+        ...defaults.filter(
+          (sensor) => sensor !== PointerSensor && sensor !== KeyboardSensor,
+        ),
         PointerSensor.configure({
           activationConstraints: (event) => {
             if (event.pointerType === "touch") {

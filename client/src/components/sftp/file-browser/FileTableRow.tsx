@@ -44,6 +44,7 @@ export default function FileTableRow({
       }
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
+          if ((e.target as HTMLElement).tagName === "INPUT") return;
           e.preventDefault();
           onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey, sortedFiles);
         }

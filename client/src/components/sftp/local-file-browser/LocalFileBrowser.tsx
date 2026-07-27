@@ -620,13 +620,10 @@ export default function LocalFileBrowser({
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    // biome-ignore lint/a11y/useSemanticElements: main file browser container with drag-and-drop
+    // biome-ignore lint/a11y/noStaticElementInteractions: file browser container needs mousedown for marquee + drag-drop
     <div
       ref={setContainerRef}
       className="h-full flex flex-col bg-dark-900 relative select-none"
-      role="button"
-      tabIndex={0}
-      onKeyDown={() => {}}
       onDragOver={handleDesktopDragOver}
       onDragLeave={handleDesktopDragLeave}
       onDrop={handleDesktopDrop}

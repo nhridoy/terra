@@ -48,9 +48,11 @@ export function useMarqueeSelection({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
       if (
-        !(e.target as HTMLElement).closest("[data-file-item]") &&
-        !(e.target as HTMLElement).closest("[data-marquee]")
+        !target.closest("[data-file-item]") &&
+        !target.closest("[data-marquee]") &&
+        !target.closest("input, textarea, select")
       ) {
         e.preventDefault();
         setIsDragging(true);
