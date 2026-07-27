@@ -68,12 +68,15 @@ function createPaneState(paneId: string, initialPath: string): FileBrowserPane {
 
 interface FileBrowserStore {
   panes: Record<string, FileBrowserPane>;
+  activePaneId: string | null;
   getOrCreatePane: (paneId: string, initialPath: string) => FileBrowserPane;
   updatePane: (paneId: string, patch: Partial<FileBrowserPane>) => void;
+  setActivePane: (paneId: string) => void;
 }
 
 export const useFileBrowserStore = create<FileBrowserStore>((set, get) => ({
   panes: {},
+  activePaneId: null,
 
   getOrCreatePane: (paneId, initialPath) => {
     if (get().panes[paneId]) return get().panes[paneId];
@@ -91,6 +94,10 @@ export const useFileBrowserStore = create<FileBrowserStore>((set, get) => ({
         [paneId]: { ...state.panes[paneId], ...patch },
       },
     }));
+  },
+
+  setActivePane: (paneId) => {
+    set({ activePaneId: paneId });
   },
 }));
 
@@ -302,5 +309,9 @@ export const fileBrowserActions = {
         return p.sortDirection === "asc" ? cmp : -cmp;
       });
     update(paneId, { sortedFiles: sorted });
+  },
+
+  setActivePane(paneId: string) {
+    useFileBrowserStore.getState().setActivePane(paneId);
   },
 };

@@ -4,7 +4,10 @@ import { buildClipboardPaths } from "../../../lib/buildClipboardPaths";
 import { extractError } from "../../../lib/extractError";
 import { copyLocalFile, moveLocalFile } from "../../../lib/localFs";
 import type { FileItem } from "../../../lib/sftpTypes";
-import { fileBrowserActions } from "../../../stores/fileBrowserStore";
+import {
+  fileBrowserActions,
+  useFileBrowserStore,
+} from "../../../stores/fileBrowserStore";
 import { useSftpStore } from "../../../stores/sftpStore";
 
 interface UseClipboardParams {
@@ -43,8 +46,15 @@ export function useClipboard({
       toast.error("Cannot paste remote files to local filesystem");
       return;
     }
+
+    // Read current files from store to avoid stale closure
+    const currentFiles =
+      useFileBrowserStore.getState().panes[paneId]?.files ?? [];
+
+    const movedPaths = new Set<string>();
+    const addedItems: FileItem[] = [];
     let pasted = 0;
-    const copiedPaths = new Set<string>();
+
     for (const srcPath of clipboard.paths) {
       const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
       const destPath =
@@ -53,7 +63,10 @@ export function useClipboard({
           : `${currentPath}\\${fileName}`;
       try {
         if (clipboardMode === "copy") {
-          if (srcPath === destPath) {
+          let finalPath = destPath;
+          let finalName = fileName;
+          const normalize = (p: string) => p.replace(/\\/g, "/");
+          if (normalize(srcPath) === normalize(destPath)) {
             const dir =
               destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
               destPath.substring(0, destPath.lastIndexOf("/") + 1);
@@ -63,34 +76,50 @@ export function useClipboard({
             const base = ext
               ? fileName.substring(0, fileName.length - ext.length)
               : fileName;
-            await copyLocalFile(srcPath, `${dir}${base} (copy)${ext}`);
-          } else {
-            await copyLocalFile(srcPath, destPath);
+            finalName = `${base} (copy)${ext}`;
+            finalPath = `${dir}${finalName}`;
           }
-          copiedPaths.add(srcPath);
+          await copyLocalFile(srcPath, finalPath);
+          addedItems.push({
+            name: finalName,
+            path: finalPath,
+            type: "file",
+            size: 0,
+            permissions: "",
+            owner: "",
+            group: "",
+            modifiedAt: new Date().toISOString(),
+            isHidden: finalName.startsWith("."),
+          });
         } else {
           await moveLocalFile(srcPath, destPath);
+          movedPaths.add(srcPath);
         }
         pasted++;
       } catch (err) {
         toast.error(extractError(err, `Failed to paste ${fileName}`));
       }
     }
+
     if (pasted > 0) {
       toast.success(
         `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
       );
-      if (clipboardMode === "cut") {
-        actions.setFiles(
-          paneId,
-          files.filter((f) => !copiedPaths.has(f.path)),
-        );
+
+      let next = currentFiles;
+      if (clipboardMode === "copy" && addedItems.length > 0) {
+        next = [...next, ...addedItems];
       }
+      if (clipboardMode === "cut" && movedPaths.size > 0) {
+        next = next.filter((f) => !movedPaths.has(f.path));
+      }
+      actions.setFiles(paneId, next);
     }
+
     if (clipboardMode === "cut") {
       useSftpStore.getState().clearClipboard();
     }
-  }, [currentPath, files, paneId]);
+  }, [currentPath, paneId]);
 
   return { handleCopy, handleCut, handlePaste };
 }

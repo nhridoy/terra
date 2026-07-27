@@ -49,6 +49,7 @@ export default function LocalFileBrowser({
 }: LocalFileBrowserProps) {
   // ── Store ────────────────────────────────────────────────────────────────
   const paneState = useFileBrowserStore((s) => s.panes[paneId]);
+  const activePaneId = useFileBrowserStore((s) => s.activePaneId);
   const getOrCreatePane = useFileBrowserStore((s) => s.getOrCreatePane);
 
   // Initialize pane on first render
@@ -446,6 +447,8 @@ export default function LocalFileBrowser({
     onDelete: fileOps.handleDeleteSelected,
     onNewFile: fileOps.handleNewFile,
     onNewFolder: fileOps.handleNewFolder,
+    activePaneId,
+    paneId,
   });
 
   // ── Context menu items ───────────────────────────────────────────────────
@@ -600,7 +603,10 @@ export default function LocalFileBrowser({
       onDragLeave={handleDesktopDragLeave}
       onDrop={handleDesktopDrop}
       onContextMenu={handleBackgroundContextMenu}
-      onMouseDown={marquee.handleMouseDown}
+      onMouseDown={(e) => {
+        actions.setActivePane(paneId);
+        marquee.handleMouseDown(e);
+      }}
       onMouseMove={marquee.handleMouseMove}
       onMouseUp={marquee.handleMouseUp}
     >
