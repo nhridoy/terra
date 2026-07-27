@@ -1,7 +1,7 @@
 import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
 import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../../lib/extractError";
 import { LocalFileProvider, transferFiles } from "../../../lib/fileTransfer";
@@ -74,7 +74,7 @@ export default function LocalFileBrowser({
   const pasteConflicts = paneState?.pasteConflicts ?? null;
   const pendingDrop = paneState?.pendingDrop ?? null;
 
-  const sortedFiles = paneState?.sortedFiles ?? [];
+  // sortedFiles computed via useMemo below — no store read needed here
 
   const fileDragState = useSftpStore((s) => s.fileDragState);
   const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
@@ -164,11 +164,34 @@ export default function LocalFileBrowser({
     [navigateTo],
   );
 
-  // ── Recompute sorted files when inputs change ────────────────────────────
-  // biome-ignore lint/correctness/useExhaustiveDependencies: we need these to trigger recomputation
+  // ── Recompute sorted files during render (no stale effect lag) ──────────
+  const computedSortedFiles = useMemo(() => {
+    return [...files]
+      .filter(
+        (f) =>
+          (showHidden || !f.isHidden) &&
+          (searchQuery === "" ||
+            f.name.toLowerCase().includes(searchQuery.toLowerCase())),
+      )
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+        let cmp = 0;
+        if (sortField === "name") cmp = a.name.localeCompare(b.name);
+        else if (sortField === "size") cmp = a.size - b.size;
+        else if (sortField === "permissions")
+          cmp = a.permissions.localeCompare(b.permissions);
+        else if (sortField === "modifiedAt")
+          cmp =
+            new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
+        return sortDirection === "asc" ? cmp : -cmp;
+      });
+  }, [files, showHidden, searchQuery, sortField, sortDirection]);
+
+  // Sync computed value back to store for remote browser reusability
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — store sync only
   useEffect(() => {
     actions.updateSortedFiles(paneId);
-  }, [paneId, files, showHidden, searchQuery, sortField, sortDirection]);
+  }, [computedSortedFiles]);
 
   const handleSelect = useCallback(
     (fileName: string, isMultiSelect: boolean, isRangeSelect: boolean) => {
@@ -177,10 +200,10 @@ export default function LocalFileBrowser({
         fileName,
         isMultiSelect,
         isRangeSelect,
-        sortedFiles,
+        computedSortedFiles,
       );
     },
-    [paneId, sortedFiles],
+    [paneId, computedSortedFiles],
   );
 
   // ── Transfer execution ───────────────────────────────────────────────────
@@ -225,29 +248,34 @@ export default function LocalFileBrowser({
         showTransferSuccess(toastId, dragFiles, mode);
       }
 
-      // Optimistic UI update
-      const isDestCurrentDir = destDirPath === currentPath;
-      const isSourceCurrentDir = dragFiles.some(
-        (f) => f.path.split(/[/\\]/).slice(0, -1).join("/") === currentPath,
-      );
+      // Silent reload: re-read current directory + any source panes
+      try {
+        const fresh = await listLocalFiles(currentPath);
+        actions.setFiles(paneId, fresh);
+      } catch {
+        // silent fail
+      }
 
-      const prevFiles =
-        useFileBrowserStore.getState().panes[paneId]?.files ?? [];
-      let next = prevFiles;
-      if (mode === "move" && isSourceCurrentDir) {
-        const movedPaths = new Set(results.map((r) => r.file.path));
-        next = next.filter((f) => !movedPaths.has(f.path));
+      // If move, also reload any source panes showing the source directory
+      if (mode === "move") {
+        const sourceDir =
+          dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join("/") || "";
+        if (sourceDir) {
+          const allPanes = useFileBrowserStore.getState().panes;
+          for (const [id, p] of Object.entries(allPanes)) {
+            if (id === paneId) continue;
+            const paneDir = p.currentPath.replace(/\\/g, "/");
+            if (paneDir === sourceDir.replace(/\\/g, "/")) {
+              try {
+                const srcFresh = await listLocalFiles(p.currentPath);
+                fileBrowserActions.setFiles(id, srcFresh);
+              } catch {
+                // silent fail
+              }
+            }
+          }
+        }
       }
-      if (mode === "copy" && isDestCurrentDir) {
-        const added = results
-          .filter((r) => r.action !== "skipped")
-          .map((r) => ({
-            ...r.file,
-            path: `${destDirPath}/${r.file.name}`,
-          }));
-        next = [...next, ...added];
-      }
-      actions.setFiles(paneId, next);
     },
     [currentPath, paneId],
   );
@@ -680,17 +708,17 @@ export default function LocalFileBrowser({
         </div>
       )}
 
-      {!isLoading && sortedFiles.length === 0 && (
+      {!isLoading && computedSortedFiles.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center text-dark-400">
           <FolderIcon className="w-16 h-16 mb-3 text-dark-600" weight="bold" />
           <p>{searchQuery ? "No matching files" : "Empty directory"}</p>
         </div>
       )}
 
-      {!isLoading && sortedFiles.length > 0 && (
+      {!isLoading && computedSortedFiles.length > 0 && (
         <div className="flex-1 overflow-y-auto">
           <LocalFileBrowserList
-            files={sortedFiles}
+            files={computedSortedFiles}
             viewMode={viewMode}
             selectedFiles={selectedFiles}
             paneId={paneId}
@@ -716,7 +744,7 @@ export default function LocalFileBrowser({
       )}
 
       <LocalFileBrowserStatusBar
-        totalCount={sortedFiles.length}
+        totalCount={computedSortedFiles.length}
         selectedCount={selectedFiles.size}
       />
 

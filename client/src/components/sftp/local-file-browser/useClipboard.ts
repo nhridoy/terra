@@ -2,7 +2,11 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { buildClipboardPaths } from "../../../lib/buildClipboardPaths";
 import { extractError } from "../../../lib/extractError";
-import { copyLocalFile, moveLocalFile } from "../../../lib/localFs";
+import {
+  copyLocalFile,
+  listLocalFiles,
+  moveLocalFile,
+} from "../../../lib/localFs";
 import type { FileItem } from "../../../lib/sftpTypes";
 import {
   fileBrowserActions,
@@ -47,12 +51,7 @@ export function useClipboard({
       return;
     }
 
-    // Read current files from store to avoid stale closure
-    const currentFiles =
-      useFileBrowserStore.getState().panes[paneId]?.files ?? [];
-
     const movedPaths = new Set<string>();
-    const addedItems: FileItem[] = [];
     let pasted = 0;
 
     for (const srcPath of clipboard.paths) {
@@ -64,7 +63,6 @@ export function useClipboard({
       try {
         if (clipboardMode === "copy") {
           let finalPath = destPath;
-          let finalName = fileName;
           const normalize = (p: string) => p.replace(/\\/g, "/");
           if (normalize(srcPath) === normalize(destPath)) {
             const dir =
@@ -76,21 +74,9 @@ export function useClipboard({
             const base = ext
               ? fileName.substring(0, fileName.length - ext.length)
               : fileName;
-            finalName = `${base} (copy)${ext}`;
-            finalPath = `${dir}${finalName}`;
+            finalPath = `${dir}${base} (copy)${ext}`;
           }
           await copyLocalFile(srcPath, finalPath);
-          addedItems.push({
-            name: finalName,
-            path: finalPath,
-            type: "file",
-            size: 0,
-            permissions: "",
-            owner: "",
-            group: "",
-            modifiedAt: new Date().toISOString(),
-            isHidden: finalName.startsWith("."),
-          });
         } else {
           await moveLocalFile(srcPath, destPath);
           movedPaths.add(srcPath);
@@ -106,14 +92,34 @@ export function useClipboard({
         `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
       );
 
-      let next = currentFiles;
-      if (clipboardMode === "copy" && addedItems.length > 0) {
-        next = [...next, ...addedItems];
+      // Silent reload: re-read current directory
+      try {
+        const freshFiles = await listLocalFiles(currentPath);
+        actions.setFiles(paneId, freshFiles);
+      } catch {
+        // silent fail
       }
+
+      // If cut (move), also reload any source panes showing the source directory
       if (clipboardMode === "cut" && movedPaths.size > 0) {
-        next = next.filter((f) => !movedPaths.has(f.path));
+        const sourceDir =
+          clipboard.paths[0]?.split(/[/\\]/).slice(0, -1).join("/") || "";
+        if (sourceDir) {
+          const allPanes = useFileBrowserStore.getState().panes;
+          for (const [id, p] of Object.entries(allPanes)) {
+            if (id === paneId) continue;
+            const paneDir = p.currentPath.replace(/\\/g, "/");
+            if (paneDir === sourceDir.replace(/\\/g, "/")) {
+              try {
+                const srcFresh = await listLocalFiles(p.currentPath);
+                fileBrowserActions.setFiles(id, srcFresh);
+              } catch {
+                // silent fail
+              }
+            }
+          }
+        }
       }
-      actions.setFiles(paneId, next);
     }
 
     if (clipboardMode === "cut") {

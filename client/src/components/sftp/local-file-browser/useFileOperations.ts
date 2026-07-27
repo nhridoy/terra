@@ -5,6 +5,7 @@ import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
 import {
   createLocalDir,
+  listLocalFiles,
   removeLocalFile,
   renameLocalFile,
   writeLocalFileBytes,
@@ -40,6 +41,16 @@ export function useFileOperations({
   const newFileModal = useModal();
   const newFolderModal = useModal();
 
+  // Silent reload helper: re-read current directory without loading skeleton
+  const reload = useCallback(async () => {
+    try {
+      const fresh = await listLocalFiles(currentPath);
+      actions.setFiles(paneId, fresh);
+    } catch {
+      // silent fail
+    }
+  }, [currentPath, paneId]);
+
   // ── Rename ───────────────────────────────────────────────────────────────
   const startRename = useCallback(
     (file: FileItem) => actions.startRename(paneId, file.path, file.name),
@@ -58,20 +69,13 @@ export function useFileOperations({
       const newPath = currentPath + sep + renameValue.trim();
       await renameLocalFile(file.path, newPath);
       toast.success(`Renamed to ${renameValue.trim()}`);
-      actions.setFiles(
-        paneId,
-        files.map((f) =>
-          f.path === renamingPath
-            ? { ...f, name: renameValue.trim(), path: newPath }
-            : f,
-        ),
-      );
+      await reload();
     } catch (err: unknown) {
       toast.error(`Failed to rename: ${extractError(err)}`);
     } finally {
       actions.cancelRename(paneId);
     }
-  }, [paneId, renamingPath, renameValue, files, currentPath]);
+  }, [paneId, renamingPath, renameValue, files, currentPath, reload]);
 
   // ── New file / folder ────────────────────────────────────────────────────
   const handleNewFolder = useCallback(
@@ -86,27 +90,12 @@ export function useFileOperations({
       try {
         await createLocalDir(currentPath + sep + name);
         toast.success(`Created folder ${name}`);
-        actions.setFiles(paneId, [
-          ...files,
-          {
-            name,
-            path: currentPath.endsWith("/")
-              ? `${currentPath}${name}`
-              : `${currentPath}/${name}`,
-            type: "directory",
-            size: 0,
-            permissions: "",
-            owner: "",
-            group: "",
-            modifiedAt: new Date().toISOString(),
-            isHidden: name.startsWith("."),
-          },
-        ]);
+        await reload();
       } catch (err: unknown) {
         toast.error(`Failed to create folder: ${extractError(err)}`);
       }
     },
-    [paneId, currentPath, files],
+    [currentPath, reload],
   );
 
   const confirmNewFile = useCallback(
@@ -116,25 +105,12 @@ export function useFileOperations({
       try {
         await writeLocalFileBytes(filePath, new Uint8Array(0));
         toast.success(`Created file ${name}`);
-        actions.setFiles(paneId, [
-          ...files,
-          {
-            name,
-            path: filePath,
-            type: "file",
-            size: 0,
-            permissions: "",
-            owner: "",
-            group: "",
-            modifiedAt: new Date().toISOString(),
-            isHidden: name.startsWith("."),
-          },
-        ]);
+        await reload();
       } catch (err: unknown) {
         toast.error(`Failed to create file: ${extractError(err)}`);
       }
     },
-    [paneId, currentPath, files],
+    [currentPath, reload],
   );
 
   // ── Delete ───────────────────────────────────────────────────────────────
@@ -144,15 +120,12 @@ export function useFileOperations({
       try {
         await removeLocalFile(file.path);
         toast.success(`Deleted ${file.name}`);
-        actions.setFiles(
-          paneId,
-          files.filter((f) => f.path !== file.path),
-        );
+        await reload();
       } catch (err: unknown) {
         toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
       }
     },
-    [paneId, files],
+    [reload],
   );
 
   const handleDeleteSelected = useCallback(async () => {
@@ -165,11 +138,9 @@ export function useFileOperations({
       return;
     let deleted = 0;
     let failed = 0;
-    const deletedPaths = new Set<string>();
     for (const file of selected) {
       try {
         await removeLocalFile(file.path);
-        deletedPaths.add(file.path);
         deleted++;
       } catch {
         failed++;
@@ -177,15 +148,12 @@ export function useFileOperations({
     }
     if (deleted > 0) {
       toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
-      actions.setFiles(
-        paneId,
-        files.filter((f) => !deletedPaths.has(f.path)),
-      );
+      await reload();
     }
     if (failed > 0) {
       toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
     }
-  }, [selectedFiles, files, paneId]);
+  }, [selectedFiles, files, reload]);
 
   return {
     renameInputRef,
