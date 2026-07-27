@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../../lib/extractError";
+import { nameFormSchema } from "../../../lib/schema/nameFormSchema";
 import type {
   FileItem,
   FileSortDirection,
@@ -285,6 +286,12 @@ export function useFileOperations({
       return;
     }
     const newName = renameValue.trim();
+    const result = nameFormSchema.safeParse({ name: newName });
+    if (!result.success) {
+      toast.error(result.error.issues[0].message);
+      setRenamingPath(null);
+      return;
+    }
     const newPath =
       currentPath === "/" ? `/${newName}` : `${currentPath}/${newName}`;
     if (files.some((f) => f.path !== renamingPath && f.name === newName)) {

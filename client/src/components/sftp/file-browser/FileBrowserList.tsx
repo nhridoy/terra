@@ -11,7 +11,7 @@ import ContextMenu from "../../ui/ContextMenu";
 import { buildContextMenuItems } from "./buildContextMenuItems";
 import FileGridItem from "./FileGridItem";
 import FileTableRow from "./FileTableRow";
-import { formatDate, formatSize, getFileIcon } from "./helpers";
+import { formatDate, formatSize } from "./helpers";
 
 export interface FileBrowserActions {
   handleDoubleClick: (file: FileItem) => void;
@@ -257,7 +257,6 @@ export default function FileBrowserList({
                   onSelect={actions.handleSelect}
                   sortedFiles={sortedFiles}
                   onContextMenu={handleContextMenu}
-                  getFileIcon={getFileIcon}
                   formatSize={formatSize}
                   formatDate={formatDate}
                 />
@@ -287,7 +286,6 @@ export default function FileBrowserList({
                 onSelect={actions.handleSelect}
                 sortedFiles={sortedFiles}
                 onContextMenu={handleContextMenu}
-                getFileIcon={getFileIcon}
                 formatSize={formatSize}
                 formatDate={formatDate}
               />

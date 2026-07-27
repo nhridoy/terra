@@ -10,6 +10,7 @@ import {
   renameLocalFile,
   writeLocalFileBytes,
 } from "../../../lib/localFs";
+import { nameFormSchema } from "../../../lib/schema/nameFormSchema";
 import type { FileItem } from "../../../lib/sftpTypes";
 import {
   fileBrowserActions,
@@ -66,12 +67,18 @@ export function useFileOperations({
       actions.cancelRename(paneId);
       return;
     }
+    const trimmed = renameValue.trim();
+    const result = nameFormSchema.safeParse({ name: trimmed });
+    if (!result.success) {
+      toast.error(result.error.issues[0].message);
+      return;
+    }
     renamingInProgress.current = true;
     try {
       const sep = currentPath.includes("\\") ? "\\" : "/";
-      const newPath = currentPath + sep + renameValue.trim();
+      const newPath = currentPath + sep + trimmed;
       await renameLocalFile(file.path, newPath);
-      toast.success(`Renamed to ${renameValue.trim()}`);
+      toast.success(`Renamed to ${trimmed}`);
       await reload();
     } catch (err: unknown) {
       toast.error(`Failed to rename: ${extractError(err)}`);

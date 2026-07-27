@@ -1,4 +1,5 @@
 import { accessibleClickHandler } from "../../../lib/accessibleClickHandler";
+import { getFileIcon } from "./helpers";
 import type { FileRowProps } from "./types";
 import { useFileItemDnD } from "./useFileItemDnD";
 
@@ -21,7 +22,6 @@ export default function FileGridItem({
   onSelect,
   sortedFiles,
   onContextMenu,
-  getFileIcon,
   formatSize,
 }: FileRowProps) {
   const { droppable, mergedRef } = useFileItemDnD({
@@ -62,6 +62,7 @@ export default function FileGridItem({
         isRenaming ? undefined : accessibleClickHandler(() => onDoubleClick())
       }
       onContextMenu={(e) => onContextMenu(e, file)}
+      title={isRenaming ? undefined : file.name}
       className={`group relative p-4 rounded-xl cursor-pointer select-none flex flex-col items-center transition-all duration-150 ${
         droppable.isDropTarget
           ? "bg-primary-600/15 ring-2 ring-inset ring-primary-500/60 scale-[1.02]"

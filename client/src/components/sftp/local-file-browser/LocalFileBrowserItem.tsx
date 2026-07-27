@@ -115,6 +115,7 @@ export default function LocalFileBrowserItem({
       tabIndex={0}
       data-file-item
       data-file-name={file.name}
+      title={file.name}
       onKeyDown={accessibleClickHandler(() => onDoubleClick(file))}
       onDoubleClick={() => onDoubleClick(file)}
       onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey)}

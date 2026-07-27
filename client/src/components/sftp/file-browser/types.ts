@@ -24,7 +24,6 @@ export interface FileRowProps {
   ) => void;
   sortedFiles: FileItem[];
   onContextMenu: (e: React.MouseEvent, file?: FileItem) => void;
-  getFileIcon: (file: FileItem) => React.ReactNode;
   formatSize: (size: number) => string;
   formatDate: (date: string) => string;
 }

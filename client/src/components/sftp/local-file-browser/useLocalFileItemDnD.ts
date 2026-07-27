@@ -1,7 +1,7 @@
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { pointerIntersection } from "@dnd-kit/collision";
-import { useDraggable, useDroppable } from "@dnd-kit/react";
-import { useCallback } from "react";
+import { useDragDropMonitor, useDraggable, useDroppable } from "@dnd-kit/react";
+import { useCallback, useState } from "react";
 import type { FileItem } from "../../../lib/sftpTypes";
 
 interface UseLocalFileItemDnDProps {
@@ -17,6 +17,23 @@ export function useLocalFileItemDnD({
   selectedFiles,
   files,
 }: UseLocalFileItemDnDProps) {
+  const [isDraggingSelf, setIsDraggingSelf] = useState(false);
+
+  useDragDropMonitor({
+    onDragStart(event) {
+      const source = event.operation.source;
+      if (source?.data?.type === "file-drag") {
+        const dragFiles = source.data.files as FileItem[];
+        if (dragFiles.some((f) => f.path === file.path)) {
+          setIsDraggingSelf(true);
+        }
+      }
+    },
+    onDragEnd() {
+      setIsDraggingSelf(false);
+    },
+  });
+
   const draggable = useDraggable({
     id: `file-drag-${paneId}-${file.path}`,
     data: {
@@ -32,7 +49,7 @@ export function useLocalFileItemDnD({
   const droppable = useDroppable({
     id: `file-drop-${paneId}-${file.path}`,
     data: { type: "file-drop", paneId, hostId: "local", path: file.path },
-    disabled: file.type !== "directory",
+    disabled: file.type !== "directory" || isDraggingSelf,
     collisionDetector: pointerIntersection,
     collisionPriority: CollisionPriority.High,
   });

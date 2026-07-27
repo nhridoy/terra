@@ -1,3 +1,4 @@
+import { getFileIcon } from "./helpers";
 import type { FileRowProps } from "./types";
 import { useFileItemDnD } from "./useFileItemDnD";
 
@@ -20,7 +21,6 @@ export default function FileTableRow({
   onSelect,
   sortedFiles,
   onContextMenu,
-  getFileIcon,
   formatSize,
   formatDate,
 }: FileRowProps) {
