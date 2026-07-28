@@ -1,7 +1,6 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useModal } from "../../../hooks/useModal";
-import { confirmDelete } from "../../../lib/confirmDelete";
 import { extractError } from "../../../lib/extractError";
 import {
   createLocalDir,
@@ -41,6 +40,13 @@ export function useFileOperations({
 
   const newFileModal = useModal();
   const newFolderModal = useModal();
+
+  const deleteDialogOpen = useModal();
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const pendingDeleteRef = useRef<{
+    files: FileItem[];
+    toastPrefix?: string;
+  } | null>(null);
 
   // Silent reload helper: re-read current directory without loading skeleton
   const reload = useCallback(async () => {
@@ -125,46 +131,60 @@ export function useFileOperations({
   );
 
   // ── Delete ───────────────────────────────────────────────────────────────
-  const handleDelete = useCallback(
-    async (file: FileItem) => {
-      if (!(await confirmDelete(`Delete "${file.name}"?`))) return;
-      try {
-        await removeLocalFile(file.path);
-        toast.success(`Deleted ${file.name}`);
+  const performDelete = useCallback(
+    async (toDelete: FileItem[]) => {
+      let deleted = 0;
+      let failed = 0;
+      for (const file of toDelete) {
+        try {
+          await removeLocalFile(file.path);
+          deleted++;
+        } catch {
+          failed++;
+        }
+      }
+      if (deleted > 0) {
+        toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
         await reload();
-      } catch (err: unknown) {
-        toast.error(`Failed to delete ${file.name}: ${extractError(err)}`);
+      }
+      if (failed > 0) {
+        toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
       }
     },
     [reload],
   );
 
-  const handleDeleteSelected = useCallback(async () => {
+  const confirmDeleteAction = useCallback(() => {
+    deleteDialogOpen.hide();
+    const pending = pendingDeleteRef.current;
+    pendingDeleteRef.current = null;
+    if (pending) performDelete(pending.files);
+  }, [deleteDialogOpen, performDelete]);
+
+  const cancelDelete = useCallback(() => {
+    deleteDialogOpen.hide();
+    pendingDeleteRef.current = null;
+  }, [deleteDialogOpen]);
+
+  const handleDelete = useCallback(
+    (file: FileItem) => {
+      pendingDeleteRef.current = { files: [file] };
+      setDeleteMessage(`Delete "${file.name}"?`);
+      deleteDialogOpen.show();
+    },
+    [deleteDialogOpen],
+  );
+
+  const handleDeleteSelected = useCallback(() => {
     const selected = [...selectedFiles]
       .map((name) => files.find((f) => f.name === name))
       .filter((f): f is FileItem => !!f);
     if (selected.length === 0) return;
+    pendingDeleteRef.current = { files: selected };
     const count = selected.length;
-    if (!(await confirmDelete(`Delete ${count} item${count > 1 ? "s" : ""}?`)))
-      return;
-    let deleted = 0;
-    let failed = 0;
-    for (const file of selected) {
-      try {
-        await removeLocalFile(file.path);
-        deleted++;
-      } catch {
-        failed++;
-      }
-    }
-    if (deleted > 0) {
-      toast.success(`Deleted ${deleted} item${deleted > 1 ? "s" : ""}`);
-      await reload();
-    }
-    if (failed > 0) {
-      toast.error(`Failed to delete ${failed} item${failed > 1 ? "s" : ""}`);
-    }
-  }, [selectedFiles, files, reload]);
+    setDeleteMessage(`Delete ${count} item${count > 1 ? "s" : ""}?`);
+    deleteDialogOpen.show();
+  }, [selectedFiles, files, deleteDialogOpen]);
 
   return {
     renameInputRef,
@@ -172,6 +192,10 @@ export function useFileOperations({
     renameValue,
     newFileModal,
     newFolderModal,
+    deleteDialogOpen: deleteDialogOpen.open,
+    deleteMessage,
+    confirmDelete: confirmDeleteAction,
+    cancelDelete,
     startRename,
     commitRename,
     handleNewFile,

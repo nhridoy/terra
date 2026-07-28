@@ -22,6 +22,7 @@ import {
   useFileBrowserStore,
 } from "../../../stores/fileBrowserStore";
 import { useSftpStore } from "../../../stores/sftpStore";
+import ConfirmDeleteDialog from "../../ui/ConfirmDeleteDialog";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import PromptDialog from "../../ui/PromptDialog";
 import {
@@ -817,6 +818,13 @@ export default function LocalFileBrowser({
           onClose={fileOps.newFolderModal.hide}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={fileOps.deleteDialogOpen}
+        message={fileOps.deleteMessage}
+        onConfirm={fileOps.confirmDelete}
+        onCancel={fileOps.cancelDelete}
+      />
     </div>
   );
 }

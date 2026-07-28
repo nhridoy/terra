@@ -10,12 +10,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { detectShells, type ShellInfo } from "../../lib/shellDetection";
 import { type Host, useHostStore } from "../../stores/hostStore";
 import { useTabGroupStore } from "../../stores/tabGroupStore";
 import type { PaneNode } from "../../stores/terminalStore";
 import { useVaultStore } from "../../stores/vaultStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import WorkspaceForm from "../workspace/WorkspaceForm";
@@ -67,6 +67,8 @@ export default function HostBrowser({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const renameModal = useModal();
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const deleteDialog = useModal();
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [localShells, setLocalShells] = useState<ShellInfo[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -284,10 +286,10 @@ export default function HostBrowser({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          if (await confirmDelete("Delete this preset?"))
-                            deleteTabGroup(g.id);
+                          setDeleteTargetId(g.id);
+                          deleteDialog.show();
                         }}
                         className="hover:text-red-500 rounded"
                         title="Delete preset"
@@ -406,6 +408,20 @@ export default function HostBrowser({
           }}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message="Delete this preset?"
+        onConfirm={() => {
+          deleteDialog.hide();
+          if (deleteTargetId) deleteTabGroup(deleteTargetId);
+          setDeleteTargetId(null);
+        }}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTargetId(null);
+        }}
+      />
     </div>
   );
 }

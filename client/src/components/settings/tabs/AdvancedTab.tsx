@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { confirmDelete } from "../../../lib/confirmDelete";
+import { useModal } from "../../../hooks/useModal";
+import ConfirmDeleteDialog from "../../ui/ConfirmDeleteDialog";
 import { Alert } from "../../ui/Alert";
 import { Button } from "../../ui/Button";
 import type { AdvancedTabProps } from "./types";
@@ -23,6 +24,7 @@ export default function AdvancedTab({
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const deleteAllModal = useModal();
 
   const handleExportSettings = () => {
     const settings = {
@@ -132,15 +134,7 @@ export default function AdvancedTab({
           </p>
           <Button
             type="button"
-            onClick={async () => {
-              if (
-                await confirmDelete(
-                  "Are you sure you want to delete all data? This cannot be undone.",
-                )
-              ) {
-                // TODO: Implement data deletion
-              }
-            }}
+            onClick={deleteAllModal.show}
             variant="destructive"
             size="sm"
           >
@@ -148,6 +142,16 @@ export default function AdvancedTab({
           </Button>
         </div>
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteAllModal.open}
+        message="Are you sure you want to delete all data? This cannot be undone."
+        onConfirm={() => {
+          deleteAllModal.hide();
+          // TODO: Implement data deletion
+        }}
+        onCancel={deleteAllModal.hide}
+      />
     </div>
   );
 }

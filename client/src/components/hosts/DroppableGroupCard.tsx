@@ -1,8 +1,9 @@
 import { useDraggable, useDroppable } from "@dnd-kit/react";
 import { FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
+import { useModal } from "../../hooks/useModal";
 import type { Group } from "../../stores/hostStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 
 export function DroppableGroupCard({
@@ -33,6 +34,8 @@ export function DroppableGroupCard({
     droppableRef(el);
     draggableRef(el);
   };
+
+  const deleteDialog = useModal();
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: contains nested <button> elements for edit/delete
@@ -79,10 +82,9 @@ export function DroppableGroupCard({
         </Button>
         <Button
           type="button"
-          onClick={async (e) => {
+          onClick={(e) => {
             e.stopPropagation();
-            if (await confirmDelete(`Delete group "${group.name}"?`))
-              onDelete(group.id);
+            deleteDialog.show();
           }}
           variant="ghost"
           size="icon-xs"
@@ -92,6 +94,16 @@ export function DroppableGroupCard({
           <TrashIcon className="w-3 h-3" weight="bold" />
         </Button>
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={`Delete group "${group.name}"?`}
+        onConfirm={() => {
+          deleteDialog.hide();
+          onDelete(group.id);
+        }}
+        onCancel={deleteDialog.hide}
+      />
     </div>
   );
 }

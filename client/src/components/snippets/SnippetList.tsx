@@ -7,9 +7,10 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { useVaultStore } from "../../stores/vaultStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { EmptyActionState } from "../ui/EmptyActionState";
@@ -35,6 +36,8 @@ export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
   const { currentVaultId } = useVaultStore();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const deleteDialog = useModal();
+  const [deleteTarget, setDeleteTarget] = useState<Snippet | null>(null);
 
   const fetchSnippets = useCallback(async () => {
     try {
@@ -54,15 +57,18 @@ export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
       s.command.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const handleDelete = async (snippet: Snippet) => {
-    if (
-      await confirmDelete(
-        `Delete snippet "${snippet.name}"? This cannot be undone.`,
-      )
-    ) {
-      setSnippets((prev) => prev.filter((s) => s.id !== snippet.id));
-      toast.success(`Deleted "${snippet.name}"`);
-    }
+  const handleDelete = (snippet: Snippet) => {
+    setDeleteTarget(snippet);
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    const snippet = deleteTarget;
+    setDeleteTarget(null);
+    if (!snippet) return;
+    setSnippets((prev) => prev.filter((s) => s.id !== snippet.id));
+    toast.success(`Deleted "${snippet.name}"`);
   };
 
   const handleCopy = (command: string) => {
@@ -178,6 +184,16 @@ export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
           </div>
         )}
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={`Delete snippet "${deleteTarget?.name || ""}"? This cannot be undone.`}
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

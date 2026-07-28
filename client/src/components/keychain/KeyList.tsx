@@ -2,9 +2,9 @@ import { KeyIcon, PlusIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { useKeyStore } from "../../stores/keyStore";
 import { useVaultStore } from "../../stores/vaultStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeader } from "../ui/SectionHeader";
@@ -18,6 +18,8 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
   const generateModal = useModal();
   const [selectedKey, setSelectedKey] = useState<KeyItem | null>(null);
   const { currentVaultId } = useVaultStore();
+  const deleteDialog = useModal();
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -31,18 +33,19 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
     fetchKeys();
   }, [fetchKeys]);
 
-  const handleDelete = async (id: string) => {
-    if (await confirmDelete("Are you sure you want to delete this key?")) {
-      try {
-        setKeys(keys.filter((k) => k.id !== id));
-        if (selectedKey?.id === id) {
-          setSelectedKey(null);
-        }
-        onMutation?.();
-      } catch (error) {
-        console.error("Failed to delete key:", error);
-      }
-    }
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id);
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    if (!id) return;
+    setKeys(keys.filter((k) => k.id !== id));
+    if (selectedKey?.id === id) setSelectedKey(null);
+    onMutation?.();
   };
 
   const getKeyTypeIcon = (keyType: string) => {
@@ -206,6 +209,16 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
           }}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message="Are you sure you want to delete this key?"
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTargetId(null);
+        }}
+      />
     </div>
   );
 }

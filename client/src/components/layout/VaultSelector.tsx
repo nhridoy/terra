@@ -9,8 +9,8 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useModal } from "../../hooks/useModal";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { useVaultStore } from "../../stores/vaultStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import Input from "../ui/Input";
@@ -48,6 +48,8 @@ export function VaultSelector() {
   const formModal = useModal();
   const [editingVault, setEditingVault] = useState<VaultItem | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const deleteDialog = useModal();
+  const [deleteTarget, setDeleteTarget] = useState<VaultItem | null>(null);
 
   const currentVault = vaults.find((v) => v.id === currentVaultId);
 
@@ -90,15 +92,17 @@ export function VaultSelector() {
     formModal.show();
   };
 
-  const handleDelete = async (vault: VaultItem) => {
+  const handleDelete = (vault: VaultItem) => {
     if (vault.isSystem) return;
-    if (
-      !(await confirmDelete(
-        `Delete vault "${vault.name}"? All hosts, keys, groups, snippets, and history in this vault will be permanently removed.`,
-      ))
-    ) {
-      return;
-    }
+    setDeleteTarget(vault);
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    const vault = deleteTarget;
+    setDeleteTarget(null);
+    if (!vault) return;
     try {
       const { fetchVaults } = useVaultStore.getState();
       fetchVaults();
@@ -280,6 +284,16 @@ export function VaultSelector() {
           }}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={`Delete vault "${deleteTarget?.name || ""}"? All hosts, keys, groups, snippets, and history in this vault will be permanently removed.`}
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

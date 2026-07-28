@@ -1,6 +1,7 @@
 import { FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
-import { confirmDelete } from "../../lib/confirmDelete";
+import { useModal } from "../../hooks/useModal";
 import { type Host, useHostStore } from "../../stores/hostStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 
@@ -21,15 +22,15 @@ export default function HostDetails({
   const groupName = host.groupId
     ? groups.find((g) => g.id === host.groupId)?.name
     : null;
+  const deleteDialog = useModal();
+
   const handleSftpClick = (e: React.MouseEvent) => {
     e.stopPropagation();
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (await confirmDelete(`Delete host "${host.name}"?`)) {
-      onDelete(host.id);
-    }
+    deleteDialog.show();
   };
 
   return (
@@ -97,6 +98,16 @@ export default function HostDetails({
 
       {/* SFTP Modal */}
       {/* SFTP view would be handled by the parent Layout component */}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={`Delete host "${host.name}"?`}
+        onConfirm={() => {
+          deleteDialog.hide();
+          onDelete(host.id);
+        }}
+        onCancel={deleteDialog.hide}
+      />
     </>
   );
 }

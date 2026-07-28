@@ -1,9 +1,9 @@
 import { ArrowsLeftRightIcon } from "@phosphor-icons/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useModal } from "../../hooks/useModal";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { usePortForwardingStore } from "../../stores/portForwardingStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeader } from "../ui/SectionHeader";
@@ -27,6 +27,8 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
     clearError,
   } = usePortForwardingStore();
   const createModal = useModal();
+  const deleteDialog = useModal();
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     loadForwards();
@@ -57,11 +59,18 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
     toast.success(`Port forward started on :${data.localPort}`);
   };
 
-  const handleDelete = async (id: string) => {
-    if (await confirmDelete("Delete this port forward?")) {
-      await stopForward(id);
-      toast.success("Port forward stopped");
-    }
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id);
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = async () => {
+    deleteDialog.hide();
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    if (!id) return;
+    await stopForward(id);
+    toast.success("Port forward stopped");
   };
 
   const handleToggle = async (id: string) => {
@@ -110,6 +119,16 @@ export default function PortForwarding({ hostId }: PortForwardingProps) {
       {createModal.open && (
         <PortForwardForm onClose={createModal.hide} onSubmit={onSubmit} />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message="Delete this port forward?"
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTargetId(null);
+        }}
+      />
     </div>
   );
 }

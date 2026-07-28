@@ -1,8 +1,9 @@
 import { useDraggable } from "@dnd-kit/react";
 import { PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
+import { useModal } from "../../hooks/useModal";
 import type { Host } from "../../stores/hostStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 
 export function DraggableHostCard({
@@ -22,6 +23,8 @@ export function DraggableHostCard({
     id: `host:${host.id}`,
     data: { type: "host-source", hostId: host.id },
   });
+
+  const deleteDialog = useModal();
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: contains nested <button> elements for edit/delete
@@ -62,10 +65,9 @@ export function DraggableHostCard({
         </Button>
         <Button
           type="button"
-          onClick={async (e) => {
+          onClick={(e) => {
             e.stopPropagation();
-            if (await confirmDelete(`Delete host "${host.name}"?`))
-              onDelete(host.id);
+            deleteDialog.show();
           }}
           variant="ghost"
           size="icon-xs"
@@ -75,6 +77,16 @@ export function DraggableHostCard({
           <TrashIcon className="w-3 h-3" weight="bold" />
         </Button>
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={`Delete host "${host.name}"?`}
+        onConfirm={() => {
+          deleteDialog.hide();
+          onDelete(host.id);
+        }}
+        onCancel={deleteDialog.hide}
+      />
     </div>
   );
 }

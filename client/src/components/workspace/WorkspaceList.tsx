@@ -7,9 +7,9 @@ import {
 import { useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { confirmDelete } from "../../lib/confirmDelete";
 import { type PaneNode, useTerminalStore } from "../../stores/terminalStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 import { EmptyActionState } from "../ui/EmptyActionState";
 import { SectionHeader } from "../ui/SectionHeader";
@@ -54,6 +54,8 @@ export default function WorkspaceList({
   const { workspaces, renameWorkspace, deleteWorkspace } = useWorkspaceStore();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const renameModal = useModal();
+  const deleteDialog = useModal();
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   // How many currently-open tabs have at least one connected pane. Used to
   // disable "New Workspace" until there is a real group to save.
@@ -92,13 +94,18 @@ export default function WorkspaceList({
     setRenamingId(null);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!(await confirmDelete("Delete this workspace? This cannot be undone.")))
-      return;
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id);
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
     const activeId = useTerminalStore.getState().activeWorkspaceId;
     deleteWorkspace(id);
-    // If we just deleted the workspace that is currently open, drop the
-    // "active workspace" tracking so the save buttons re-activate.
     if (activeId && activeId === id) {
       useTerminalStore.setState({
         activeWorkspaceId: null,
@@ -226,6 +233,16 @@ export default function WorkspaceList({
           }}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message="Delete this workspace? This cannot be undone."
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          setDeleteTargetId(null);
+        }}
+      />
     </div>
   );
 }

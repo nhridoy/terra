@@ -1,10 +1,10 @@
 import { UsersIcon, XIcon } from "@phosphor-icons/react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useModal } from "../../hooks/useModal";
-import { confirmDelete } from "../../lib/confirmDelete";
 import type { CreateTeamFormSchema } from "../../lib/schema/createTeamFormSchema";
 import type { InviteMemberFormSchema } from "../../lib/schema/inviteMemberFormSchema";
 import { useTeamStore } from "../../stores/teamStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 import Select from "../ui/Select";
 import InviteMemberForm from "./InviteMemberForm";
@@ -25,6 +25,9 @@ export default function TeamManager() {
 
   const createModal = useModal();
   const inviteModal = useModal();
+  const deleteDialog = useModal();
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const pendingDeleteAction = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetchTeams();
@@ -45,10 +48,22 @@ export default function TeamManager() {
     }
   };
 
+  const requestDelete = (message: string, action: () => void) => {
+    setDeleteMessage(message);
+    pendingDeleteAction.current = action;
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    const action = pendingDeleteAction.current;
+    pendingDeleteAction.current = null;
+    action?.();
+  };
+
   const handleRemoveMember = async (userId: string) => {
-    if (selectedTeam && (await confirmDelete("Remove this member?"))) {
-      await removeMember(selectedTeam.id, userId);
-    }
+    if (!selectedTeam) return;
+    requestDelete("Remove this member?", () => removeMember(selectedTeam.id, userId));
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -149,9 +164,9 @@ export default function TeamManager() {
                   </Button>
                   <Button
                     type="button"
-                    onClick={async () => {
-                      if (await confirmDelete("Delete this team?")) {
-                        await deleteTeam(selectedTeam.id);
+                    onClick={() => {
+                      if (selectedTeam) {
+                        requestDelete("Delete this team?", () => deleteTeam(selectedTeam.id));
                       }
                     }}
                     variant="destructive"
@@ -248,6 +263,16 @@ export default function TeamManager() {
           onClose={inviteModal.hide}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={deleteMessage}
+        onConfirm={confirmDeleteAction}
+        onCancel={() => {
+          deleteDialog.hide();
+          pendingDeleteAction.current = null;
+        }}
+      />
     </div>
   );
 }

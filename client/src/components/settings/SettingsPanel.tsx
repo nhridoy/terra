@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { confirmDelete } from "../../lib/confirmDelete";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useModal } from "../../hooks/useModal";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useTerminalStore } from "../../stores/terminalStore";
 import { type Theme, useThemeStore } from "../../stores/themeStore";
+import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import { Button } from "../ui/Button";
 import settingsTabs from "./SettingsTabs";
 import AdvancedTab from "./tabs/AdvancedTab";
@@ -30,6 +31,10 @@ export default function SettingsPanel() {
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [knownHostsLoading, setKnownHostsLoading] = useState(false);
 
+  const deleteDialog = useModal();
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const pendingDeleteAction = useRef<(() => void) | null>(null);
+
   const loadKnownHosts = useCallback(async () => {
     try {
       setKnownHostsLoading(true);
@@ -41,30 +46,40 @@ export default function SettingsPanel() {
     }
   }, []);
 
-  const handleRemoveKnownHost = async (host: string, port: number) => {
-    if (
-      await confirmDelete(
-        `Remove known host for ${host}:${port}? You will be prompted to verify their identity on next connection.`,
-      )
-    ) {
-      try {
+  const requestDelete = (message: string, action: () => void) => {
+    setDeleteMessage(message);
+    pendingDeleteAction.current = action;
+    deleteDialog.show();
+  };
+
+  const confirmDeleteAction = () => {
+    deleteDialog.hide();
+    const action = pendingDeleteAction.current;
+    pendingDeleteAction.current = null;
+    action?.();
+  };
+
+  const cancelDelete = () => {
+    deleteDialog.hide();
+    pendingDeleteAction.current = null;
+  };
+
+  const handleRemoveKnownHost = (host: string, port: number) => {
+    requestDelete(
+      `Remove known host for ${host}:${port}? You will be prompted to verify their identity on next connection.`,
+      () => {
         setKnownHosts((prev) =>
           prev.filter((h) => !(h.host === host && h.port === port)),
         );
-      } catch (err) {
-        console.error("Failed to remove known host:", err);
-      }
-    }
+      },
+    );
   };
 
-  const handleClearAllKnownHosts = async () => {
-    if (
-      await confirmDelete(
-        "Clear ALL known hosts? You will be prompted to verify identity for every host on next connection.",
-      )
-    ) {
-      setKnownHosts([]);
-    }
+  const handleClearAllKnownHosts = () => {
+    requestDelete(
+      "Clear ALL known hosts? You will be prompted to verify identity for every host on next connection.",
+      () => setKnownHosts([]),
+    );
   };
 
   useEffect(() => {
@@ -99,14 +114,11 @@ export default function SettingsPanel() {
     updateSetting("bellStyle", value as "none" | "sound" | "visual");
   };
 
-  const handleClearAllSessions = async () => {
-    if (
-      await confirmDelete(
-        "Are you sure you want to close all active terminal sessions?",
-      )
-    ) {
-      closeAllTabs();
-    }
+  const handleClearAllSessions = () => {
+    requestDelete(
+      "Are you sure you want to close all active terminal sessions?",
+      closeAllTabs,
+    );
   };
 
   return (
@@ -188,6 +200,13 @@ export default function SettingsPanel() {
           />
         )}
       </div>
+
+      <ConfirmDeleteDialog
+        open={deleteDialog.open}
+        message={deleteMessage}
+        onConfirm={confirmDeleteAction}
+        onCancel={cancelDelete}
+      />
     </div>
   );
 }
