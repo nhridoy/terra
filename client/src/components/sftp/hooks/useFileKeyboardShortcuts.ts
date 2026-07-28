@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { FileItem } from "../../lib/sftpTypes";
+import type { FileItem } from "../../../lib/sftpTypes";
 
 export interface UseFileKeyboardShortcutsOptions {
   selectedFiles: Set<string>;

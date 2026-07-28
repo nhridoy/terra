@@ -25,22 +25,22 @@ import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import PromptDialog from "../../ui/PromptDialog";
-import { buildBaseContextMenuItems } from "../buildBaseContextMenuItems";
 import PasteConflictDialog from "../file-browser/PasteConflictDialog";
+import { useClipboard } from "../hooks/useClipboard";
+import { useDesktopFileDrop } from "../hooks/useDesktopFileDrop";
+import { useFileKeyboardShortcuts } from "../hooks/useFileKeyboardShortcuts";
+import { useFileOperations } from "../hooks/useLocalFileOperations";
+import { useMarqueeSelection } from "../hooks/useMarqueeSelection";
+import {
+  type ColumnDef,
+  useResizableColumns,
+} from "../hooks/useResizableColumns";
+import { buildBaseContextMenuItems } from "../shared/buildBaseContextMenuItems";
 import FileBrowserListShared from "../shared/FileBrowserList";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
 import FileBrowserToolbar from "../shared/FileBrowserToolbar";
 import FileGridItem from "../shared/FileGridItem";
 import FileListItem from "../shared/FileListItem";
-import {
-  type ColumnDef,
-  useResizableColumns,
-} from "../shared/useResizableColumns";
-import { useFileKeyboardShortcuts } from "../useFileKeyboardShortcuts";
-import { useClipboard } from "./useClipboard";
-import { useDesktopFileDrop } from "./useDesktopFileDrop";
-import { useFileOperations } from "./useFileOperations";
-import { useMarqueeSelection } from "./useMarqueeSelection";
 
 interface LocalFileBrowserProps {
   paneId: string;

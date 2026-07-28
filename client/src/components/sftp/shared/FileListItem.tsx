@@ -1,6 +1,6 @@
 import type { FileItem } from "../../../lib/sftpTypes";
+import { useFileItemDnD } from "../hooks/useFileItemDnD";
 import { formatDate, formatSize, getFileIcon } from "./helpers";
-import { useFileItemDnD } from "./useFileItemDnD";
 
 export interface FileListItemProps {
   file: FileItem;

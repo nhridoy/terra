@@ -5,7 +5,7 @@ import type {
   FileViewMode,
 } from "../../../lib/sftpTypes";
 import { Button } from "../../ui/Button";
-import type { ColumnDef } from "./useResizableColumns";
+import type { ColumnDef } from "../hooks/useResizableColumns";
 
 export interface FileBrowserListProps {
   files: FileItem[];

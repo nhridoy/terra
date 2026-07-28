@@ -5,6 +5,8 @@ import type { FileItem } from "../../../lib/sftpTypes";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import Modal from "../../ui/Modal";
+import { useFileKeyboard } from "../hooks/useFileKeyboard";
+import { useFileOperations } from "../hooks/useFileOperations";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
 import FileBrowserToolbar from "../shared/FileBrowserToolbar";
 import FileBrowserList from "./FileBrowserList";
@@ -14,8 +16,6 @@ import {
   ErrorBar,
 } from "./FileBrowserOverlays";
 import PasteConflictDialog from "./PasteConflictDialog";
-import { useFileKeyboard } from "./useFileKeyboard";
-import { useFileOperations } from "./useFileOperations";
 
 interface FileBrowserProps {
   paneId?: string;

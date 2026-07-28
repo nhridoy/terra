@@ -7,8 +7,8 @@ import {
   ScissorsIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import type { FileItem } from "../../lib/sftpTypes";
-import type { ContextMenuItem } from "../ui/ContextMenu";
+import type { FileItem } from "../../../lib/sftpTypes";
+import type { ContextMenuItem } from "../../ui/ContextMenu";
 
 export interface BaseContextMenuActions {
   onCopy: () => void;

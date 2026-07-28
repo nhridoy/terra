@@ -7,14 +7,14 @@ import type {
   FileViewMode,
 } from "../../../lib/sftpTypes";
 import ContextMenu from "../../ui/ContextMenu";
-import FileBrowserListShared from "../shared/FileBrowserList";
-import FileGridItem from "../shared/FileGridItem";
-import FileListItem from "../shared/FileListItem";
 import {
   type ColumnDef,
   useResizableColumns,
-} from "../shared/useResizableColumns";
-import { buildContextMenuItems } from "./buildContextMenuItems";
+} from "../hooks/useResizableColumns";
+import { buildContextMenuItems } from "../shared/buildContextMenuItems";
+import FileBrowserListShared from "../shared/FileBrowserList";
+import FileGridItem from "../shared/FileGridItem";
+import FileListItem from "../shared/FileListItem";
 
 const REMOTE_COLUMNS: ColumnDef[] = [
   { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },
