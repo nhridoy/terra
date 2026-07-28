@@ -1,12 +1,17 @@
 import { pointerIntersection } from "@dnd-kit/collision";
 import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FileItem } from "../../../lib/sftpTypes";
+import {
+  fileBrowserActions,
+  useFileBrowserStore,
+} from "../../../stores/fileBrowserStore";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import Modal from "../../ui/Modal";
 import { useFileKeyboardShortcuts } from "../hooks/useFileKeyboardShortcuts";
 import { useFileOperations } from "../hooks/useFileOperations";
+import { useSortedFiles } from "../hooks/useSortedFiles";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
 import FileBrowserToolbar from "../shared/FileBrowserToolbar";
 import FileBrowserList from "./FileBrowserList";
@@ -34,13 +39,38 @@ export default function FileBrowser({
   hostUsername,
   onFileSelect,
 }: FileBrowserProps) {
+  // ── Store ────────────────────────────────────────────────────────────────
+  const paneState = useFileBrowserStore((s) => s.panes[paneId]);
+  const activePaneId = useFileBrowserStore((s) => s.activePaneId);
+  const getOrCreatePane = useFileBrowserStore((s) => s.getOrCreatePane);
+
+  // Initialize pane on first render
+  const initialized = useRef(false);
+  if (!initialized.current) {
+    getOrCreatePane(paneId, "/");
+    initialized.current = true;
+  }
+
+  const files = paneState?.files ?? [];
+  const currentPath = paneState?.currentPath ?? "/";
+  const isLoading = paneState?.isLoading ?? false;
+  const error = paneState?.error ?? null;
+  const selectedFiles = paneState?.selectedFiles ?? new Set<string>();
+  const viewMode = paneState?.viewMode ?? "list";
+  const showHidden = paneState?.showHidden ?? false;
+  const sortField = paneState?.sortField ?? "name";
+  const sortDirection = paneState?.sortDirection ?? "asc";
+  const searchQuery = paneState?.searchQuery ?? "";
+  const pasteConflicts = paneState?.pasteConflicts ?? null;
+  const pendingDrop = paneState?.pendingDrop ?? null;
+
   const fileDragState = useSftpStore((s) => s.fileDragState);
   const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
   const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop);
 
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [isDropTarget, setIsDropTarget] = useState(false);
+  const actions = fileBrowserActions;
 
+  // ── Operations (stub until SSH provider is built) ────────────────────────
   const ops = useFileOperations({
     paneId,
     hostId,
@@ -50,6 +80,20 @@ export default function FileBrowser({
     onFileSelect,
   });
 
+  // ── Sorted files ─────────────────────────────────────────────────────────
+  const sortedFiles = useSortedFiles({
+    files,
+    showHidden,
+    searchQuery,
+    sortField,
+    sortDirection,
+  });
+
+  // ── Component-only state ─────────────────────────────────────────────────
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+
+  // ── Drag & drop ──────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
@@ -72,7 +116,7 @@ export default function FileBrowser({
 
   const droppable = useDroppable({
     id: `file-drop-${paneId}`,
-    data: { type: "file-drop", paneId, hostId, path: ops.currentPath },
+    data: { type: "file-drop", paneId, hostId, path: currentPath },
     collisionDetector: pointerIntersection,
   });
 
@@ -91,11 +135,12 @@ export default function FileBrowser({
       ) {
         const sourceHostId = source.data.hostId as string;
         const destHostId = target.data.hostId as string;
-        const files = source.data.files as FileItem[];
+        const dragFiles = source.data.files as FileItem[];
         const destDirPath = target.data.path as string;
-        const srcDir = files[0]?.path.split("/").slice(0, -1).join("/") || "/";
+        const srcDir =
+          dragFiles[0]?.path.split("/").slice(0, -1).join("/") || "/";
         const isNoop = sourceHostId === destHostId && srcDir === destDirPath;
-        setIsDropTarget(!isNoop && destDirPath === ops.currentPath);
+        setIsDropTarget(!isNoop && destDirPath === currentPath);
       } else {
         setIsDropTarget(false);
       }
@@ -120,28 +165,63 @@ export default function FileBrowser({
     setPendingFileDrop(null);
   }, [pendingFileDrop, paneId, ops.executeFileDrop, setPendingFileDrop]);
 
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
   useFileKeyboardShortcuts({
-    activePaneId: ops.activePaneId,
+    activePaneId,
     paneId,
-    selectedFiles: ops.selectedFiles,
-    files: ops.files,
+    selectedFiles,
+    files,
     onCopy: ops.handleCopy,
     onCut: ops.handleCut,
     onPaste: ops.handlePaste,
     onDelete: ops.handleDeleteSelected,
     onRename: ops.startRename,
-    onRefresh: () => ops.loadDirectory(ops.currentPath),
-    onNavigateUp: ops.navigateUp,
-    onClearSelection: () => ops.setSelectedFiles(new Set()),
-    onNewFile: ops.actions.handleNewFile,
+    onRefresh: () => actions.loadFiles(paneId, currentPath, async () => []),
+    onNavigateUp: () => actions.navigateUp(paneId),
+    onClearSelection: () => actions.clearSelection(paneId),
+    onNewFile: ops.handleNewFile,
     onSelectAll: () =>
-      ops.setSelectedFiles(new Set(ops.sortedFiles.map((f) => f.name))),
+      useFileBrowserStore.getState().updatePane(paneId, {
+        selectedFiles: new Set(sortedFiles.map((f) => f.name)),
+      }),
     deleteConfirm: ops.deleteConfirm,
-    pasteConflicts: ops.pasteConflicts,
+    pasteConflicts,
     onConfirmDelete: ops.confirmDeleteAction,
     onDismissDeleteConfirm: () => ops.setDeleteConfirm(null),
-    onDismissPasteConflicts: () => ops.setPasteConflicts(null),
+    onDismissPasteConflicts: () => actions.setPasteConflicts(paneId, null),
   });
+
+  // ── Compose actions for FileBrowserList ──────────────────────────────────
+  const listActions = {
+    handleDoubleClick: (file: FileItem) => {
+      if (file.type === "directory") {
+        actions.navigateTo(paneId, file.path);
+      } else {
+        onFileSelect?.(file);
+      }
+    },
+    handleSelect: (
+      fileName: string,
+      isMultiSelect: boolean,
+      isShift?: boolean,
+      allFiles?: FileItem[],
+    ) => {
+      actions.selectFile(
+        paneId,
+        fileName,
+        isMultiSelect,
+        !!isShift,
+        allFiles ?? sortedFiles,
+      );
+    },
+    handleCopy: ops.handleCopy,
+    handleCut: ops.handleCut,
+    handlePaste: ops.handlePaste,
+    handleDelete: ops.handleDelete,
+    handleNewFolder: ops.handleNewFolder,
+    handleNewFile: ops.handleNewFile,
+    handleDownload: ops.handleDownload,
+  };
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: drag-and-drop container needs div
@@ -162,22 +242,22 @@ export default function FileBrowser({
       />
 
       <FileBrowserToolbar
-        currentPath={ops.currentPath}
+        currentPath={currentPath}
         pathLabel="Remote path"
-        searchQuery={ops.searchQuery}
-        showHidden={ops.showHidden}
-        viewMode={ops.viewMode}
+        searchQuery={searchQuery}
+        showHidden={showHidden}
+        viewMode={viewMode}
         onNavigateTo={(path) => {
           const normalized = path.startsWith("/") ? path : `/${path}`;
-          ops.navigateTo(normalized);
+          actions.navigateTo(paneId, normalized);
         }}
-        onNavigateRoot={() => ops.navigateTo("/")}
-        onNavigateUp={ops.navigateUp}
-        onRefresh={() => ops.loadDirectory(ops.currentPath)}
-        onNewFolder={ops.actions.handleNewFolder}
-        onSearchChange={ops.setSearchQuery}
-        onShowHiddenChange={ops.setShowHidden}
-        onViewModeChange={ops.setViewMode}
+        onNavigateRoot={() => actions.navigateTo(paneId, "/")}
+        onNavigateUp={() => actions.navigateUp(paneId)}
+        onRefresh={() => actions.loadFiles(paneId, currentPath, async () => [])}
+        onNewFolder={ops.handleNewFolder}
+        onSearchChange={(q) => actions.setSearchQuery(paneId, q)}
+        onShowHiddenChange={(v) => actions.setShowHidden(paneId, v)}
+        onViewModeChange={(m) => actions.setViewMode(paneId, m)}
         beforeActions={
           <label className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded text-sm cursor-pointer transition-colors">
             Upload
@@ -193,61 +273,67 @@ export default function FileBrowser({
         }
       />
 
-      <ErrorBar error={ops.error} setError={ops.setError} />
+      <ErrorBar error={error} setError={() => actions.clearError(paneId)} />
 
       <FileBrowserList
-        isLoading={ops.isLoading}
-        sortedFiles={ops.sortedFiles}
-        viewMode={ops.viewMode}
-        searchQuery={ops.searchQuery}
-        sortField={ops.sortField}
-        sortDirection={ops.sortDirection}
-        setSortField={ops.setSortField}
-        setSortDirection={ops.setSortDirection}
+        isLoading={isLoading}
+        sortedFiles={sortedFiles}
+        viewMode={viewMode}
+        searchQuery={searchQuery}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        setSortField={(f) => actions.setSortField(paneId, f)}
+        setSortDirection={(fn) => {
+          const next = typeof fn === "function" ? fn(sortDirection) : fn;
+          useFileBrowserStore.getState().updatePane(paneId, {
+            sortDirection: next,
+          });
+        }}
         paneId={paneId}
         hostId={hostId}
         hostAddress={hostAddress}
         hostUsername={hostUsername}
-        selectedFiles={ops.selectedFiles}
-        clipboard={ops.clipboard}
-        renamingPath={ops.renamingPath}
-        renameValue={ops.renameValue}
+        selectedFiles={selectedFiles}
+        clipboard={useSftpStore.getState().clipboard}
+        renamingPath={paneState?.renamingPath ?? null}
+        renameValue={paneState?.renameValue ?? ""}
         renameInputRef={ops.renameInputRef}
         commitRename={ops.commitRename}
-        setRenamingPath={ops.setRenamingPath}
-        setRenameValue={ops.setRenameValue}
-        actions={ops.actions}
+        setRenamingPath={(p) => actions.setRenamingPath(paneId, p)}
+        setRenameValue={(v) => actions.setRenameValue(paneId, v)}
+        actions={listActions}
       />
 
       <FileBrowserStatusBar
-        totalCount={ops.sortedFiles.length}
-        selectedCount={ops.selectedFiles.size}
+        totalCount={sortedFiles.length}
+        selectedCount={selectedFiles.size}
       />
 
-      {ops.pasteConflicts && (
+      {pasteConflicts && (
         <PasteConflictDialog
-          conflicts={ops.pasteConflicts}
+          conflicts={pasteConflicts}
           onConfirm={(overrides) => {
-            ops.setPasteConflicts(null);
-            if (ops.pendingDrop) {
+            actions.setPasteConflicts(paneId, null);
+            if (pendingDrop) {
               ops.executeFileDrop(
-                ops.pendingDrop.files,
-                ops.pendingDrop.sourceHostId,
-                ops.pendingDrop.destHostId,
-                ops.pendingDrop.destDirPath,
+                pendingDrop.files as FileItem[],
+                "",
+                hostId,
+                pendingDrop.destDirPath,
                 overrides,
-                ops.pendingDrop.sourceDirect,
-                ops.pendingDrop.sourcePaneId,
+                undefined,
+                undefined,
               );
-              ops.setPendingDrop(null);
+              actions.setPendingDrop(paneId, null);
             } else {
               ops.executePaste(overrides);
             }
           }}
           onCancel={() => {
-            ops.setPasteConflicts(null);
-            ops.setPendingDrop(null);
-            if (ops.clipboardMode === "cut") ops.clearClipboard();
+            actions.setPasteConflicts(paneId, null);
+            actions.setPendingDrop(paneId, null);
+            if (useSftpStore.getState().clipboardMode === "cut")
+              useSftpStore.getState().clearClipboard();
           }}
         />
       )}
