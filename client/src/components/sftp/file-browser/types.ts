@@ -26,4 +26,5 @@ export interface FileRowProps {
   onContextMenu: (e: React.MouseEvent, file?: FileItem) => void;
   formatSize: (size: number) => string;
   formatDate: (date: string) => string;
+  columnWidths?: Record<string, number>;
 }

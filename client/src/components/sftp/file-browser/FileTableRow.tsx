@@ -19,6 +19,7 @@ export default function FileTableRow({
   onDoubleClick,
   onSelect,
   onContextMenu,
+  columnWidths,
 }: FileRowProps) {
   return (
     <SharedFileListItem
@@ -36,6 +37,7 @@ export default function FileTableRow({
           : undefined
       }
       showPermissions
+      columnWidths={columnWidths}
       onSelect={(name, isMultiSelect, isRangeSelect) => {
         onSelect(name, isMultiSelect, isRangeSelect, files);
       }}

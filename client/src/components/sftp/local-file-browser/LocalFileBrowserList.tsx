@@ -4,7 +4,18 @@ import type {
   FileViewMode,
 } from "../../../lib/sftpTypes";
 import { Button } from "../../ui/Button";
+import {
+  type ColumnDef,
+  useResizableColumns,
+} from "../shared/useResizableColumns";
 import LocalFileBrowserItem from "./LocalFileBrowserItem";
+
+const LOCAL_COLUMNS: ColumnDef[] = [
+  { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },
+  { key: "name", label: "Name", defaultWidth: 400, minWidth: 120 },
+  { key: "size", label: "Size", defaultWidth: 80, minWidth: 60 },
+  { key: "modified", label: "Modified", defaultWidth: 140, minWidth: 80 },
+];
 
 interface LocalFileBrowserListProps {
   files: FileItem[];
@@ -49,13 +60,23 @@ export default function LocalFileBrowserList({
   onSetRenamingPath,
   renameInputRef,
 }: LocalFileBrowserListProps) {
+  const { widths, handleMouseDown } = useResizableColumns(
+    LOCAL_COLUMNS,
+    "local",
+  );
+
   if (viewMode === "list") {
     return (
-      <table className="w-full border-separate border-spacing-y-1">
+      <table className="w-full" style={{ tableLayout: "fixed" }}>
+        <colgroup>
+          {LOCAL_COLUMNS.map((col) => (
+            <col key={col.key} style={{ width: widths[col.key] }} />
+          ))}
+        </colgroup>
         <thead className="bg-dark-800 sticky top-0">
           <tr className="text-left text-dark-400 text-xs">
-            <th className="p-2 w-8" />
-            <th className="p-2">
+            <th className="p-2" />
+            <th className="p-2 relative group/th">
               <Button
                 variant="ghost"
                 size="sm"
@@ -69,23 +90,37 @@ export default function LocalFileBrowserList({
                 {sortField === "name" &&
                   (sortDirection === "asc" ? "\u2191" : "\u2193")}
               </Button>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
+                  onMouseDown={(e) => handleMouseDown("name", e)}
+                >
+                  <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
+                </div>
+              </th>
+              <th className="p-2 relative group/th">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onSortFieldChange("size");
+                    onSortDirectionChange((d) => (d === "asc" ? "desc" : "asc"));
+                  }}
+                  className="justify-start"
+                >
+                  Size{" "}
+                  {sortField === "size" &&
+                    (sortDirection === "asc" ? "\u2191" : "\u2193")}
+                </Button>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
+                  onMouseDown={(e) => handleMouseDown("size", e)}
+                >
+                  <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
+                </div>
             </th>
-            <th className="p-2 w-20">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  onSortFieldChange("size");
-                  onSortDirectionChange((d) => (d === "asc" ? "desc" : "asc"));
-                }}
-                className="justify-start"
-              >
-                Size{" "}
-                {sortField === "size" &&
-                  (sortDirection === "asc" ? "\u2191" : "\u2193")}
-              </Button>
-            </th>
-            <th className="p-2 w-36">
+            <th className="p-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -120,6 +155,7 @@ export default function LocalFileBrowserList({
               onRenameValueChange={onRenameValueChange}
               onCommitRename={onCommitRename}
               onSetRenamingPath={onSetRenamingPath}
+              columnWidths={widths}
             />
           ))}
         </tbody>

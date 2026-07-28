@@ -13,6 +13,7 @@ export interface SharedFileListItemProps {
   renameInputRef: React.RefObject<HTMLInputElement | null>;
   sourceDirect?: { host?: string; port?: number; username?: string };
   showPermissions?: boolean;
+  columnWidths?: Record<string, number>;
   onSelect: (
     fileName: string,
     isMultiSelect: boolean,
@@ -36,6 +37,7 @@ export default function SharedFileListItem({
   renameInputRef,
   sourceDirect,
   showPermissions = false,
+  columnWidths,
   onSelect,
   onDoubleClick,
   onContextMenu,
@@ -74,8 +76,17 @@ export default function SharedFileListItem({
         isSelected ? "bg-primary-600/25" : ""
       } ${isDropTarget ? "bg-primary-600/20 ring-1 ring-inset ring-primary-500/50" : ""}`}
     >
-      <td className="p-2">{getFileIcon(file)}</td>
-      <td className="p-2 text-white text-sm">
+      <td
+        className="p-2"
+        style={columnWidths ? { width: columnWidths.icon } : undefined}
+      >
+        {getFileIcon(file)}
+      </td>
+      <td
+        className="p-2 text-white text-sm overflow-hidden"
+        title={file.name}
+        style={columnWidths ? { width: columnWidths.name } : undefined}
+      >
         {renamingPath === file.path ? (
           <input
             ref={renameInputRef}
@@ -92,20 +103,31 @@ export default function SharedFileListItem({
             className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-sm text-white w-full focus:outline-none"
           />
         ) : (
-          <span className={file.type === "directory" ? "text-primary-400" : ""}>
+          <span
+            className={`block truncate ${file.type === "directory" ? "text-primary-400" : ""}`}
+          >
             {file.name}
           </span>
         )}
       </td>
-      <td className="p-2 text-dark-300 text-sm">
+      <td
+        className="p-2 text-dark-300 text-sm"
+        style={columnWidths ? { width: columnWidths.size } : undefined}
+      >
         {file.type === "directory" ? "-" : formatSize(file.size)}
       </td>
       {showPermissions && (
-        <td className="p-2 text-dark-300 font-mono text-xs">
+        <td
+          className="p-2 text-dark-300 font-mono text-xs"
+          style={columnWidths ? { width: columnWidths.permissions } : undefined}
+        >
           {file.permissions}
         </td>
       )}
-      <td className="p-2 text-dark-300 text-sm">
+      <td
+        className="p-2 text-dark-300 text-sm"
+        style={columnWidths ? { width: columnWidths.modified } : undefined}
+      >
         {formatDate(file.modifiedAt)}
       </td>
     </tr>

@@ -11,6 +11,7 @@ interface LocalFileBrowserItemProps {
   renamingPath: string | null;
   renameValue: string;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
+  columnWidths?: Record<string, number>;
   onSelect: (
     fileName: string,
     isMultiSelect: boolean,
@@ -32,6 +33,7 @@ export default function LocalFileBrowserItem({
   renamingPath,
   renameValue,
   renameInputRef,
+  columnWidths,
   onSelect,
   onDoubleClick,
   onContextMenu,
@@ -48,6 +50,7 @@ export default function LocalFileBrowserItem({
     renamingPath,
     renameValue,
     renameInputRef,
+    columnWidths,
     onSelect,
     onDoubleClick,
     onContextMenu,

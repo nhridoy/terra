@@ -8,10 +8,22 @@ import type {
 } from "../../../lib/sftpTypes";
 import { Button } from "../../ui/Button";
 import ContextMenu from "../../ui/ContextMenu";
+import {
+  type ColumnDef,
+  useResizableColumns,
+} from "../shared/useResizableColumns";
 import { buildContextMenuItems } from "./buildContextMenuItems";
 import FileGridItem from "./FileGridItem";
 import FileTableRow from "./FileTableRow";
 import { formatDate, formatSize } from "./helpers";
+
+const REMOTE_COLUMNS: ColumnDef[] = [
+  { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },
+  { key: "name", label: "Name", defaultWidth: 350, minWidth: 120 },
+  { key: "size", label: "Size", defaultWidth: 80, minWidth: 60 },
+  { key: "permissions", label: "Perms", defaultWidth: 80, minWidth: 60 },
+  { key: "modified", label: "Modified", defaultWidth: 140, minWidth: 80 },
+];
 
 export interface FileBrowserActions {
   handleDoubleClick: (file: FileItem) => void;
@@ -86,6 +98,11 @@ export default function FileBrowserList({
     y: number;
     file: FileItem | null;
   } | null>(null);
+
+  const { widths: columnWidths, handleMouseDown } = useResizableColumns(
+    REMOTE_COLUMNS,
+    "remote",
+  );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, file: FileItem | null = null) => {
@@ -169,11 +186,16 @@ export default function FileBrowserList({
         }}
       >
         {viewMode === "list" ? (
-          <table className="w-full">
+          <table className="w-full" style={{ tableLayout: "fixed" }}>
+            <colgroup>
+              {REMOTE_COLUMNS.map((col) => (
+                <col key={col.key} style={{ width: columnWidths[col.key] }} />
+              ))}
+            </colgroup>
             <thead className="bg-dark-800 sticky top-0">
               <tr className="text-left text-dark-400 text-xs">
-                <th className="p-2 w-8" />
-                <th className="p-2">
+                <th className="p-2" />
+                <th className="p-2 relative group/th">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -187,8 +209,15 @@ export default function FileBrowserList({
                     {sortField === "name" &&
                       (sortDirection === "asc" ? "↑" : "↓")}
                   </Button>
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
+                    onMouseDown={(e) => handleMouseDown("name", e)}
+                  >
+                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
+                  </div>
                 </th>
-                <th className="p-2 w-20">
+                <th className="p-2 relative group/th">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -202,8 +231,15 @@ export default function FileBrowserList({
                     {sortField === "size" &&
                       (sortDirection === "asc" ? "↑" : "↓")}
                   </Button>
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
+                    onMouseDown={(e) => handleMouseDown("size", e)}
+                  >
+                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
+                  </div>
                 </th>
-                <th className="p-2 w-24">
+                <th className="p-2 relative group/th">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -217,8 +253,15 @@ export default function FileBrowserList({
                     {sortField === "permissions" &&
                       (sortDirection === "asc" ? "↑" : "↓")}
                   </Button>
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
+                    onMouseDown={(e) => handleMouseDown("permissions", e)}
+                  >
+                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
+                  </div>
                 </th>
-                <th className="p-2 w-36">
+                <th className="p-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -259,6 +302,7 @@ export default function FileBrowserList({
                   onContextMenu={handleContextMenu}
                   formatSize={formatSize}
                   formatDate={formatDate}
+                  columnWidths={columnWidths}
                 />
               ))}
             </tbody>
