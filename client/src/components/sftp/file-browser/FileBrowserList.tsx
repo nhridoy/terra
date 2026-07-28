@@ -118,7 +118,16 @@ export default function FileBrowserList({
     return buildContextMenuItems(
       contextMenu.file,
       clipboard,
-      actions,
+      {
+        handleDoubleClick: actions.handleDoubleClick,
+        handleDownload: actions.handleDownload,
+        onCopy: actions.handleCopy,
+        onCut: actions.handleCut,
+        onPaste: actions.handlePaste,
+        onDelete: actions.handleDelete,
+        onNewFile: actions.handleNewFile,
+        onNewFolder: actions.handleNewFolder,
+      },
       (path, name) => {
         setRenamingPath(path);
         setRenameValue(name);

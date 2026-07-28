@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../../lib/extractError";
+import { generateAutoName } from "../../../lib/fileHelpers";
 import { nameFormSchema } from "../../../lib/schema/nameFormSchema";
 import type {
   FileItem,
@@ -10,7 +11,7 @@ import type {
 } from "../../../lib/sftpTypes";
 import { findAllLeaves } from "../../../lib/treeUtils";
 import { useSftpStore } from "../../../stores/sftpStore";
-import { generateAutoName } from "../shared/helpers";
+import { useSortedFiles } from "./useSortedFiles";
 
 interface UseFileOperationsOptions {
   paneId: string;
@@ -680,27 +681,13 @@ export function useFileOperations({
     await executePaste();
   }, [clipboard, clipboardMode, files, currentPath, executePaste]);
 
-  const sortedFiles = useMemo(() => {
-    return [...files]
-      .filter(
-        (f) =>
-          (showHidden || !f.isHidden) &&
-          (searchQuery === "" ||
-            f.name.toLowerCase().includes(searchQuery.toLowerCase())),
-      )
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
-        let cmp = 0;
-        if (sortField === "name") cmp = a.name.localeCompare(b.name);
-        else if (sortField === "size") cmp = a.size - b.size;
-        else if (sortField === "permissions")
-          cmp = a.permissions.localeCompare(b.permissions);
-        else if (sortField === "modifiedAt")
-          cmp =
-            new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
-        return sortDirection === "asc" ? cmp : -cmp;
-      });
-  }, [files, showHidden, searchQuery, sortField, sortDirection]);
+  const sortedFiles = useSortedFiles({
+    files,
+    showHidden,
+    searchQuery,
+    sortField,
+    sortDirection,
+  });
 
   const actions = useMemo(
     () => ({

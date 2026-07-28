@@ -5,7 +5,7 @@ import type { FileItem } from "../../../lib/sftpTypes";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import Modal from "../../ui/Modal";
-import { useFileKeyboard } from "../hooks/useFileKeyboard";
+import { useFileKeyboardShortcuts } from "../hooks/useFileKeyboardShortcuts";
 import { useFileOperations } from "../hooks/useFileOperations";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
 import FileBrowserToolbar from "../shared/FileBrowserToolbar";
@@ -120,27 +120,27 @@ export default function FileBrowser({
     setPendingFileDrop(null);
   }, [pendingFileDrop, paneId, ops.executeFileDrop, setPendingFileDrop]);
 
-  useFileKeyboard({
+  useFileKeyboardShortcuts({
     activePaneId: ops.activePaneId,
     paneId,
-    deleteConfirm: ops.deleteConfirm,
-    pasteConflicts: ops.pasteConflicts,
-    confirmDelete: ops.confirmDeleteAction,
-    setDeleteConfirm: ops.setDeleteConfirm,
-    setPasteConflicts: ops.setPasteConflicts,
     selectedFiles: ops.selectedFiles,
     files: ops.files,
-    sortedFiles: ops.sortedFiles,
-    currentPath: ops.currentPath,
-    loadDirectory: ops.loadDirectory,
-    startRename: ops.startRename,
-    navigateUp: ops.navigateUp,
-    handleCut: ops.handleCut,
-    handlePaste: ops.handlePaste,
-    handleDeleteSelected: ops.handleDeleteSelected,
-    handleNewFile: ops.actions.handleNewFile,
-    handleCopy: ops.handleCopy,
-    setSelectedFiles: ops.setSelectedFiles,
+    onCopy: ops.handleCopy,
+    onCut: ops.handleCut,
+    onPaste: ops.handlePaste,
+    onDelete: ops.handleDeleteSelected,
+    onRename: ops.startRename,
+    onRefresh: () => ops.loadDirectory(ops.currentPath),
+    onNavigateUp: ops.navigateUp,
+    onClearSelection: () => ops.setSelectedFiles(new Set()),
+    onNewFile: ops.actions.handleNewFile,
+    onSelectAll: () =>
+      ops.setSelectedFiles(new Set(ops.sortedFiles.map((f) => f.name))),
+    deleteConfirm: ops.deleteConfirm,
+    pasteConflicts: ops.pasteConflicts,
+    onConfirmDelete: ops.confirmDeleteAction,
+    onDismissDeleteConfirm: () => ops.setDeleteConfirm(null),
+    onDismissPasteConflicts: () => ops.setPasteConflicts(null),
   });
 
   return (

@@ -90,10 +90,7 @@ export default function FileTransfer() {
               />
             )}
             {t.status === "error" && (
-              <span
-                className="text-red-400 truncate max-w-[120px]"
-                title={t.error}
-              >
+              <span className="text-red-400 truncate max-w-30" title={t.error}>
                 {t.error || "Failed"}
               </span>
             )}

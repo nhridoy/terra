@@ -3,7 +3,7 @@ import { Button } from "../../ui/Button";
 
 interface DragOverOverlayProps {
   isDragOver: boolean;
-  fileDragState: { sourceHostId?: string | null } | null;
+  fileDragState: { isDragging?: boolean; sourceHostId?: string | null } | null;
 }
 
 export function DragOverOverlay({
@@ -33,18 +33,24 @@ export function DragOverOverlay({
 
 interface DropTargetOverlayProps {
   isDropTarget: boolean;
-  fileDragState: { sourceHostId?: string | null } | null;
+  fileDragState: { isDragging?: boolean; sourceHostId?: string | null } | null;
   hostId: string;
+  dropMode?: "move" | "copy";
 }
 
 export function DropTargetOverlay({
   isDropTarget,
   fileDragState,
   hostId,
+  dropMode,
 }: DropTargetOverlayProps) {
   if (!isDropTarget || !fileDragState) return null;
 
-  const isCrossHost = fileDragState.sourceHostId !== hostId;
+  const isCrossHost = dropMode
+    ? dropMode === "copy"
+    : fileDragState.sourceHostId
+      ? fileDragState.sourceHostId !== hostId
+      : false;
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: drop target needs div

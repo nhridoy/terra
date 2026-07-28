@@ -1,7 +1,7 @@
 import { accessibleClickHandler } from "../../../lib/accessibleClickHandler";
+import { formatSize, getFileIcon } from "../../../lib/fileHelpers";
 import type { FileItem } from "../../../lib/sftpTypes";
 import { useFileItemDnD } from "../hooks/useFileItemDnD";
-import { formatSize, getFileIcon } from "./helpers";
 
 export interface FileItemProps {
   file: FileItem;

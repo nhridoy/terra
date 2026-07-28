@@ -1,7 +1,7 @@
 import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
 import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../../lib/extractError";
 import { LocalFileProvider, transferFiles } from "../../../lib/fileTransfer";
@@ -22,9 +22,13 @@ import {
   useFileBrowserStore,
 } from "../../../stores/fileBrowserStore";
 import { useSftpStore } from "../../../stores/sftpStore";
-import { Button } from "../../ui/Button";
 import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import PromptDialog from "../../ui/PromptDialog";
+import {
+  DragOverOverlay,
+  DropTargetOverlay,
+  ErrorBar,
+} from "../file-browser/FileBrowserOverlays";
 import PasteConflictDialog from "../file-browser/PasteConflictDialog";
 import { useClipboard } from "../hooks/useClipboard";
 import { useDesktopFileDrop } from "../hooks/useDesktopFileDrop";
@@ -35,6 +39,7 @@ import {
   type ColumnDef,
   useResizableColumns,
 } from "../hooks/useResizableColumns";
+import { useSortedFiles } from "../hooks/useSortedFiles";
 import { buildBaseContextMenuItems } from "../shared/buildBaseContextMenuItems";
 import FileBrowserListShared from "../shared/FileBrowserList";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
@@ -86,8 +91,6 @@ export default function LocalFileBrowser({
   const historyIndex = paneState?.historyIndex ?? 0;
   const pasteConflicts = paneState?.pasteConflicts ?? null;
   const pendingDrop = paneState?.pendingDrop ?? null;
-
-  // sortedFiles computed via useMemo below — no store read needed here
 
   const fileDragState = useSftpStore((s) => s.fileDragState);
   const pendingFileDrop = useSftpStore((s) => s.pendingFileDrop);
@@ -183,27 +186,13 @@ export default function LocalFileBrowser({
   );
 
   // ── Recompute sorted files during render (no stale effect lag) ──────────
-  const computedSortedFiles = useMemo(() => {
-    return [...files]
-      .filter(
-        (f) =>
-          (showHidden || !f.isHidden) &&
-          (searchQuery === "" ||
-            f.name.toLowerCase().includes(searchQuery.toLowerCase())),
-      )
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
-        let cmp = 0;
-        if (sortField === "name") cmp = a.name.localeCompare(b.name);
-        else if (sortField === "size") cmp = a.size - b.size;
-        else if (sortField === "permissions")
-          cmp = a.permissions.localeCompare(b.permissions);
-        else if (sortField === "modifiedAt")
-          cmp =
-            new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
-        return sortDirection === "asc" ? cmp : -cmp;
-      });
-  }, [files, showHidden, searchQuery, sortField, sortDirection]);
+  const computedSortedFiles = useSortedFiles({
+    files,
+    showHidden,
+    searchQuery,
+    sortField,
+    sortDirection,
+  });
 
   // Sync computed value back to store for remote browser reusability
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — store sync only
@@ -653,21 +642,13 @@ export default function LocalFileBrowser({
       onMouseMove={marquee.handleMouseMove}
       onMouseUp={marquee.handleMouseUp}
     >
-      {isDragOver && !fileDragState?.isDragging && (
-        <div className="absolute inset-0 z-50 bg-primary-600/20 border-2 border-dashed border-primary-500 rounded-lg flex items-center justify-center pointer-events-none">
-          <p className="text-primary-300 text-lg font-medium">
-            Drop files to import
-          </p>
-        </div>
-      )}
-
-      {isDropTarget && fileDragState?.isDragging && (
-        <div className="absolute inset-0 z-50 bg-green-600/20 border-2 border-dashed border-green-500 rounded-lg flex items-center justify-center pointer-events-none">
-          <p className="text-green-300 text-lg font-medium">
-            {dropMode === "move" ? "Drop to move" : "Drop to copy"}
-          </p>
-        </div>
-      )}
+      <DragOverOverlay isDragOver={isDragOver} fileDragState={fileDragState} />
+      <DropTargetOverlay
+        isDropTarget={isDropTarget}
+        fileDragState={fileDragState}
+        hostId="local"
+        dropMode={dropMode}
+      />
 
       <FileBrowserToolbar
         currentPath={currentPath}
@@ -694,19 +675,7 @@ export default function LocalFileBrowser({
         showBackForward
       />
 
-      {error && (
-        <div className="px-3 py-2 bg-red-500/10 border-b border-red-500/30 text-red-400 text-sm flex items-center justify-between">
-          <span>{error}</span>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => actions.clearError(paneId)}
-            className="text-red-300 hover:text-red-200"
-          >
-            &times;
-          </Button>
-        </div>
-      )}
+      <ErrorBar error={error} setError={() => actions.clearError(paneId)} />
 
       {isLoading && (
         <div className="flex-1 p-3 space-y-1">

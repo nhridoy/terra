@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { generateAutoName } from "../../../lib/fileHelpers";
 import { Button } from "../../ui/Button";
 import Modal from "../../ui/Modal";
-import { generateAutoName } from "../shared/helpers";
 
 interface PasteConflictDialogProps {
   conflicts: { srcPath: string; dstPath: string; dstName: string }[];
