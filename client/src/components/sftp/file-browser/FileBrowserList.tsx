@@ -6,16 +6,15 @@ import type {
   FileSortField,
   FileViewMode,
 } from "../../../lib/sftpTypes";
-import { Button } from "../../ui/Button";
 import ContextMenu from "../../ui/ContextMenu";
+import FileBrowserListShared from "../shared/FileBrowserList";
+import FileGridItem from "../shared/FileGridItem";
+import FileListItem from "../shared/FileListItem";
 import {
   type ColumnDef,
   useResizableColumns,
 } from "../shared/useResizableColumns";
 import { buildContextMenuItems } from "./buildContextMenuItems";
-import FileGridItem from "./FileGridItem";
-import FileTableRow from "./FileTableRow";
-import { formatDate, formatSize } from "./helpers";
 
 const REMOTE_COLUMNS: ColumnDef[] = [
   { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },
@@ -54,10 +53,8 @@ interface FileBrowserListProps {
   paneId: string;
   hostId: string;
   hostAddress?: string;
-  hostPort?: number;
   hostUsername?: string;
   selectedFiles: Set<string>;
-  files: FileItem[];
   clipboard: { paths: string[] } | null;
   renamingPath: string | null;
   renameValue: string;
@@ -80,10 +77,8 @@ export default function FileBrowserList({
   paneId,
   hostId,
   hostAddress,
-  hostPort,
   hostUsername,
   selectedFiles,
-  files,
   clipboard,
   renamingPath,
   renameValue,
@@ -171,6 +166,65 @@ export default function FileBrowserList({
     );
   }
 
+  const renderListItem = (file: FileItem) => {
+    const isDirect =
+      !!(hostAddress && hostUsername) &&
+      file.path?.includes(`${hostUsername}@${hostAddress}`);
+
+    return (
+      <FileListItem
+        key={file.path}
+        file={file}
+        paneId={paneId}
+        hostId={hostId}
+        sourceDirect={
+          isDirect ? { host: hostAddress, username: hostUsername } : undefined
+        }
+        selectedFiles={selectedFiles}
+        allFiles={sortedFiles}
+        renamingPath={renamingPath}
+        renameValue={renameValue}
+        renameInputRef={renameInputRef}
+        columnWidths={columnWidths}
+        onSelect={actions.handleSelect}
+        onDoubleClick={() => actions.handleDoubleClick(file)}
+        onContextMenu={handleContextMenu}
+        onRenameValueChange={setRenameValue}
+        onCommitRename={commitRename}
+        onSetRenamingPath={setRenamingPath}
+      />
+    );
+  };
+
+  const renderGridItem = (file: FileItem) => {
+    const isDirect =
+      !!(hostAddress && hostUsername) &&
+      file.path?.includes(`${hostUsername}@${hostAddress}`);
+
+    return (
+      <FileGridItem
+        key={file.path}
+        file={file}
+        paneId={paneId}
+        hostId={hostId}
+        sourceDirect={
+          isDirect ? { host: hostAddress, username: hostUsername } : undefined
+        }
+        selectedFiles={selectedFiles}
+        allFiles={sortedFiles}
+        renamingPath={renamingPath}
+        renameValue={renameValue}
+        renameInputRef={renameInputRef}
+        onSelect={actions.handleSelect}
+        onDoubleClick={() => actions.handleDoubleClick(file)}
+        onContextMenu={handleContextMenu}
+        onRenameValueChange={setRenameValue}
+        onCommitRename={commitRename}
+        onSetRenamingPath={setRenamingPath}
+      />
+    );
+  };
+
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: file list click handler needs div */}
@@ -185,157 +239,19 @@ export default function FileBrowserList({
           }
         }}
       >
-        {viewMode === "list" ? (
-          <table className="w-full" style={{ tableLayout: "fixed" }}>
-            <colgroup>
-              {REMOTE_COLUMNS.map((col) => (
-                <col key={col.key} style={{ width: columnWidths[col.key] }} />
-              ))}
-            </colgroup>
-            <thead className="bg-dark-800 sticky top-0">
-              <tr className="text-left text-dark-400 text-xs">
-                <th className="p-2" />
-                <th className="p-2 relative group/th">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSortField("name");
-                      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-                    }}
-                    className="justify-start"
-                  >
-                    Name{" "}
-                    {sortField === "name" &&
-                      (sortDirection === "asc" ? "↑" : "↓")}
-                  </Button>
-                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
-                  <div
-                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
-                    onMouseDown={(e) => handleMouseDown("name", e)}
-                  >
-                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
-                  </div>
-                </th>
-                <th className="p-2 relative group/th">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSortField("size");
-                      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-                    }}
-                    className="justify-start"
-                  >
-                    Size{" "}
-                    {sortField === "size" &&
-                      (sortDirection === "asc" ? "↑" : "↓")}
-                  </Button>
-                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
-                  <div
-                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
-                    onMouseDown={(e) => handleMouseDown("size", e)}
-                  >
-                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
-                  </div>
-                </th>
-                <th className="p-2 relative group/th">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSortField("permissions");
-                      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-                    }}
-                    className="justify-start"
-                  >
-                    Perms{" "}
-                    {sortField === "permissions" &&
-                      (sortDirection === "asc" ? "↑" : "↓")}
-                  </Button>
-                  {/* biome-ignore lint/a11y/noStaticElementInteractions: column resize handle */}
-                  <div
-                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group-hover/th:bg-primary-500/10"
-                    onMouseDown={(e) => handleMouseDown("permissions", e)}
-                  >
-                    <div className="absolute right-[2px] top-0 bottom-0 w-px bg-dark-600 group-hover/th:bg-primary-500" />
-                  </div>
-                </th>
-                <th className="p-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSortField("modifiedAt");
-                      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-                    }}
-                    className="justify-start"
-                  >
-                    Modified{" "}
-                    {sortField === "modifiedAt" &&
-                      (sortDirection === "asc" ? "↑" : "↓")}
-                  </Button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedFiles.map((file) => (
-                <FileTableRow
-                  key={file.path}
-                  file={file}
-                  paneId={paneId}
-                  hostId={hostId}
-                  hostAddress={hostAddress}
-                  hostPort={hostPort}
-                  hostUsername={hostUsername}
-                  selectedFiles={selectedFiles}
-                  files={files}
-                  renamingPath={renamingPath}
-                  renameValue={renameValue}
-                  renameInputRef={renameInputRef}
-                  commitRename={commitRename}
-                  setRenamingPath={setRenamingPath}
-                  setRenameValue={setRenameValue}
-                  onDoubleClick={() => actions.handleDoubleClick(file)}
-                  onSelect={actions.handleSelect}
-                  sortedFiles={sortedFiles}
-                  onContextMenu={handleContextMenu}
-                  formatSize={formatSize}
-                  formatDate={formatDate}
-                  columnWidths={columnWidths}
-                />
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 p-3">
-            {sortedFiles.map((file) => (
-              <FileGridItem
-                key={file.path}
-                file={file}
-                paneId={paneId}
-                hostId={hostId}
-                hostAddress={hostAddress}
-                hostPort={hostPort}
-                hostUsername={hostUsername}
-                selectedFiles={selectedFiles}
-                files={files}
-                renamingPath={renamingPath}
-                renameValue={renameValue}
-                renameInputRef={renameInputRef}
-                commitRename={commitRename}
-                setRenamingPath={setRenamingPath}
-                setRenameValue={setRenameValue}
-                onDoubleClick={() => actions.handleDoubleClick(file)}
-                onSelect={actions.handleSelect}
-                sortedFiles={sortedFiles}
-                onContextMenu={handleContextMenu}
-                formatSize={formatSize}
-                formatDate={formatDate}
-              />
-            ))}
-          </div>
-        )}
+        <FileBrowserListShared
+          files={sortedFiles}
+          viewMode={viewMode}
+          columns={REMOTE_COLUMNS}
+          columnWidths={columnWidths}
+          handleColumnMouseDown={handleMouseDown}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          setSortField={setSortField}
+          setSortDirection={setSortDirection}
+          renderListItem={renderListItem}
+          renderGridItem={renderGridItem}
+        />
       </div>
 
       {contextMenu && (

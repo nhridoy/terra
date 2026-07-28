@@ -5,14 +5,14 @@ import type { FileItem } from "../../../lib/sftpTypes";
 import { useSftpStore } from "../../../stores/sftpStore";
 import { Button } from "../../ui/Button";
 import Modal from "../../ui/Modal";
+import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
+import FileBrowserToolbar from "../shared/FileBrowserToolbar";
 import FileBrowserList from "./FileBrowserList";
 import {
   DragOverOverlay,
   DropTargetOverlay,
   ErrorBar,
 } from "./FileBrowserOverlays";
-import FileBrowserStatusBar from "./FileBrowserStatusBar";
-import FileBrowserToolbar from "./FileBrowserToolbar";
 import PasteConflictDialog from "./PasteConflictDialog";
 import { useFileKeyboard } from "./useFileKeyboard";
 import { useFileOperations } from "./useFileOperations";
@@ -163,17 +163,34 @@ export default function FileBrowser({
 
       <FileBrowserToolbar
         currentPath={ops.currentPath}
-        navigateTo={ops.navigateTo}
-        navigateUp={ops.navigateUp}
-        loadDirectory={ops.loadDirectory}
-        handleUpload={ops.handleUpload}
-        handleNewFolder={ops.actions.handleNewFolder}
-        viewMode={ops.viewMode}
-        setViewMode={ops.setViewMode}
+        pathLabel="Remote path"
         searchQuery={ops.searchQuery}
-        setSearchQuery={ops.setSearchQuery}
         showHidden={ops.showHidden}
-        setShowHidden={ops.setShowHidden}
+        viewMode={ops.viewMode}
+        onNavigateTo={(path) => {
+          const normalized = path.startsWith("/") ? path : `/${path}`;
+          ops.navigateTo(normalized);
+        }}
+        onNavigateRoot={() => ops.navigateTo("/")}
+        onNavigateUp={ops.navigateUp}
+        onRefresh={() => ops.loadDirectory(ops.currentPath)}
+        onNewFolder={ops.actions.handleNewFolder}
+        onSearchChange={ops.setSearchQuery}
+        onShowHiddenChange={ops.setShowHidden}
+        onViewModeChange={ops.setViewMode}
+        beforeActions={
+          <label className="bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded text-sm cursor-pointer transition-colors">
+            Upload
+            <input
+              type="file"
+              className="hidden"
+              multiple
+              onChange={(e) =>
+                e.target.files && ops.handleUpload(e.target.files)
+              }
+            />
+          </label>
+        }
       />
 
       <ErrorBar error={ops.error} setError={ops.setError} />
@@ -190,10 +207,8 @@ export default function FileBrowser({
         paneId={paneId}
         hostId={hostId}
         hostAddress={hostAddress}
-        hostPort={hostPort}
         hostUsername={hostUsername}
         selectedFiles={ops.selectedFiles}
-        files={ops.files}
         clipboard={ops.clipboard}
         renamingPath={ops.renamingPath}
         renameValue={ops.renameValue}
@@ -205,7 +220,7 @@ export default function FileBrowser({
       />
 
       <FileBrowserStatusBar
-        itemCount={ops.sortedFiles.length}
+        totalCount={ops.sortedFiles.length}
         selectedCount={ops.selectedFiles.size}
       />
 

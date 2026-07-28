@@ -27,10 +27,16 @@ import ContextMenu, { type ContextMenuItem } from "../../ui/ContextMenu";
 import PromptDialog from "../../ui/PromptDialog";
 import { buildBaseContextMenuItems } from "../buildBaseContextMenuItems";
 import PasteConflictDialog from "../file-browser/PasteConflictDialog";
+import FileBrowserListShared from "../shared/FileBrowserList";
+import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
+import FileBrowserToolbar from "../shared/FileBrowserToolbar";
+import FileGridItem from "../shared/FileGridItem";
+import FileListItem from "../shared/FileListItem";
+import {
+  type ColumnDef,
+  useResizableColumns,
+} from "../shared/useResizableColumns";
 import { useFileKeyboardShortcuts } from "../useFileKeyboardShortcuts";
-import LocalFileBrowserList from "./LocalFileBrowserList";
-import LocalFileBrowserStatusBar from "./LocalFileBrowserStatusBar";
-import LocalFileBrowserToolbar from "./LocalFileBrowserToolbar";
 import { useClipboard } from "./useClipboard";
 import { useDesktopFileDrop } from "./useDesktopFileDrop";
 import { useFileOperations } from "./useFileOperations";
@@ -42,6 +48,13 @@ interface LocalFileBrowserProps {
 }
 
 const localProvider = new LocalFileProvider("local");
+
+const LOCAL_COLUMNS: ColumnDef[] = [
+  { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },
+  { key: "name", label: "Name", defaultWidth: 400, minWidth: 120 },
+  { key: "size", label: "Size", defaultWidth: 80, minWidth: 60 },
+  { key: "modified", label: "Modified", defaultWidth: 140, minWidth: 80 },
+];
 
 export default function LocalFileBrowser({
   paneId,
@@ -81,6 +94,11 @@ export default function LocalFileBrowser({
   const setPendingFileDrop = useSftpStore((s) => s.setPendingFileDrop);
 
   const actions = fileBrowserActions;
+
+  const { widths: columnWidths, handleMouseDown } = useResizableColumns(
+    LOCAL_COLUMNS,
+    "local",
+  );
 
   // ── Component-only state ─────────────────────────────────────────────────
   const [pathInput, setPathInput] = useState(currentPath);
@@ -651,16 +669,17 @@ export default function LocalFileBrowser({
         </div>
       )}
 
-      <LocalFileBrowserToolbar
-        rootPath={rootPath}
+      <FileBrowserToolbar
         currentPath={currentPath}
-        pathInput={pathInput}
+        pathLabel="Local path"
         searchQuery={searchQuery}
         showHidden={showHidden}
         viewMode={viewMode}
+        pathInput={pathInput}
         onPathInputChange={setPathInput}
         onPathInputKeyDown={handlePathKeyDown}
         onPathInputBlur={() => setPathInput(currentPath)}
+        onNavigateTo={() => {}}
         onNavigateRoot={() => navigateTo(rootPath)}
         onNavigateBack={navigateBack}
         onNavigateForward={navigateForward}
@@ -672,6 +691,7 @@ export default function LocalFileBrowser({
         onSearchChange={(q) => actions.setSearchQuery(paneId, q)}
         onShowHiddenChange={(s) => actions.setShowHidden(paneId, s)}
         onViewModeChange={(m) => actions.setViewMode(paneId, m)}
+        showBackForward
       />
 
       {error && (
@@ -714,33 +734,65 @@ export default function LocalFileBrowser({
 
       {!isLoading && computedSortedFiles.length > 0 && (
         <div className="flex-1 overflow-y-auto">
-          <LocalFileBrowserList
+          <FileBrowserListShared
             files={computedSortedFiles}
             viewMode={viewMode}
-            selectedFiles={selectedFiles}
-            paneId={paneId}
-            renamingPath={fileOps.renamingPath}
-            renameValue={fileOps.renameValue}
+            columns={LOCAL_COLUMNS}
+            columnWidths={columnWidths}
+            handleColumnMouseDown={handleMouseDown}
             sortField={sortField}
             sortDirection={sortDirection}
-            onSelect={handleSelect}
-            onDoubleClick={handleDoubleClick}
-            onContextMenu={handleContextMenu}
-            onSortFieldChange={(f) => actions.setSortField(paneId, f)}
-            onSortDirectionChange={(fn) =>
+            setSortField={(f) => actions.setSortField(paneId, f)}
+            setSortDirection={(fn) => {
+              const next = typeof fn === "function" ? fn(sortDirection) : fn;
               useFileBrowserStore.getState().updatePane(paneId, {
-                sortDirection: fn(sortDirection),
-              })
-            }
-            onRenameValueChange={(v) => actions.setRenameValue(paneId, v)}
-            onCommitRename={fileOps.commitRename}
-            onSetRenamingPath={(p) => actions.setRenamingPath(paneId, p)}
-            renameInputRef={fileOps.renameInputRef}
+                sortDirection: next,
+              });
+            }}
+            renderListItem={(file) => (
+              <FileListItem
+                key={file.path}
+                file={file}
+                paneId={paneId}
+                hostId="local"
+                selectedFiles={selectedFiles}
+                allFiles={computedSortedFiles}
+                renamingPath={fileOps.renamingPath}
+                renameValue={fileOps.renameValue}
+                renameInputRef={fileOps.renameInputRef}
+                columnWidths={columnWidths}
+                onSelect={handleSelect}
+                onDoubleClick={handleDoubleClick}
+                onContextMenu={handleContextMenu}
+                onRenameValueChange={(v) => actions.setRenameValue(paneId, v)}
+                onCommitRename={fileOps.commitRename}
+                onSetRenamingPath={(p) => actions.setRenamingPath(paneId, p)}
+              />
+            )}
+            renderGridItem={(file) => (
+              <FileGridItem
+                key={file.path}
+                file={file}
+                paneId={paneId}
+                hostId="local"
+                selectedFiles={selectedFiles}
+                allFiles={computedSortedFiles}
+                renamingPath={fileOps.renamingPath}
+                renameValue={fileOps.renameValue}
+                renameInputRef={fileOps.renameInputRef}
+                onSelect={handleSelect}
+                onDoubleClick={handleDoubleClick}
+                onContextMenu={handleContextMenu}
+                onRenameValueChange={(v) => actions.setRenameValue(paneId, v)}
+                onCommitRename={fileOps.commitRename}
+                onSetRenamingPath={(p) => actions.setRenamingPath(paneId, p)}
+              />
+            )}
           />
         </div>
       )}
 
-      <LocalFileBrowserStatusBar
+      <FileBrowserStatusBar
         totalCount={computedSortedFiles.length}
         selectedCount={selectedFiles.size}
       />

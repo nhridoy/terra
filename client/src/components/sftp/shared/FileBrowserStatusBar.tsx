@@ -1,12 +1,12 @@
-interface SharedFileBrowserStatusBarProps {
+interface FileBrowserStatusBarProps {
   totalCount: number;
   selectedCount: number;
 }
 
-export default function SharedFileBrowserStatusBar({
+export default function FileBrowserStatusBar({
   totalCount,
   selectedCount,
-}: SharedFileBrowserStatusBarProps) {
+}: FileBrowserStatusBarProps) {
   return (
     <div className="px-3 py-1.5 border-t border-dark-700 text-dark-400 text-xs flex justify-between">
       <span>

@@ -3,7 +3,7 @@ import type { FileItem } from "../../../lib/sftpTypes";
 import { formatSize, getFileIcon } from "./helpers";
 import { useFileItemDnD } from "./useFileItemDnD";
 
-export interface SharedFileItemProps {
+export interface FileItemProps {
   file: FileItem;
   paneId: string;
   hostId: string;
@@ -25,7 +25,7 @@ export interface SharedFileItemProps {
   onSetRenamingPath: (path: string | null) => void;
 }
 
-export default function SharedFileGridItem({
+export default function FileGridItem({
   file,
   paneId,
   hostId,
@@ -41,7 +41,7 @@ export default function SharedFileGridItem({
   onRenameValueChange,
   onCommitRename,
   onSetRenamingPath,
-}: SharedFileItemProps) {
+}: FileItemProps) {
   const { droppable, mergedRef } = useFileItemDnD({
     paneId,
     file,

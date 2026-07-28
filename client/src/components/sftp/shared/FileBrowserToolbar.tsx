@@ -12,7 +12,7 @@ import { useState } from "react";
 import type { FileViewMode } from "../../../lib/sftpTypes";
 import { Button } from "../../ui/Button";
 
-export interface SharedFileBrowserToolbarProps {
+export interface FileBrowserToolbarProps {
   currentPath: string;
   searchQuery: string;
   showHidden: boolean;
@@ -38,7 +38,7 @@ export interface SharedFileBrowserToolbarProps {
   onPathInputBlur?: () => void;
 }
 
-export default function SharedFileBrowserToolbar({
+export default function FileBrowserToolbar({
   currentPath,
   searchQuery,
   showHidden,
@@ -62,7 +62,7 @@ export default function SharedFileBrowserToolbar({
   onPathInputChange,
   onPathInputKeyDown,
   onPathInputBlur,
-}: SharedFileBrowserToolbarProps) {
+}: FileBrowserToolbarProps) {
   const [internalPathInput, setInternalPathInput] = useState(currentPath);
   const pathInput = pathInputProp ?? internalPathInput;
   const setPathInput = onPathInputChange ?? setInternalPathInput;

@@ -10,7 +10,7 @@ import type {
 } from "../../../lib/sftpTypes";
 import { findAllLeaves } from "../../../lib/treeUtils";
 import { useSftpStore } from "../../../stores/sftpStore";
-import { generateAutoName } from "./helpers";
+import { generateAutoName } from "../shared/helpers";
 
 interface UseFileOperationsOptions {
   paneId: string;
@@ -68,20 +68,17 @@ export function useFileOperations({
   } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  const loadDirectory = useCallback(
-    async (_path: string) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        setFiles([]);
-      } catch (err: unknown) {
-        setError(extractError(err, "Failed to load directory"));
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [hostId],
-  );
+  const loadDirectory = useCallback(async (_path: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      setFiles([]);
+    } catch (err: unknown) {
+      setError(extractError(err, "Failed to load directory"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadDirectory(currentPath);
@@ -193,7 +190,7 @@ export function useFileOperations({
         loadDirectory(currentPath);
       }
     },
-    [currentPath, hostId, addTransfer, updateTransfer, loadDirectory],
+    [currentPath, addTransfer, updateTransfer, loadDirectory],
   );
 
   const handleDownload = useCallback(
@@ -230,7 +227,7 @@ export function useFileOperations({
         toast.error(`Failed to download ${file.name}: ${extractError(err)}`);
       }
     },
-    [hostId, addTransfer, updateTransfer],
+    [addTransfer, updateTransfer],
   );
 
   const handleDelete = useCallback(async (file: FileItem) => {
@@ -271,7 +268,7 @@ export function useFileOperations({
         `Deleted ${toDelete.length} item${toDelete.length > 1 ? "s" : ""}`,
       );
     }
-  }, [deleteConfirm, hostId, currentPath, loadDirectory]);
+  }, [deleteConfirm, currentPath, loadDirectory]);
 
   const startRename = useCallback((file: FileItem) => {
     setRenamingPath(file.path);
@@ -317,7 +314,7 @@ export function useFileOperations({
     } catch (err: unknown) {
       toast.error(`Failed to rename: ${extractError(err)}`);
     }
-  }, [renamingPath, files, renameValue, currentPath, hostId]);
+  }, [renamingPath, files, renameValue, currentPath]);
 
   const handleNewFolder = useCallback(async () => {
     const name = window.prompt("Enter folder name:");
@@ -343,7 +340,7 @@ export function useFileOperations({
       setFiles((prev) => prev.filter((f) => f.path !== newPath));
       toast.error(`Failed to create folder: ${extractError(err)}`);
     }
-  }, [currentPath, hostId]);
+  }, [currentPath]);
 
   const handleNewFile = useCallback(async () => {
     const name = window.prompt("Enter file name:");
@@ -370,7 +367,7 @@ export function useFileOperations({
       setFiles((prev) => prev.filter((f) => f.path !== filePath));
       toast.error(`Failed to create file: ${extractError(err)}`);
     }
-  }, [currentPath, hostId]);
+  }, [currentPath]);
 
   const executeFileDrop = useCallback(
     async (

@@ -2,7 +2,7 @@ import type { FileItem } from "../../../lib/sftpTypes";
 import { formatDate, formatSize, getFileIcon } from "./helpers";
 import { useFileItemDnD } from "./useFileItemDnD";
 
-export interface SharedFileListItemProps {
+export interface FileListItemProps {
   file: FileItem;
   paneId: string;
   hostId: string;
@@ -26,7 +26,7 @@ export interface SharedFileListItemProps {
   onSetRenamingPath: (path: string | null) => void;
 }
 
-export default function SharedFileListItem({
+export default function FileListItem({
   file,
   paneId,
   hostId,
@@ -44,7 +44,7 @@ export default function SharedFileListItem({
   onRenameValueChange,
   onCommitRename,
   onSetRenamingPath,
-}: SharedFileListItemProps) {
+}: FileListItemProps) {
   const { droppable, mergedRef } = useFileItemDnD({
     paneId,
     file,
