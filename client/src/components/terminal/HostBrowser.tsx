@@ -10,8 +10,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
-import { detectShells, type ShellInfo } from "../../lib/shellDetection";
 import { type Host, useHostStore } from "../../stores/hostStore";
+import { useShellStore } from "../../stores/shellStore";
+import type { ShellInfo } from "../../lib/shellDetection";
 import { useTabGroupStore } from "../../stores/tabGroupStore";
 import type { PaneNode } from "../../stores/terminalStore";
 import { useVaultStore } from "../../stores/vaultStore";
@@ -69,16 +70,12 @@ export default function HostBrowser({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const deleteDialog = useModal();
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [localShells, setLocalShells] = useState<ShellInfo[]>([]);
+  const shells = useShellStore((s) => s.shells);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchTabGroups(currentVaultId || undefined);
   }, [currentVaultId, fetchTabGroups]);
-
-  useEffect(() => {
-    detectShells().then(setLocalShells);
-  }, []);
 
   const q = query.toLowerCase();
   const filteredHosts = hosts.filter(
@@ -117,12 +114,12 @@ export default function HostBrowser({
     selectableItems.push({ type: "preset", preset: g });
   }
   if (!query) {
-    for (const s of localShells) {
+    for (const s of shells) {
       selectableItems.push({ type: "shell", shell: s });
     }
   }
   if (query) {
-    for (const s of localShells) {
+    for (const s of shells) {
       selectableItems.push({ type: "shell", shell: s });
     }
   }
@@ -305,28 +302,30 @@ export default function HostBrowser({
         )}
 
         {/* Local Terminal section */}
-        {!query && localShells.length > 0 && (
+        {!query && shells.length > 0 && (
           <div className="pb-2">
             <h3 className="px-4 pt-2 pb-1 text-sm font-semibold tracking-wider uppercase text-dark-400">
               Local Terminal
             </h3>
-            {localShells.map((shell) => (
-              <Button
-                key={shell.path}
-                type="button"
-                variant="ghost"
-                onClick={() => onConnectLocal(shell.path)}
-                className="w-full px-4 py-3 gap-3 text-left justify-start"
-              >
-                <div className="flex items-center justify-center shrink-0 w-8 h-8 rounded-lg bg-green-600">
-                  <DesktopIcon className="w-4 h-4 text-white" weight="bold" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white">{shell.name}</div>
-                  <div className="text-xs text-dark-400">{shell.path}</div>
-                </div>
-              </Button>
-            ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 px-4 pt-2">
+              {shells.map((shell) => (
+                <Button
+                  key={shell.path}
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onConnectLocal(shell.path)}
+                  className="w-full px-4 py-3 gap-3 text-left justify-start border border-dark-700"
+                >
+                  <div className="flex items-center justify-center shrink-0 w-8 h-8 rounded-lg bg-green-600">
+                    <DesktopIcon className="w-4 h-4 text-white" weight="bold" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white">{shell.name}</div>
+                    <div className="text-xs text-dark-400">{shell.path}</div>
+                  </div>
+                </Button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -343,41 +342,43 @@ export default function HostBrowser({
                   : "No hosts available — add a host or type a connection string"}
               </div>
             ) : (
-              filteredHosts.map((host, index) => (
-                <Button
-                  key={host.id}
-                  type="button"
-                  variant="ghost"
-                  onClick={() => onConnect(host)}
-                  className={`w-full px-4 py-3 gap-3 text-left justify-start ${
-                    index === selectedIndex ? "bg-dark-800" : ""
-                  }`}
-                >
-                  <div
-                    className="flex items-center justify-center shrink-0 w-8 h-8 rounded-lg"
-                    style={{ backgroundColor: host.color || "#64748b" }}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 px-4 pt-2">
+                {filteredHosts.map((host, index) => (
+                  <Button
+                    key={host.id}
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onConnect(host)}
+                    className={`w-full px-4 py-3 gap-3 text-left justify-start border border-dark-700 ${
+                      index === selectedIndex ? "bg-dark-800" : ""
+                    }`}
                   >
-                    <TerminalIcon
-                      className="w-4 h-4 text-white"
-                      weight="bold"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-white">{host.name}</div>
-                    <div className="text-xs text-dark-400">
-                      {host.username ? `${host.username}@` : ""}
-                      {host.address}:{host.port}
+                    <div
+                      className="flex items-center justify-center shrink-0 w-8 h-8 rounded-lg"
+                      style={{ backgroundColor: host.color || "#64748b" }}
+                    >
+                      <TerminalIcon
+                        className="w-4 h-4 text-white"
+                        weight="bold"
+                      />
                     </div>
-                  </div>
-                  {host.tags && host.tags.length > 0 && (
-                    <div className="flex gap-1">
-                      {host.tags.slice(0, 2).map((tag: string) => (
-                        <Badge key={tag}>{tag}</Badge>
-                      ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white">{host.name}</div>
+                      <div className="text-xs text-dark-400">
+                        {host.username ? `${host.username}@` : ""}
+                        {host.address}:{host.port}
+                      </div>
                     </div>
-                  )}
-                </Button>
-              ))
+                    {host.tags && host.tags.length > 0 && (
+                      <div className="flex gap-1">
+                        {host.tags.slice(0, 2).map((tag: string) => (
+                          <Badge key={tag}>{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </Button>
+                ))}
+              </div>
             )}
           </div>
         )}

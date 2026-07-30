@@ -15,18 +15,21 @@ import TerminalPage from "./pages/TerminalPage";
 import WorkspacesPage from "./pages/WorkspacesPage";
 import { useAuthStore } from "./stores/authStore";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useShellStore } from "./stores/shellStore";
 import { useThemeStore } from "./stores/themeStore";
 
 function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const initSettings = useSettingsStore((s) => s.initSettings);
   const initTheme = useThemeStore((s) => s.initTheme);
+  const detectShells = useShellStore((s) => s.detect);
 
   useEffect(() => {
     restoreSession();
     initSettings();
     initTheme();
-  }, [restoreSession, initSettings, initTheme]);
+    detectShells();
+  }, [restoreSession, initSettings, initTheme, detectShells]);
 
   return (
     <BrowserRouter>

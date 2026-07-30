@@ -5,8 +5,9 @@ import {
   TerminalIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { detectShells, type ShellInfo } from "../../lib/shellDetection";
+import type { ShellInfo } from "../../lib/shellDetection";
 import { type Host, useHostStore } from "../../stores/hostStore";
+import { useShellStore } from "../../stores/shellStore";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -24,7 +25,7 @@ export default function QuickConnect({
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [localShells, setLocalShells] = useState<ShellInfo[]>([]);
+  const shells = useShellStore((s) => s.shells);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -34,7 +35,7 @@ export default function QuickConnect({
       host.address.toLowerCase().includes(query.toLowerCase()),
   );
 
-  const filteredShells = localShells.filter(
+  const filteredShells = shells.filter(
     (shell) =>
       !query ||
       shell.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -59,10 +60,6 @@ export default function QuickConnect({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
-
-  useEffect(() => {
-    detectShells().then(setLocalShells);
-  }, []);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -249,7 +246,7 @@ export default function QuickConnect({
           {/* Remote hosts */}
           {filteredHosts.length > 0 && (
             <div>
-              {!query && localShells.length > 0 && (
+              {!query && shells.length > 0 && (
                 <div className="px-4 pt-3 pb-1 text-xs font-semibold tracking-wider uppercase text-dark-500">
                   Remote Hosts
                 </div>
