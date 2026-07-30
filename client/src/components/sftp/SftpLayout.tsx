@@ -1,3 +1,4 @@
+import type { DragDropManager } from "@dnd-kit/abstract";
 import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
 import {
   DragDropProvider,
@@ -6,12 +7,47 @@ import {
   DragOverlay,
   type DragStartEvent,
   KeyboardSensor,
+  useDragDropManager,
 } from "@dnd-kit/react";
 import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { type FileDragState, useSftpStore } from "../../stores/sftpStore";
 import FileTransfer from "./FileTransfer";
 import SftpPaneTree from "./SftpPaneTree";
+
+function refreshDroppableShapes(manager: DragDropManager | null) {
+  if (!manager) return;
+  for (const droppable of manager.registry.droppables) {
+    (droppable as { refreshShape?: () => void }).refreshShape?.();
+  }
+}
+
+function ShapeRefresher() {
+  const manager = useDragDropManager();
+
+  useEffect(() => {
+    if (!manager) return;
+    return manager.monitor.addEventListener("beforedragstart", () => {
+      refreshDroppableShapes(manager);
+    });
+  }, [manager]);
+
+  useEffect(() => {
+    if (!manager) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => refreshDroppableShapes(manager), 150);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timer);
+    };
+  }, [manager]);
+
+  return null;
+}
 
 type DropSide = "left" | "right" | "top" | "bottom";
 
@@ -159,6 +195,7 @@ export default function SftpLayout() {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
+      <ShapeRefresher />
       <div className="flex-1 relative bg-dark-900 overflow-hidden">
         {root && (
           <SftpPaneTree

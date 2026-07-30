@@ -1,11 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
-use tauri::Manager;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub device_id: String,
     pub api_url: Mutex<Option<String>>,
+}
+
+pub struct CancelTokens {
+    pub tokens: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 #[tauri::command]
@@ -288,6 +294,170 @@ fn is_same_volume(_path1: String, _path2: String) -> Result<bool, String> {
     Ok(false)
 }
 
+#[derive(serde::Deserialize)]
+struct CopyFileEntry {
+    source: String,
+    destination: String,
+}
+
+#[tauri::command]
+async fn get_file_size(path: String) -> Result<u64, String> {
+    let p = std::path::PathBuf::from(&path);
+    tauri::async_runtime::spawn_blocking(move || {
+        p.metadata()
+            .map(|m| m.len())
+            .map_err(|e| format!("{path}: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+#[tauri::command]
+fn cancel_copy(
+    state: tauri::State<'_, CancelTokens>,
+    operation_id: String,
+) -> Result<(), String> {
+    let tokens = state.tokens.lock().map_err(|e| e.to_string())?;
+    if let Some(token) = tokens.get(&operation_id) {
+        token.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn copy_files_with_progress(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CancelTokens>,
+    files: Vec<CopyFileEntry>,
+    operation_id: String,
+) -> Result<Vec<String>, String> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state
+        .tokens
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(operation_id.clone(), cancelled.clone());
+
+    let op_id = operation_id.clone();
+    let errors = tauri::async_runtime::spawn_blocking(move || {
+        let mut errors = Vec::new();
+        for entry in &files {
+            if cancelled.load(Ordering::Relaxed) {
+                errors.push("Cancelled".to_string());
+                break;
+            }
+
+            let src = std::path::Path::new(&entry.source);
+            let dst = std::path::Path::new(&entry.destination);
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| entry.source.clone());
+
+            if let Some(parent) = dst.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    errors.push(format!("{name}: {e}"));
+                    continue;
+                }
+            }
+
+            let total = match std::fs::metadata(src) {
+                Ok(m) => m.len(),
+                Err(e) => {
+                    errors.push(format!("{name}: {e}"));
+                    continue;
+                }
+            };
+
+            let src_file = match std::fs::File::open(src) {
+                Ok(f) => f,
+                Err(e) => {
+                    errors.push(format!("{name}: {e}"));
+                    continue;
+                }
+            };
+
+            let dst_file = match std::fs::File::create(dst) {
+                Ok(f) => f,
+                Err(e) => {
+                    errors.push(format!("{name}: {e}"));
+                    continue;
+                }
+            };
+
+            if cancelled.load(Ordering::Relaxed) {
+                drop(dst_file);
+                let _ = std::fs::remove_file(dst);
+                errors.push(format!("{name}: Cancelled"));
+                break;
+            }
+
+            let mut reader = std::io::BufReader::new(src_file);
+            let mut writer = std::io::BufWriter::new(dst_file);
+            let mut copied: u64 = 0;
+            let mut buf = vec![0u8; 64 * 1024]; // 64 KB chunks
+            let mut last_percent = 0u8;
+
+            loop {
+                if cancelled.load(Ordering::Relaxed) {
+                    drop(writer);
+                    let _ = std::fs::remove_file(dst);
+                    errors.push(format!("{name}: Cancelled"));
+                    break;
+                }
+
+                let n = match std::io::Read::read(&mut reader, &mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(e) => {
+                        errors.push(format!("{name}: {e}"));
+                        break;
+                    }
+                };
+
+                if let Err(e) = std::io::Write::write_all(&mut writer, &buf[..n]) {
+                    errors.push(format!("{name}: {e}"));
+                    break;
+                }
+
+                copied += n as u64;
+                let percent = if total > 0 {
+                    ((copied as f64 / total as f64) * 100.0).min(100.0) as u8
+                } else {
+                    100
+                };
+
+                if percent != last_percent || copied == total {
+                    last_percent = percent;
+                    let _ = app.emit(
+                        "copy-progress",
+                        serde_json::json!({
+                            "operationId": op_id,
+                            "source": entry.source,
+                            "destination": entry.destination,
+                            "copied": copied,
+                            "total": total,
+                            "percent": percent,
+                        }),
+                    );
+                }
+            }
+        }
+        errors
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?;
+
+    // Clean up cancel token
+    state
+        .tokens
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&operation_id);
+
+    Ok(errors)
+}
+
 fn get_or_create_device_id() -> String {
     let dirs = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let path = dirs.join("termvault").join("device_id");
@@ -325,6 +495,9 @@ pub fn run() {
             device_id: get_or_create_device_id(),
             api_url: Mutex::new(None),
         })
+        .manage(CancelTokens {
+            tokens: Mutex::new(HashMap::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             get_device_id,
             set_api_url,
@@ -332,6 +505,9 @@ pub fn run() {
             write_file,
             detect_shells,
             is_same_volume,
+            get_file_size,
+            copy_files_with_progress,
+            cancel_copy,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

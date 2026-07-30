@@ -12,6 +12,7 @@ import Modal from "../../ui/Modal";
 import { useFileKeyboardShortcuts } from "../hooks/useFileKeyboardShortcuts";
 import { useFileOperations } from "../hooks/useFileOperations";
 import { useSortedFiles } from "../hooks/useSortedFiles";
+import { useTauriDragDrop } from "../hooks/useTauriDragDrop";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
 import FileBrowserToolbar from "../shared/FileBrowserToolbar";
 import FileBrowserList from "./FileBrowserList";
@@ -92,6 +93,14 @@ export default function FileBrowser({
   // ── Component-only state ─────────────────────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // ── Tauri OS drag-drop ───────────────────────────────────────────────────
+  const tauriDragDrop = useTauriDragDrop({
+    paneId,
+    currentPath,
+    hostId,
+  });
 
   // ── Drag & drop ──────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -121,7 +130,10 @@ export default function FileBrowser({
   });
 
   const setContainerRef = useCallback(
-    (node: HTMLDivElement | null) => droppable.ref(node),
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      droppable.ref(node);
+    },
     [droppable.ref],
   );
 
@@ -230,11 +242,17 @@ export default function FileBrowser({
       role="region"
       aria-label="File browser"
       className="h-full flex flex-col bg-dark-900 relative"
+      data-drop-target-path={currentPath}
+      data-drop-target-pane={paneId}
+      data-drop-target-host={hostId}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <DragOverOverlay isDragOver={isDragOver} fileDragState={fileDragState} />
+      <DragOverOverlay
+        isDragOver={tauriDragDrop.isDragOver || isDragOver}
+        fileDragState={fileDragState}
+      />
       <DropTargetOverlay
         isDropTarget={isDropTarget}
         fileDragState={fileDragState}

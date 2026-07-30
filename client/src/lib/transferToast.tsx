@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { Button } from "../components/ui/Button";
 import type { FileItem } from "./sftpTypes";
 
 function formatBytes(bytes: number): string {
@@ -11,10 +12,16 @@ function formatBytes(bytes: number): string {
 
 function ProgressBar({ percent }: { percent: number }) {
   return (
-    <div className="mt-1.5 w-full bg-dark-700 rounded-full h-1.5 overflow-hidden">
+    <div
+      className="mt-1.5 w-full rounded-full h-1.5 overflow-hidden"
+      style={{ backgroundColor: "var(--color-dark-700)" }}
+    >
       <div
-        className="bg-primary-500 h-1.5 rounded-full transition-all duration-200"
-        style={{ width: `${Math.min(percent, 100)}%` }}
+        className="h-1.5 rounded-full transition-all duration-200"
+        style={{
+          width: `${Math.min(percent, 100)}%`,
+          backgroundColor: "var(--color-primary-500)",
+        }}
       />
     </div>
   );
@@ -26,21 +33,46 @@ function TransferToast({
   loaded,
   total,
   isSingle,
+  onCancel,
 }: {
   label: string;
   fileNames: string[];
   loaded: number;
   total: number;
   isSingle: boolean;
+  onCancel?: () => void;
 }) {
   const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
 
   return (
-    <div className="text-sm">
-      <div className="font-medium text-white">
-        {isSingle ? fileNames[0] : `${fileNames.length} files`}
+    <div className="text-sm w-full overflow-hidden">
+      <div className="flex items-start justify-between gap-2">
+        <div
+          className="font-medium min-w-0"
+          style={{
+            color: "var(--color-primary-500)",
+            overflowWrap: "anywhere",
+          }}
+        >
+          {isSingle ? fileNames[0] : `${fileNames.length} files`}
+        </div>
+        {onCancel && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
-      <div className="text-dark-300 text-xs mt-0.5">
+      <div
+        className="text-xs mt-0.5"
+        style={{ color: "var(--color-primary-300)" }}
+      >
         {label} {formatBytes(loaded)} / {formatBytes(total)} ({percent}%)
       </div>
       <ProgressBar percent={percent} />
@@ -51,6 +83,7 @@ function TransferToast({
 export function showTransferStart(
   files: FileItem[],
   mode: "move" | "copy",
+  onCancel?: () => void,
 ): string | number {
   const count = files.length;
   const verb = mode === "move" ? "Moving" : "Copying";
@@ -62,6 +95,7 @@ export function showTransferStart(
       loaded={0}
       total={files.reduce((s, f) => s + f.size, 0) || 1}
       isSingle={count === 1}
+      onCancel={onCancel}
     />,
     { description: name },
   );
@@ -73,6 +107,7 @@ export function showTransferProgress(
   loaded: number,
   total: number,
   mode: "move" | "copy",
+  onCancel?: () => void,
 ): void {
   const count = files.length;
   const verb = mode === "move" ? "Moving" : "Copying";
@@ -83,9 +118,21 @@ export function showTransferProgress(
       loaded={loaded}
       total={total}
       isSingle={count === 1}
+      onCancel={onCancel}
     />,
     { id: toastId },
   );
+}
+
+export function showTransferCancelled(
+  toastId: string | number,
+  files: FileItem[],
+  mode: "move" | "copy",
+): void {
+  const count = files.length;
+  const verb = mode === "move" ? "Moved" : "Copied";
+  const name = count === 1 ? files[0].name : `${count} files`;
+  toast.warning(`${verb} cancelled: ${name}`, { id: toastId });
 }
 
 export function showTransferSuccess(

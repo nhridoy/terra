@@ -65,6 +65,11 @@ export default function FileGridItem({
       tabIndex={0}
       data-file-item
       data-file-name={file.name}
+      data-drop-target-path={file.path}
+      data-drop-target-pane={paneId}
+      data-drop-target-host={hostId}
+      data-drop-target-type={file.type}
+      data-file-row
       title={file.name}
       onKeyDown={accessibleClickHandler(() => onDoubleClick(file))}
       onDoubleClick={() => onDoubleClick(file)}

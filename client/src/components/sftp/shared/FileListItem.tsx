@@ -62,6 +62,11 @@ export default function FileListItem({
       ref={mergedRef}
       data-file-item
       data-file-name={file.name}
+      data-drop-target-path={file.path}
+      data-drop-target-pane={paneId}
+      data-drop-target-host={hostId}
+      data-drop-target-type={file.type}
+      data-file-row
       onDoubleClick={() => onDoubleClick(file)}
       onClick={(e) => onSelect(file.name, e.ctrlKey || e.metaKey, e.shiftKey)}
       onKeyDown={(e) => {

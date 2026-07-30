@@ -135,7 +135,7 @@ function makeEmptySftpLeaf(): SftpLeafNode {
 export const useSftpStore = create<SftpState>((set, get) => ({
   root: null,
   activePaneId: null,
-  fileDragState: { isDragging: false, sourcePaneId: null, files: [] },
+  fileDragState: null,
   pendingFileDrop: null,
   transfers: [],
   clipboard: null,

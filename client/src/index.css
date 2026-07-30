@@ -91,3 +91,25 @@ code {
 .xterm-viewport {
   background-color: transparent;
 }
+
+/* Sonner toast: follow app theme */
+[data-sonner-toaster] [data-sonner-toast] {
+  background: var(--color-dark-900) !important;
+  border-color: var(--color-dark-700) !important;
+  color: var(--color-white) !important;
+  overflow: hidden !important;
+  max-width: 380px !important;
+  word-break: break-word !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--color-dark-400) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-success] {
+  color: var(--color-primary-400) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-error] {
+  color: var(--color-danger-500) !important;
+}
