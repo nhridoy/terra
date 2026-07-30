@@ -4,7 +4,11 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../../lib/extractError";
-import { LocalFileProvider, transferFiles } from "../../../lib/fileTransfer";
+import {
+  joinPath,
+  LocalFileProvider,
+  transferFiles,
+} from "../../../lib/fileTransfer";
 import {
   isSameVolume,
   isTauriAvailable,
@@ -41,6 +45,7 @@ import {
   useResizableColumns,
 } from "../hooks/useResizableColumns";
 import { useSortedFiles } from "../hooks/useSortedFiles";
+import { useTauriDragDrop } from "../hooks/useTauriDragDrop";
 import { buildBaseContextMenuItems } from "../shared/buildBaseContextMenuItems";
 import FileBrowserListShared from "../shared/FileBrowserList";
 import FileBrowserStatusBar from "../shared/FileBrowserStatusBar";
@@ -121,6 +126,78 @@ export default function LocalFileBrowser({
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // ── Transfer execution ───────────────────────────────────────────────────
+  const executeTransfer = useCallback(
+    async (
+      dragFiles: FileItem[],
+      destDirPath: string,
+      mode: "move" | "copy",
+      overrides?: Map<
+        string,
+        { action: "replace" | "rename" | "auto" | "skip"; newName?: string }
+      >,
+    ) => {
+      const toastId = showTransferStart(dragFiles, mode);
+      const totalSize = dragFiles.reduce((s, f) => s + f.size, 0);
+      let loaded = 0;
+
+      const results = await transferFiles({
+        source: localProvider,
+        dest: localProvider,
+        files: dragFiles,
+        destPath: destDirPath,
+        mode,
+        overrides,
+        onFileProgress: (_file, _index, fileLoaded) => {
+          loaded += fileLoaded;
+          showTransferProgress(toastId, dragFiles, loaded, totalSize, mode);
+        },
+      });
+
+      const errors = results.filter((r) => r.error);
+      if (errors.length === 0) {
+        showTransferSuccess(toastId, dragFiles, mode);
+      } else if (errors.length === dragFiles.length) {
+        showTransferError(
+          toastId,
+          dragFiles,
+          mode,
+          errors[0].error || "Unknown error",
+        );
+      } else {
+        showTransferSuccess(toastId, dragFiles, mode);
+      }
+
+      try {
+        const fresh = await listLocalFiles(currentPath);
+        actions.setFiles(paneId, fresh);
+      } catch {
+        // silent fail
+      }
+
+      if (mode === "move") {
+        const sourceDir =
+          dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join("/") || "";
+        if (sourceDir) {
+          const allPanes = useFileBrowserStore.getState().panes;
+          for (const [id, p] of Object.entries(allPanes)) {
+            if (id === paneId) continue;
+            const paneDir = p.currentPath.replace(/\\/g, "/");
+            if (paneDir === sourceDir.replace(/\\/g, "/")) {
+              try {
+                const srcFresh = await listLocalFiles(p.currentPath);
+                fileBrowserActions.setFiles(id, srcFresh);
+              } catch {
+                // silent fail
+              }
+            }
+          }
+        }
+      }
+    },
+    [currentPath, paneId],
+  );
+
   // ── Extracted hooks ──────────────────────────────────────────────────────
   const fileOps = useFileOperations({ paneId, currentPath, files });
   const clipboard = useClipboard({ paneId, currentPath, files, selectedFiles });
@@ -137,6 +214,70 @@ export default function LocalFileBrowser({
     paneId,
     currentPath,
     containerRef,
+  });
+
+  // ── Tauri OS drag-drop (reliable cross-platform file drops) ─────────────
+  const handleTauriDrop = useCallback(
+    async (paths: string[], destDir: string) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      const sizes = await Promise.all(
+        paths.map((p) =>
+          invoke<number>("get_file_size", { path: p }).catch(() => 0),
+        ),
+      );
+
+      const dropFiles: FileItem[] = paths.map((p, i) => {
+        const name = p.split(/[/\\]/).pop() || p;
+        return {
+          name,
+          path: p,
+          type: "file" as const,
+          size: sizes[i] || 0,
+          permissions: "",
+          owner: "",
+          group: "",
+          modifiedAt: new Date().toISOString(),
+          isHidden: name.startsWith("."),
+        };
+      });
+
+      let destFiles: FileItem[];
+      try {
+        destFiles = await listLocalFiles(destDir);
+      } catch {
+        destFiles = [];
+      }
+      const destNames = new Set(destFiles.map((f) => f.name));
+      const conflicts = dropFiles.filter((f) => destNames.has(f.name));
+
+      if (conflicts.length > 0) {
+        actions.setPasteConflicts(
+          paneId,
+          conflicts.map((f) => ({
+            srcPath: f.path,
+            dstPath: joinPath(destDir, f.name),
+            dstName: f.name,
+          })),
+        );
+        actions.setPendingDrop(paneId, {
+          files: dropFiles,
+          destDirPath: destDir,
+          mode: "copy",
+        });
+        return;
+      }
+
+      await executeTransfer(dropFiles, destDir, "copy");
+    },
+    [paneId, executeTransfer],
+  );
+
+  const tauriDragDrop = useTauriDragDrop({
+    paneId,
+    currentPath,
+    hostId: "local",
+    onDrop: handleTauriDrop,
   });
 
   // ── Effects ──────────────────────────────────────────────────────────────
@@ -212,80 +353,6 @@ export default function LocalFileBrowser({
       );
     },
     [paneId, computedSortedFiles],
-  );
-
-  // ── Transfer execution ───────────────────────────────────────────────────
-  const executeTransfer = useCallback(
-    async (
-      dragFiles: FileItem[],
-      destDirPath: string,
-      mode: "move" | "copy",
-      overrides?: Map<
-        string,
-        { action: "replace" | "rename" | "auto" | "skip"; newName?: string }
-      >,
-    ) => {
-      const toastId = showTransferStart(dragFiles, mode);
-      const totalSize = dragFiles.reduce((s, f) => s + f.size, 0);
-      let loaded = 0;
-
-      const results = await transferFiles({
-        source: localProvider,
-        dest: localProvider,
-        files: dragFiles,
-        destPath: destDirPath,
-        mode,
-        overrides,
-        onFileProgress: (_file, _index, fileLoaded) => {
-          loaded += fileLoaded;
-          showTransferProgress(toastId, dragFiles, loaded, totalSize, mode);
-        },
-      });
-
-      const errors = results.filter((r) => r.error);
-      if (errors.length === 0) {
-        showTransferSuccess(toastId, dragFiles, mode);
-      } else if (errors.length === dragFiles.length) {
-        showTransferError(
-          toastId,
-          dragFiles,
-          mode,
-          errors[0].error || "Unknown error",
-        );
-      } else {
-        showTransferSuccess(toastId, dragFiles, mode);
-      }
-
-      // Silent reload: re-read current directory + any source panes
-      try {
-        const fresh = await listLocalFiles(currentPath);
-        actions.setFiles(paneId, fresh);
-      } catch {
-        // silent fail
-      }
-
-      // If move, also reload any source panes showing the source directory
-      if (mode === "move") {
-        const sourceDir =
-          dragFiles[0]?.path.split(/[/\\]/).slice(0, -1).join("/") || "";
-        if (sourceDir) {
-          const allPanes = useFileBrowserStore.getState().panes;
-          for (const [id, p] of Object.entries(allPanes)) {
-            if (id === paneId) continue;
-            const paneDir = p.currentPath.replace(/\\/g, "/");
-            if (paneDir === sourceDir.replace(/\\/g, "/")) {
-              try {
-                const srcFresh = await listLocalFiles(p.currentPath);
-                fileBrowserActions.setFiles(id, srcFresh);
-              } catch {
-                // silent fail
-              }
-            }
-          }
-        }
-      }
-    },
-    [currentPath, paneId],
   );
 
   // ── Handle pending file drops from SftpLayout ────────────────────────────
@@ -632,6 +699,9 @@ export default function LocalFileBrowser({
     <div
       ref={setContainerRef}
       className="h-full flex flex-col bg-dark-900 relative select-none"
+      data-drop-target-path={currentPath}
+      data-drop-target-pane={paneId}
+      data-drop-target-host="local"
       onDragOver={handleDesktopDragOver}
       onDragLeave={handleDesktopDragLeave}
       onDrop={handleDesktopDrop}
@@ -643,7 +713,10 @@ export default function LocalFileBrowser({
       onMouseMove={marquee.handleMouseMove}
       onMouseUp={marquee.handleMouseUp}
     >
-      <DragOverOverlay isDragOver={isDragOver} fileDragState={fileDragState} />
+      <DragOverOverlay
+        isDragOver={tauriDragDrop.isDragOver || isDragOver}
+        fileDragState={fileDragState}
+      />
       <DropTargetOverlay
         isDropTarget={isDropTarget}
         fileDragState={fileDragState}

@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { buildClipboardPaths } from "../../../lib/buildClipboardPaths";
 import { extractError } from "../../../lib/extractError";
+import { generateAutoName } from "../../../lib/fileHelpers";
+import { joinPath } from "../../../lib/fileTransfer";
 import {
   copyLocalFile,
   listLocalFiles,
@@ -51,31 +53,64 @@ export function useClipboard({
       return;
     }
 
+    const mode = clipboardMode === "copy" ? "copy" : "move";
+    const normalize = (p: string) => p.replace(/\\/g, "/");
+
+    const sourceFiles: FileItem[] = clipboard.paths.map((srcPath) => {
+      const name = srcPath.split(/[/\\]/).pop() || srcPath;
+      return {
+        name,
+        path: srcPath,
+        type: "file" as const,
+        size: 0,
+        permissions: "",
+        owner: "",
+        group: "",
+        modifiedAt: new Date().toISOString(),
+        isHidden: name.startsWith("."),
+      };
+    });
+
+    const destNames = new Set(files.map((f) => f.name));
+    const conflicts = sourceFiles.filter((f) => {
+      const destPath = joinPath(currentPath, f.name);
+      if (mode === "copy" && normalize(f.path) === normalize(destPath))
+        return false;
+      return destNames.has(f.name);
+    });
+
+    if (conflicts.length > 0) {
+      actions.setPasteConflicts(
+        paneId,
+        conflicts.map((f) => ({
+          srcPath: f.path,
+          dstPath: joinPath(currentPath, f.name),
+          dstName: f.name,
+        })),
+      );
+      actions.setPendingDrop(paneId, {
+        files: sourceFiles,
+        destDirPath: currentPath,
+        mode,
+      });
+      return;
+    }
+
     const movedPaths = new Set<string>();
     let pasted = 0;
 
     for (const srcPath of clipboard.paths) {
       const fileName = srcPath.split(/[/\\]/).pop() || srcPath;
-      const destPath =
-        currentPath.endsWith("\\") || currentPath.endsWith("/")
-          ? `${currentPath}${fileName}`
-          : `${currentPath}\\${fileName}`;
+      const destPath = joinPath(currentPath, fileName);
       try {
         if (clipboardMode === "copy") {
-          let finalPath = destPath;
           const normalize = (p: string) => p.replace(/\\/g, "/");
+          let finalPath = destPath;
           if (normalize(srcPath) === normalize(destPath)) {
-            const dir =
-              destPath.substring(0, destPath.lastIndexOf("\\") + 1) ||
-              destPath.substring(0, destPath.lastIndexOf("/") + 1);
-            const ext = fileName.includes(".")
-              ? fileName.substring(fileName.lastIndexOf("."))
-              : "";
-            const base = ext
-              ? fileName.substring(0, fileName.length - ext.length)
-              : fileName;
-            finalPath = `${dir}${base} (copy)${ext}`;
+            const newName = generateAutoName(fileName, [...destNames]);
+            finalPath = joinPath(currentPath, newName);
           }
+          destNames.add(finalPath.split(/[/\\]/).pop() || finalPath);
           await copyLocalFile(srcPath, finalPath);
         } else {
           await moveLocalFile(srcPath, destPath);
@@ -92,7 +127,6 @@ export function useClipboard({
         `${clipboardMode === "copy" ? "Copied" : "Moved"} ${pasted} item${pasted > 1 ? "s" : ""}`,
       );
 
-      // Silent reload: re-read current directory
       try {
         const freshFiles = await listLocalFiles(currentPath);
         actions.setFiles(paneId, freshFiles);
@@ -100,7 +134,6 @@ export function useClipboard({
         // silent fail
       }
 
-      // If cut (move), also reload any source panes showing the source directory
       if (clipboardMode === "cut" && movedPaths.size > 0) {
         const sourceDir =
           clipboard.paths[0]?.split(/[/\\]/).slice(0, -1).join("/") || "";
@@ -125,7 +158,7 @@ export function useClipboard({
     if (clipboardMode === "cut") {
       useSftpStore.getState().clearClipboard();
     }
-  }, [currentPath, paneId]);
+  }, [currentPath, paneId, files]);
 
   return { handleCopy, handleCut, handlePaste };
 }

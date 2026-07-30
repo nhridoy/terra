@@ -116,15 +116,14 @@ function generateAutoName(
   originalName: string,
   existingNames: Set<string>,
 ): string {
-  if (!existingNames.has(originalName)) return originalName;
   const dot = originalName.lastIndexOf(".");
   const base = dot > 0 ? originalName.substring(0, dot) : originalName;
   const ext = dot > 0 ? originalName.substring(dot) : "";
-  let counter = 1;
-  let candidate = `${base} (${counter})${ext}`;
+  let candidate = `${base} (copy)${ext}`;
+  let counter = 2;
   while (existingNames.has(candidate)) {
+    candidate = `${base} (copy ${counter})${ext}`;
     counter++;
-    candidate = `${base} (${counter})${ext}`;
   }
   return candidate;
 }

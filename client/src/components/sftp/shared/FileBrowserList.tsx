@@ -36,7 +36,10 @@ export default function FileBrowserList({
 }: FileBrowserListProps) {
   if (viewMode === "list") {
     return (
-      <table className="w-full" style={{ tableLayout: "fixed" }}>
+      <table
+        className="w-full border-separate border-spacing-y-1"
+        style={{ tableLayout: "fixed" }}
+      >
         <colgroup>
           {columns.map((col) => (
             <col key={col.key} style={{ width: columnWidths[col.key] }} />
