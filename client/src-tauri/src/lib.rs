@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Listener, Manager};
 
 pub struct AppState {
     pub device_id: String,
@@ -261,8 +261,10 @@ fn detect_shells_platform() -> Vec<ShellInfo> {
 }
 
 #[tauri::command]
-fn detect_shells() -> Vec<ShellInfo> {
-    detect_shells_platform()
+async fn detect_shells() -> Vec<ShellInfo> {
+    tokio::task::spawn_blocking(|| detect_shells_platform())
+        .await
+        .unwrap_or_default()
 }
 
 #[cfg(target_os = "windows")]
@@ -489,6 +491,19 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or("main window not found")?;
             window.set_title("TermVault")?;
+
+            let handle = app.handle().clone();
+            app.listen("main-ready", move |_| {
+                let splash = handle.get_webview_window("splashscreen");
+                let main = handle.get_webview_window("main");
+                if let Some(s) = splash {
+                    let _ = s.close();
+                }
+                if let Some(m) = main {
+                    let _ = m.show();
+                }
+            });
+
             Ok(())
         })
         .manage(AppState {

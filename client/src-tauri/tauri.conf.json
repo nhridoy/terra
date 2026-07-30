@@ -11,17 +11,31 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "title": "TermVault",
-      "width": 1200,
-      "height": 800,
-      "minWidth": 800,
-      "minHeight": 600,
-      "resizable": true,
-      "fullscreen": false,
-      "decorations": true,
-      "dragDropEnabled": true
-    }],
+    "windows": [
+      {
+        "label": "splashscreen",
+        "url": "/splashscreen.html",
+        "width": 400,
+        "height": 300,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true
+      },
+      {
+        "label": "main",
+        "visible": false,
+        "title": "TermVault",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "dragDropEnabled": true
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' http://localhost:* https://localhost:* tauri: ws://localhost:* wss://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     }

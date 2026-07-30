@@ -1,3 +1,4 @@
+import { emit } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
@@ -17,6 +18,7 @@ import { useAuthStore } from "./stores/authStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useShellStore } from "./stores/shellStore";
 import { useThemeStore } from "./stores/themeStore";
+import "@xterm/xterm/css/xterm.css";
 
 function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
@@ -25,10 +27,14 @@ function App() {
   const detectShells = useShellStore((s) => s.detect);
 
   useEffect(() => {
-    restoreSession();
-    initSettings();
-    initTheme();
-    detectShells();
+    const init = async () => {
+      initTheme();
+      initSettings();
+      restoreSession();
+      await detectShells();
+      emit("main-ready");
+    };
+    init();
   }, [restoreSession, initSettings, initTheme, detectShells]);
 
   return (
