@@ -18,7 +18,6 @@ import { useAuthStore } from "./stores/authStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useShellStore } from "./stores/shellStore";
 import { useThemeStore } from "./stores/themeStore";
-import "@xterm/xterm/css/xterm.css";
 
 function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);

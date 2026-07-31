@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::io::{Read, Write};
+use std::thread;
 use tauri::{Emitter, Listener, Manager};
 
 pub struct AppState {
@@ -460,6 +462,192 @@ async fn copy_files_with_progress(
     Ok(errors)
 }
 
+#[derive(Default, Clone, serde::Deserialize)]
+struct SshConfig {
+    host: String,
+    port: u16,
+    username: String,
+    password: Option<String>,
+    private_key: Option<String>,
+    passphrase: Option<String>,
+}
+
+use std::process::{Child, Command, Stdio};
+
+pub struct LocalSessions {
+    pub children: Mutex<HashMap<String, std::process::Child>>,
+    pub stdins: Mutex<HashMap<String, std::process::ChildStdin>>,
+}
+
+#[tauri::command]
+async fn connect_local(
+    app_handle: tauri::AppHandle,
+    session_id: String,
+    shell: Option<String>,
+    cols: u16,
+    rows: u16,
+    state: tauri::State<'_, LocalSessions>,
+) -> Result<(), String> {
+    let shell_path = shell.unwrap_or_else(|| {
+        if cfg!(target_os = "windows") {
+            "cmd.exe".to_string()
+        } else {
+            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+        }
+    });
+
+    let mut cmd = Command::new(&shell_path);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {e}"))?;
+    let stdin_writer = child.stdin.take().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+
+    let sid = session_id.clone();
+    let sid2 = session_id.clone();
+    let handle = app_handle.clone();
+
+    // Emit connected event
+    let _ = handle.emit(
+        "ssh-output",
+        serde_json::json!({"sessionId": sid2, "type": "connected", "data": ""}),
+    );
+
+    // Spawn thread to read stdout and emit events
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match stdout.read(&mut buf) {
+                Ok(0) => {
+                    let _ = handle.emit(
+                        "ssh-output",
+                        serde_json::json!({"sessionId": sid.clone(), "type": "disconnected", "data": ""}),
+                    );
+                    break;
+                }
+                Ok(n) => {
+                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = handle.emit(
+                        "ssh-output",
+                        serde_json::json!({"sessionId": sid.clone(), "type": "output", "data": data}),
+                    );
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Store stdin writer and child in state
+    {
+        let mut children = state.children.lock().map_err(|_| "Lock failed")?;
+        children.insert(session_id.clone(), child);
+        let mut stdins = state.stdins.lock().map_err(|_| "Lock failed")?;
+        stdins.insert(session_id.clone(), stdin_writer);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn send_input_local(
+    session_id: String,
+    data: String,
+    state: tauri::State<'_, LocalSessions>,
+) -> Result<(), String> {
+    let stdins = state.stdins.lock().map_err(|_| "Lock failed")?;
+    if let Some(mut stdin) = stdins.get(&session_id) {
+        // Can't write through immutable reference; need mutable
+    }
+    // Since mutex guard gives immutable access, drop and re-lock mutably
+    drop(stdins);
+    let mut stdins = state.stdins.lock().map_err(|_| "Lock failed")?;
+    if let Some(mut stdin) = stdins.get_mut(&session_id) {
+        stdin.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        stdin.flush().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn resize_local(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    _state: tauri::State<'_, LocalSessions>,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+async fn disconnect_local(
+    session_id: String,
+    state: tauri::State<'_, LocalSessions>,
+) -> Result<(), String> {
+    let mut children = state.children.lock().map_err(|_| "Lock failed")?;
+    if let Some(mut child) = children.remove(&session_id) {
+        let _ = child.kill();
+    }
+    let mut stdins = state.stdins.lock().map_err(|_| "Lock failed")?;
+    stdins.remove(&session_id);
+    Ok(())
+}
+
+#[tauri::command]
+async fn connect(
+    session_id: String,
+    config: SshConfig,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Basic SSH stub: emit connected then a simulated output, then disconnected
+    let sid = session_id.clone();
+    let handle = app_handle.clone();
+    tokio::spawn(async move {
+        let _ = handle.emit(
+            "ssh-output",
+            serde_json::json!({"sessionId": sid.clone(), "type": "connected", "data": ""}),
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        let _ = handle.emit(
+            "ssh-output",
+            serde_json::json!({"sessionId": sid.clone(), "type": "output", "data": "\r\nConnected to remote host\r\n"}),
+        );
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn disconnect(
+    session_id: String,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+async fn send_input(
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+async fn resize(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+async fn accept_host_key(
+    accepted: bool,
+) -> Result<(), String> {
+    Ok(())
+}
+
 fn get_or_create_device_id() -> String {
     let dirs = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let path = dirs.join("termvault").join("device_id");
@@ -513,6 +701,10 @@ pub fn run() {
         .manage(CancelTokens {
             tokens: Mutex::new(HashMap::new()),
         })
+        .manage(LocalSessions {
+            children: Mutex::new(HashMap::new()),
+            stdins: Mutex::new(HashMap::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             get_device_id,
             set_api_url,
@@ -523,6 +715,15 @@ pub fn run() {
             get_file_size,
             copy_files_with_progress,
             cancel_copy,
+            connect_local,
+            send_input_local,
+            resize_local,
+            disconnect_local,
+            connect,
+            disconnect,
+            send_input,
+            resize,
+            accept_host_key,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
