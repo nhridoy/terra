@@ -8,7 +8,7 @@ import {
   KeyboardSensor,
   useDragDropManager,
 } from "@dnd-kit/react";
-import { CodeIcon } from "@phosphor-icons/react";
+import { CodeIcon, FileTextIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useEditorStore } from "../../stores/editorStore";
 import EditorPaneTree from "./EditorPaneTree";
@@ -116,6 +116,19 @@ export default function EditorLayout() {
       }
     }
 
+    if (
+      source.data?.type === "editor-file-source" &&
+      target?.data?.type === "editor-file-drop"
+    ) {
+      const paneId = String(target.data.paneId);
+      const path = String(source.data.path);
+      const name = String(source.data.name);
+      const kind = String(source.data.kind);
+      if (kind === "file") {
+        useEditorStore.getState().openFile(paneId, path, name);
+      }
+    }
+
     setDropTarget(null);
   };
 
@@ -168,6 +181,19 @@ export default function EditorLayout() {
                     Editor Pane
                   </span>
                 </div>
+              </div>
+            );
+          }
+          if (source.data?.type === "editor-file-source") {
+            return (
+              <div className="flex items-center gap-2 px-3 py-2 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
+                <FileTextIcon
+                  className="w-4 h-4 text-primary-400"
+                  weight="fill"
+                />
+                <span className="text-sm text-white">
+                  {String(source.data.name)}
+                </span>
               </div>
             );
           }

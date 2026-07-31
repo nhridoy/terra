@@ -13,6 +13,7 @@ import { DropZone } from "../shared/DropZone";
 import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
 import PaneHeader from "../ui/PaneHeader";
+import EditorExplorer from "./EditorExplorer";
 import EditorView from "./EditorView";
 
 interface EditorPaneProps {
@@ -86,8 +87,23 @@ export default function EditorPane({
 
       {/* Body */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
-        {pane.connectionType === "host" || pane.connectionType === "local" ? (
-          <EditorView pane={pane} />
+        {pane.connectionType === "local" && pane.localPath ? (
+          <div className="flex h-full min-h-0 min-w-0">
+            <EditorExplorer paneId={pane.id} rootPath={pane.localPath} />
+            <EditorView pane={pane} />
+          </div>
+        ) : pane.connectionType === "host" ? (
+          <div className="flex h-full min-h-0 min-w-0">
+            <div className="w-1/3 min-w-0 h-full flex items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
+              <div>
+                <DesktopTowerIcon className="w-8 h-8 mx-auto mb-2 text-dark-600" />
+                <p className="text-xs text-dark-400">
+                  Remote explorer arrives with the SFTP transport phase
+                </p>
+              </div>
+            </div>
+            <EditorView pane={pane} />
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

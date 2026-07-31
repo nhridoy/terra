@@ -33,17 +33,27 @@ export interface EditorSplitNode {
 
 export type EditorPaneNode = EditorLeafNode | EditorSplitNode;
 
+export interface EditorOpenFile {
+  path: string;
+  name: string;
+}
+
 export const findLeaf = findLeafUtil;
 
 interface EditorState {
   root: EditorPaneNode | null;
   activePaneId: string | null;
   focusedPaneId: string | null;
+  openFiles: Record<string, EditorOpenFile[]>;
+  activeFile: Record<string, string | null>;
 
   addPane: (leaf: EditorLeafNode) => void;
   removePane: (paneId: string) => void;
   setActivePane: (paneId: string) => void;
   setFocusedPane: (paneId: string | null) => void;
+  openFile: (paneId: string, path: string, name: string) => void;
+  closeFile: (paneId: string, path: string) => void;
+  setActiveFile: (paneId: string, path: string | null) => void;
   movePane: (
     sourcePaneId: string,
     targetPaneId: string,
@@ -76,10 +86,18 @@ function makeEmptyEditorLeaf(): EditorLeafNode {
   };
 }
 
+function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   root: null,
   activePaneId: null,
   focusedPaneId: null,
+  openFiles: {},
+  activeFile: {},
 
   addPane: (leaf) => {
     const root = get().root;
@@ -106,7 +124,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const newRoot = removeNode(root, paneId);
     if (!newRoot) {
       const fresh = makeEmptyEditorLeaf();
-      set({ root: fresh, activePaneId: fresh.id, focusedPaneId: null });
+      set({
+        root: fresh,
+        activePaneId: fresh.id,
+        focusedPaneId: null,
+        openFiles: withoutKey(get().openFiles, paneId),
+        activeFile: withoutKey(get().activeFile, paneId),
+      });
       return;
     }
     set({
@@ -117,11 +141,45 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : get().activePaneId,
       focusedPaneId:
         get().focusedPaneId === paneId ? null : get().focusedPaneId,
+      openFiles: withoutKey(get().openFiles, paneId),
+      activeFile: withoutKey(get().activeFile, paneId),
     });
   },
 
   setActivePane: (paneId) => set({ activePaneId: paneId }),
   setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
+
+  openFile: (paneId, path, name) => {
+    const existing = get().openFiles[paneId] ?? [];
+    if (existing.some((f) => f.path === path)) {
+      set({ activeFile: { ...get().activeFile, [paneId]: path } });
+      return;
+    }
+    set({
+      openFiles: {
+        ...get().openFiles,
+        [paneId]: [...existing, { path, name }],
+      },
+      activeFile: { ...get().activeFile, [paneId]: path },
+    });
+  },
+
+  closeFile: (paneId, path) => {
+    const list = get().openFiles[paneId] ?? [];
+    const next = list.filter((f) => f.path !== path);
+    let active = get().activeFile[paneId] ?? null;
+    if (active === path) {
+      const idx = list.findIndex((f) => f.path === path);
+      active = next[idx]?.path ?? next[idx - 1]?.path ?? null;
+    }
+    set({
+      openFiles: { ...get().openFiles, [paneId]: next },
+      activeFile: { ...get().activeFile, [paneId]: active },
+    });
+  },
+
+  setActiveFile: (paneId, path) =>
+    set({ activeFile: { ...get().activeFile, [paneId]: path } }),
 
   movePane: (sourcePaneId, targetPaneId, side) => {
     const root = get().root;
