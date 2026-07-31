@@ -3805,6 +3805,7 @@ name = "termvault"
 version = "1.0.0"
 dependencies = [
  "dirs",
+ "portable-pty",
  "serde",
  "serde_json",
  "tauri",

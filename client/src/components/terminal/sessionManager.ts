@@ -69,6 +69,7 @@ function createSession(params: SessionParams): Session {
     cursorBlink: true,
     cursorStyle: 'block',
     allowTransparency: true,
+    convertEol: true,
   })
 
   const fitAddon = new FitAddon()
