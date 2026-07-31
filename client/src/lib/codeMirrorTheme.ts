@@ -91,6 +91,41 @@ export function codeMirrorThemeFor(appTheme: Theme): Extension {
     ".cm-lint-marker-info": {
       backgroundColor: term.brightBlue,
     },
+    ".cm-tooltip.cm-tooltip-autocomplete": {
+      backgroundColor: term.background,
+      border: `1px solid ${dimStrong}`,
+      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+      color: term.foreground,
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete ul li[aria-selected]": {
+      backgroundColor: dim,
+      color: term.foreground,
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete ul li": {
+      fontFamily: EDITOR_FONT,
+    },
+    ".cm-completionLabel": {
+      color: term.foreground,
+    },
+    ".cm-completionMatchedText": {
+      color: term.blue,
+      textDecoration: "none",
+    },
+    ".cm-completionDetail": {
+      color: term.brightBlack,
+      fontStyle: "italic",
+    },
+    ".cm-completionIcon": {
+      filter: "none",
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail, .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionLabel, .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionMatchedText, .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionIcon":
+      {
+        color: term.foreground,
+      },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionMatchedText":
+      {
+        color: term.brightBlue,
+      },
     "&.cm-focused": {
       outline: "none",
     },
