@@ -178,7 +178,7 @@ export default function HostBrowser({
   const showHosts = !query || filteredHosts.length > 0;
 
   return (
-    <div className="flex flex-col h-full bg-dark-900">
+    <div className="flex flex-col h-full bg-dark-900 @container">
       {/* Search */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-dark-700">
         <MagnifyingGlassIcon className="w-5 h-5 text-dark-400" weight="bold" />
@@ -307,7 +307,7 @@ export default function HostBrowser({
             <h3 className="px-4 pt-2 pb-1 text-sm font-semibold tracking-wider uppercase text-dark-400">
               Local Terminal
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 px-4 pt-2">
+            <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 @4xl:grid-cols-4 gap-2 px-4 pt-2">
               {shells.map((shell) => (
                 <Button
                   key={shell.path}
@@ -342,7 +342,7 @@ export default function HostBrowser({
                   : "No hosts available — add a host or type a connection string"}
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 px-4 pt-2">
+              <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 @4xl:grid-cols-4 gap-2 px-4 pt-2">
                 {filteredHosts.map((host, index) => (
                   <Button
                     key={host.id}
