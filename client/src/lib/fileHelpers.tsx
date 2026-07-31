@@ -19,9 +19,9 @@ export function formatDate(dateStr: string) {
   });
 }
 
-export function getFileIcon(file: FileItem, size = 20) {
+export function getFileIcon(file: FileItem, size = 20, isOpen = false) {
   if (file.type === "directory") {
-    return <FolderIcon folderName={file.name} size={size} />;
+    return <FolderIcon folderName={file.name} size={size} isOpen={isOpen} />;
   }
 
   const ext = file.name.includes(".")

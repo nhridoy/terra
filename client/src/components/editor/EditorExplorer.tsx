@@ -167,7 +167,7 @@ function Branch({
           <span className="w-3.5 shrink-0" />
         )}
 
-        {getFileIcon(file, 16)}
+        {getFileIcon(file, 16, isDir && expanded)}
 
         {isRenaming ? (
           <RenameInput
