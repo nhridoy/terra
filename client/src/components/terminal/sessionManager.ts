@@ -6,6 +6,7 @@ import { confirm } from '@tauri-apps/plugin-dialog'
 import { useHostStore } from '../../stores/hostStore'
 import { useKeyStore } from '../../stores/keyStore'
 import { useTerminalStore } from '../../stores/terminalStore'
+import { type TerminalTheme, terminalThemeFor, useThemeStore } from '../../stores/themeStore'
 
 export interface SessionParams {
   paneId: string
@@ -41,29 +42,7 @@ function createSession(params: SessionParams): Session {
   container.style.display = 'block'
 
   const xterm = new XTerminal({
-    theme: {
-      background: '#0f172a',
-      foreground: '#e2e8f0',
-      cursor: '#e2e8f0',
-      cursorAccent: '#0f172a',
-      selectionBackground: 'rgba(14, 165, 233, 0.3)',
-      black: '#0f172a',
-      red: '#ef4444',
-      green: '#22c55e',
-      yellow: '#eab308',
-      blue: '#3b82f6',
-      magenta: '#a855f7',
-      cyan: '#06b6d4',
-      white: '#e2e8f0',
-      brightBlack: '#475569',
-      brightRed: '#f87171',
-      brightGreen: '#4ade80',
-      brightYellow: '#facc15',
-      brightBlue: '#60a5fa',
-      brightMagenta: '#c084fc',
-      brightCyan: '#22d3ee',
-      brightWhite: '#f8fafc',
-    },
+    theme: terminalThemeFor(useThemeStore.getState().currentTheme),
     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
     fontSize: 14,
     cursorBlink: true,
@@ -349,6 +328,21 @@ export function fitSession(paneId: string) {
     /* not yet sized */
   }
 }
+
+export function applyTerminalTheme() {
+  const theme: TerminalTheme = terminalThemeFor(
+    useThemeStore.getState().currentTheme,
+  )
+  for (const session of sessions.values()) {
+    session.xterm.options.theme = theme
+  }
+}
+
+useThemeStore.subscribe((state, prev) => {
+  if (state.currentTheme !== prev.currentTheme) {
+    applyTerminalTheme()
+  }
+})
 
 export async function destroySession(paneId: string) {
   const session = sessions.get(paneId)
