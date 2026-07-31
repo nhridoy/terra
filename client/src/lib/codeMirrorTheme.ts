@@ -2,7 +2,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
-import { terminalThemeFor, type Theme } from "../stores/themeStore";
+import { type Theme, terminalThemeFor } from "../stores/themeStore";
 
 const EDITOR_FONT =
   '"JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace';
@@ -70,6 +70,27 @@ export function codeMirrorThemeFor(appTheme: Theme): Extension {
     ".cm-nonmatchingBracket": {
       color: term.red,
     },
+    ".cm-lintRange-error": {
+      textDecoration: `underline wavy ${term.red}`,
+    },
+    ".cm-lintRange-warning": {
+      textDecoration: `underline wavy ${term.yellow}`,
+    },
+    ".cm-lintRange-info": {
+      textDecoration: `underline wavy ${term.brightBlue}`,
+    },
+    ".cm-lintRange-active": {
+      backgroundColor: dim,
+    },
+    ".cm-lint-marker-error": {
+      backgroundColor: term.red,
+    },
+    ".cm-lint-marker-warning": {
+      backgroundColor: term.yellow,
+    },
+    ".cm-lint-marker-info": {
+      backgroundColor: term.brightBlue,
+    },
     "&.cm-focused": {
       outline: "none",
     },
@@ -87,19 +108,31 @@ export function codeMirrorThemeFor(appTheme: Theme): Extension {
       color: term.brightBlack,
       fontStyle: "italic",
     },
-    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: term.cyan },
+    {
+      tag: [t.function(t.variableName), t.function(t.propertyName)],
+      color: term.cyan,
+    },
     { tag: [t.typeName, t.className, t.namespace], color: term.yellow },
     { tag: [t.propertyName, t.attributeName], color: term.cyan },
-    { tag: [t.variableName, t.definition(t.variableName)], color: term.foreground },
+    {
+      tag: [t.variableName, t.definition(t.variableName)],
+      color: term.foreground,
+    },
     { tag: [t.operator, t.punctuation], color: term.foreground },
-    { tag: [t.meta, t.documentMeta, t.processingInstruction], color: term.brightBlack },
+    {
+      tag: [t.meta, t.documentMeta, t.processingInstruction],
+      color: term.brightBlack,
+    },
     { tag: t.heading, color: term.brightBlue, fontWeight: "bold" },
     { tag: [t.link, t.url], color: term.cyan, textDecoration: "underline" },
     { tag: [t.strong], fontWeight: "bold" },
     { tag: [t.emphasis], fontStyle: "italic" },
     { tag: [t.strikethrough], textDecoration: "line-through" },
     { tag: [t.tagName], color: term.red },
-    { tag: [t.angleBracket, t.paren, t.bracket, t.brace, t.squareBracket], color: term.foreground },
+    {
+      tag: [t.angleBracket, t.paren, t.bracket, t.brace, t.squareBracket],
+      color: term.foreground,
+    },
     { tag: [t.invalid], color: term.red },
   ]);
 

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { codeMirrorThemeFor } from "../../lib/codeMirrorTheme";
 import { languageFor } from "../../lib/editorLanguage";
+import { lintExtensionsFor } from "../../lib/editorLint";
 import { extractError } from "../../lib/extractError";
 import { readLocalFile, writeLocalFile } from "../../lib/localFs";
 import { useEditorStore } from "../../stores/editorStore";
@@ -94,6 +95,7 @@ export default function EditorView({ pane }: EditorViewProps) {
     const list: Extension[] = [basicSetup(), saveKeymap];
     const lang = languageFor(activePath ?? "");
     if (lang) list.push(lang);
+    list.push(...lintExtensionsFor(activePath ?? ""));
     return list;
   }, [saveKeymap, activePath]);
 
