@@ -52,6 +52,7 @@ export interface TerminalTab {
   id: string;
   root: PaneNode;
   activePaneId: string | null;
+  focusedPaneId: string | null;
   isActive: boolean;
   title: string;
   activePresetId: string | null;
@@ -113,6 +114,7 @@ interface TerminalState {
   ) => string;
   removePane: (tabId: string, paneId: string) => void;
   setActivePane: (tabId: string, paneId: string) => void;
+  setFocusedPane: (tabId: string, paneId: string | null) => void;
   setActiveTab: (id: string) => void;
   updatePaneConnectionStatus: (
     tabId: string,
@@ -210,6 +212,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       id: tabId,
       root: leaf,
       activePaneId: leaf.id,
+      focusedPaneId: null,
       isActive: true,
       title: hostName,
       activePresetId: null,
@@ -230,6 +233,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       id: tabId,
       root: leaf,
       activePaneId: leaf.id,
+      focusedPaneId: null,
       isActive: true,
       title: "New Tab",
       activePresetId: null,
@@ -339,6 +343,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
             root: re,
             activePaneId:
               t.activePaneId === paneId ? fallbackActive : t.activePaneId,
+            focusedPaneId:
+              t.focusedPaneId === paneId ? null : t.focusedPaneId,
           };
         }),
       };
@@ -351,6 +357,14 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         t.id === tabId ? { ...t, activePaneId: paneId } : t,
       ),
       activeTabId: tabId,
+    }));
+  },
+
+  setFocusedPane: (tabId, paneId) => {
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId ? { ...t, focusedPaneId: paneId } : t,
+      ),
     }));
   },
 
@@ -538,6 +552,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
             : t.root.children[0]?.type === "leaf"
               ? t.root.children[0].id
               : null,
+        focusedPaneId: null,
         isActive: i === layout.tabs.length - 1,
         title: t.title,
         activePresetId: null,
@@ -574,6 +589,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
               : root.children[0]?.type === "leaf"
                 ? root.children[0].id
                 : t.activePaneId,
+          focusedPaneId: null,
           activePresetId: preset.id ?? null,
           activePresetName: preset.name ?? null,
           presetDirty: false,

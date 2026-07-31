@@ -47,6 +47,8 @@ export default function Layout() {
   useEffect(() => {
     if (location.pathname === "/sftp") {
       setActiveView("sftp");
+    } else if (location.pathname === "/editor") {
+      setActiveView("editor");
     } else if (location.pathname === "/terminal") {
       // keep current activeView for terminal
     } else if (isVaultPage) {

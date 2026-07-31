@@ -1,4 +1,6 @@
 import {
+  ArrowsInSimpleIcon,
+  ArrowsOutSimpleIcon,
   DotsSixVerticalIcon,
   SplitHorizontalIcon,
   SplitVerticalIcon,
@@ -16,6 +18,8 @@ interface PaneHeaderProps {
   draggable?: boolean;
   connectionStatus?: ConnectionStatus;
   dragHandleRef?: Ref<HTMLButtonElement>;
+  isFocused?: boolean;
+  onToggleFocus?: () => void;
   onSplitH?: () => void;
   onSplitV?: () => void;
   onClose?: () => void;
@@ -29,6 +33,8 @@ export default function PaneHeader({
   draggable = false,
   connectionStatus,
   dragHandleRef,
+  isFocused = false,
+  onToggleFocus,
   onSplitH,
   onSplitV,
   onClose,
@@ -57,6 +63,26 @@ export default function PaneHeader({
       )}
 
       <span className="text-xs text-dark-200 truncate flex-1">{title}</span>
+
+      {onToggleFocus && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFocus();
+          }}
+          className={`rounded ${isFocused ? "text-primary-400" : ""}`}
+          title={isFocused ? "Exit focus mode" : "Focus mode"}
+        >
+          {isFocused ? (
+            <ArrowsInSimpleIcon className="w-3.5 h-3.5" weight="bold" />
+          ) : (
+            <ArrowsOutSimpleIcon className="w-3.5 h-3.5" weight="bold" />
+          )}
+        </Button>
+      )}
 
       {onSplitH && (
         <Button

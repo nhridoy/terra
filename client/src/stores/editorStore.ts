@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import type { FileItem } from "../lib/sftpTypes";
 import {
   type DropSide,
   findFirstLeafId,
@@ -11,7 +10,7 @@ import {
   sourceFirstFromSide,
 } from "../lib/treeUtils";
 
-export interface SftpLeafNode {
+export interface EditorLeafNode {
   type: "leaf";
   id: string;
   connectionType: "host" | "local" | null;
@@ -24,72 +23,27 @@ export interface SftpLeafNode {
   size: number;
 }
 
-export interface SftpSplitNode {
+export interface EditorSplitNode {
   type: "split";
   id: string;
   direction: "horizontal" | "vertical";
-  children: SftpPaneNode[];
+  children: EditorPaneNode[];
   size: number;
 }
 
-export type SftpPaneNode = SftpLeafNode | SftpSplitNode;
+export type EditorPaneNode = EditorLeafNode | EditorSplitNode;
 
 export const findLeaf = findLeafUtil;
 
-export interface FileDragState {
-  isDragging: boolean;
-  sourcePaneId: string | null;
-  sourceHostId?: string | null;
-  sourceDirect?: { host?: string; port?: number; username?: string };
-  files: FileItem[];
-}
-
-export interface PendingFileDrop {
-  paneId?: string;
-  files: FileItem[];
-  destPaneId?: string;
-  sourceHostId?: string;
-  destHostId?: string;
-  destDirPath?: string;
-  sourceDirect?: { host?: string; port?: number; username?: string };
-  sourcePaneId?: string;
-}
-
-export interface TransferItem {
-  id: string;
-  fileName: string;
-  localPath?: string;
-  remotePath?: string;
-  direction: "upload" | "download";
-  status: "pending" | "active" | "complete" | "error";
-  progress: number;
-  size: number;
-  transferred: number;
-  speed?: number;
-  error?: string;
-}
-
-interface SftpState {
-  root: SftpPaneNode | null;
+interface EditorState {
+  root: EditorPaneNode | null;
   activePaneId: string | null;
   focusedPaneId: string | null;
-  fileDragState: FileDragState | null;
-  pendingFileDrop: PendingFileDrop | null;
-  transfers: TransferItem[];
-  clipboard: {
-    paths: string[];
-    hostId: string;
-    sourceDirect?: { host?: string; port?: number; username?: string };
-  } | null;
-  clipboardMode: "copy" | "cut" | null;
-  refreshRequests: Record<string, number>;
 
-  addPane: (leaf: SftpLeafNode) => void;
+  addPane: (leaf: EditorLeafNode) => void;
   removePane: (paneId: string) => void;
   setActivePane: (paneId: string) => void;
   setFocusedPane: (paneId: string | null) => void;
-  setFileDragState: (state: FileDragState | null) => void;
-  setPendingFileDrop: (drop: PendingFileDrop | null) => void;
   movePane: (
     sourcePaneId: string,
     targetPaneId: string,
@@ -106,44 +60,26 @@ interface SftpState {
     hostUsername?: string,
   ) => void;
   setPaneSizes: (splitId: string, sizes: number[]) => void;
-  addTransfer: (transfer: TransferItem) => void;
-  updateTransfer: (id: string, data: Partial<TransferItem>) => void;
-  removeTransfer: (id: string) => void;
-  clearCompletedTransfers: () => void;
-  setClipboard: (
-    hostId: string,
-    paths: string[],
-    mode: "copy" | "cut",
-    sourceDirect?: { host?: string; port?: number; username?: string },
-  ) => void;
-  clearClipboard: () => void;
-  requestRefresh: (paneId: string) => void;
 }
 
-let sftpPaneCounter = 0;
-function nextSftpPaneId() {
-  return `sftp-pane-${++sftpPaneCounter}-${Date.now()}`;
+let editorPaneCounter = 0;
+function nextEditorPaneId() {
+  return `editor-pane-${++editorPaneCounter}-${Date.now()}`;
 }
 
-function makeEmptySftpLeaf(): SftpLeafNode {
+function makeEmptyEditorLeaf(): EditorLeafNode {
   return {
     type: "leaf",
-    id: nextSftpPaneId(),
+    id: nextEditorPaneId(),
     connectionType: null,
     size: 100,
   };
 }
 
-export const useSftpStore = create<SftpState>((set, get) => ({
+export const useEditorStore = create<EditorState>((set, get) => ({
   root: null,
   activePaneId: null,
   focusedPaneId: null,
-  fileDragState: null,
-  pendingFileDrop: null,
-  transfers: [],
-  clipboard: null,
-  clipboardMode: null,
-  refreshRequests: {},
 
   addPane: (leaf) => {
     const root = get().root;
@@ -151,9 +87,9 @@ export const useSftpStore = create<SftpState>((set, get) => ({
       set({ root: leaf, activePaneId: leaf.id });
       return;
     }
-    const split: SftpSplitNode = {
+    const split: EditorSplitNode = {
       type: "split",
-      id: nextSftpPaneId(),
+      id: nextEditorPaneId(),
       direction: "horizontal",
       children: [
         { ...root, size: 50 },
@@ -169,7 +105,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     if (!root) return;
     const newRoot = removeNode(root, paneId);
     if (!newRoot) {
-      const fresh = makeEmptySftpLeaf();
+      const fresh = makeEmptyEditorLeaf();
       set({ root: fresh, activePaneId: fresh.id, focusedPaneId: null });
       return;
     }
@@ -186,8 +122,6 @@ export const useSftpStore = create<SftpState>((set, get) => ({
 
   setActivePane: (paneId) => set({ activePaneId: paneId }),
   setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
-  setFileDragState: (state) => set({ fileDragState: state }),
-  setPendingFileDrop: (drop) => set({ pendingFileDrop: drop }),
 
   movePane: (sourcePaneId, targetPaneId, side) => {
     const root = get().root;
@@ -200,9 +134,9 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     if (!targetLeaf) return;
     const direction = sideToDirection(side as DropSide);
     const sourceFirst = sourceFirstFromSide(side as DropSide);
-    const newSplit: SftpSplitNode = {
+    const newSplit: EditorSplitNode = {
       type: "split",
-      id: nextSftpPaneId(),
+      id: nextEditorPaneId(),
       direction,
       children: sourceFirst
         ? [
@@ -226,10 +160,10 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     if (!root) return;
     const leaf = findLeafUtil(root, paneId);
     if (!leaf) return;
-    const newLeaf = makeEmptySftpLeaf();
-    const split: SftpSplitNode = {
+    const newLeaf = makeEmptyEditorLeaf();
+    const split: EditorSplitNode = {
       type: "split",
-      id: nextSftpPaneId(),
+      id: nextEditorPaneId(),
       direction,
       children: [
         { ...leaf, size: 50 },
@@ -285,7 +219,7 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   setPaneSizes: (splitId, sizes) => {
     const root = get().root;
     if (!root) return;
-    function apply(node: SftpPaneNode): SftpPaneNode {
+    function apply(node: EditorPaneNode): EditorPaneNode {
       if (node.type === "leaf") return node;
       if (node.id === splitId) {
         return {
@@ -300,27 +234,4 @@ export const useSftpStore = create<SftpState>((set, get) => ({
     }
     set({ root: apply(root) });
   },
-
-  addTransfer: (transfer) =>
-    set((s) => ({ transfers: [...s.transfers, transfer] })),
-  updateTransfer: (id, data) =>
-    set((s) => ({
-      transfers: s.transfers.map((t) => (t.id === id ? { ...t, ...data } : t)),
-    })),
-  removeTransfer: (id) =>
-    set((s) => ({ transfers: s.transfers.filter((t) => t.id !== id) })),
-  clearCompletedTransfers: () =>
-    set((s) => ({
-      transfers: s.transfers.filter((t) => t.status !== "complete"),
-    })),
-  setClipboard: (hostId, paths, mode, sourceDirect) =>
-    set({ clipboard: { paths, hostId, sourceDirect }, clipboardMode: mode }),
-  clearClipboard: () => set({ clipboard: null, clipboardMode: null }),
-  requestRefresh: (paneId) =>
-    set((s) => ({
-      refreshRequests: {
-        ...s.refreshRequests,
-        [paneId]: (s.refreshRequests[paneId] ?? 0) + 1,
-      },
-    })),
 }));

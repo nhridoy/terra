@@ -19,6 +19,9 @@ interface PaneProps {
   isActive: boolean;
   closable: boolean;
   draggable?: boolean;
+  canFocus?: boolean;
+  isFocused?: boolean;
+  onToggleFocus?: () => void;
   isActiveTab: boolean;
   onRestorePreset: (
     preset: { id?: string; name?: string; layout: string },
@@ -32,6 +35,9 @@ export default function Pane({
   isActive,
   closable,
   draggable = false,
+  canFocus = false,
+  isFocused = false,
+  onToggleFocus,
   isActiveTab,
   onRestorePreset,
 }: PaneProps) {
@@ -94,6 +100,8 @@ export default function Pane({
         draggable={draggable}
         connectionStatus={pane.connectionStatus}
         dragHandleRef={ref}
+        isFocused={isFocused}
+        onToggleFocus={canFocus ? onToggleFocus : undefined}
         onSplitH={() => splitPane(tabId, pane.id, "horizontal")}
         onSplitV={() => splitPane(tabId, pane.id, "vertical")}
         onClose={() => removePane(tabId, pane.id)}

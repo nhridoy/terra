@@ -1,23 +1,22 @@
 import { useDraggable } from "@dnd-kit/react";
-import { DesktopTowerIcon, FolderIcon } from "@phosphor-icons/react";
+import { CodeIcon, DesktopTowerIcon, FolderIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { accessibleClickHandler } from "../../lib/accessibleClickHandler";
 import { extractError } from "../../lib/extractError";
 import { openDirectoryPicker } from "../../lib/localFs";
 import { type DropSide, previewStyle } from "../../lib/paneLayout";
+import { type EditorLeafNode, useEditorStore } from "../../stores/editorStore";
 import type { Host } from "../../stores/hostStore";
-import { type SftpLeafNode, useSftpStore } from "../../stores/sftpStore";
+import SftpHostPicker from "../sftp/SftpHostPicker";
 import { DropZone } from "../shared/DropZone";
 import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
 import PaneHeader from "../ui/PaneHeader";
-import FileBrowser from "./file-browser/FileBrowser";
-import LocalFileBrowser from "./local-file-browser/LocalFileBrowser";
-import SftpHostPicker from "./SftpHostPicker";
+import EditorView from "./EditorView";
 
-interface SftpPaneProps {
-  pane: SftpLeafNode;
+interface EditorPaneProps {
+  pane: EditorLeafNode;
   isActive: boolean;
   closable: boolean;
   draggable?: boolean;
@@ -28,7 +27,7 @@ interface SftpPaneProps {
   onConnectHost: (host: Host) => void;
 }
 
-export default function SftpPane({
+export default function EditorPane({
   pane,
   isActive,
   closable,
@@ -38,16 +37,16 @@ export default function SftpPane({
   onToggleFocus,
   dropSide,
   onConnectHost,
-}: SftpPaneProps) {
-  const splitPane = useSftpStore((s) => s.splitPane);
-  const removePane = useSftpStore((s) => s.removePane);
-  const setActivePane = useSftpStore((s) => s.setActivePane);
-  const connectLocal = useSftpStore((s) => s.connectLocal);
+}: EditorPaneProps) {
+  const splitPane = useEditorStore((s) => s.splitPane);
+  const removePane = useEditorStore((s) => s.removePane);
+  const setActivePane = useEditorStore((s) => s.setActivePane);
+  const connectLocal = useEditorStore((s) => s.connectLocal);
   const [showHostPicker, setShowHostPicker] = useState(false);
 
   const { ref, isDragging } = useDraggable({
-    id: `sftp-pane:${pane.id}`,
-    data: { type: "sftp-pane-source", paneId: pane.id },
+    id: `editor-pane:${pane.id}`,
+    data: { type: "editor-pane-source", paneId: pane.id },
   });
 
   const displayName =
@@ -87,23 +86,14 @@ export default function SftpPane({
 
       {/* Body */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
-        {pane.connectionType === "host" && pane.hostId ? (
-          <FileBrowser
-            paneId={pane.id}
-            hostId={pane.hostId}
-            hostAddress={pane.hostAddress}
-            hostPort={pane.hostPort}
-            hostUsername={pane.hostUsername}
-            onFileSelect={() => {}}
-          />
-        ) : pane.connectionType === "local" ? (
-          <LocalFileBrowser paneId={pane.id} rootPath={pane.localPath || "/"} />
+        {pane.connectionType === "host" || pane.connectionType === "local" ? (
+          <EditorView pane={pane} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <FolderIcon className="w-12 h-12 mx-auto mb-3 text-dark-600" />
+              <CodeIcon className="w-12 h-12 mx-auto mb-3 text-dark-600" />
               <p className="text-sm text-dark-400 mb-3">
-                Connect to a host or local filesystem to browse files
+                Connect to a host or local folder to start editing code
               </p>
               <div className="flex items-center justify-center gap-2">
                 <Button
@@ -143,10 +133,12 @@ export default function SftpPane({
         {sides.map((side) => (
           <DropZone
             key={side}
-            id={`sftp-drop:${pane.id}:${side}`}
+            id={`editor-drop:${pane.id}:${side}`}
             side={side}
-            data={{ type: "sftp-pane", paneId: pane.id, side }}
-            accept={(draggable) => draggable.data?.type === "sftp-pane-source"}
+            data={{ type: "editor-pane", paneId: pane.id, side }}
+            accept={(draggable) =>
+              draggable.data?.type === "editor-pane-source"
+            }
           />
         ))}
 

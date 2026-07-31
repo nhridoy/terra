@@ -6,32 +6,32 @@ import {
   type PlacedPane,
 } from "../../lib/paneLayout";
 import {
+  type EditorPaneNode,
   findLeaf,
-  type SftpPaneNode,
-  useSftpStore,
-} from "../../stores/sftpStore";
+  useEditorStore,
+} from "../../stores/editorStore";
 import { SplitDivider } from "../shared/SplitDivider";
-import SftpPane from "./SftpPane";
+import EditorPane from "./EditorPane";
 
 type DropSide = "left" | "right" | "top" | "bottom";
 
-interface SftpPaneTreeProps {
-  node: SftpPaneNode;
+interface EditorPaneTreeProps {
+  node: EditorPaneNode;
   activePaneId: string | null;
   dropTarget: { paneId: string; side: DropSide } | null;
 }
 
-export default function SftpPaneTree({
+export default function EditorPaneTree({
   node,
   activePaneId,
   dropTarget,
-}: SftpPaneTreeProps) {
+}: EditorPaneTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const connectHost = useSftpStore((s) => s.connectHost);
-  const setPaneSizes = useSftpStore((s) => s.setPaneSizes);
-  const setFocusedPane = useSftpStore((s) => s.setFocusedPane);
-  const focusedPaneId = useSftpStore((s) => s.focusedPaneId);
-  const closable = countLeaves(node) > 2;
+  const connectHost = useEditorStore((s) => s.connectHost);
+  const setPaneSizes = useEditorStore((s) => s.setPaneSizes);
+  const setFocusedPane = useEditorStore((s) => s.setFocusedPane);
+  const focusedPaneId = useEditorStore((s) => s.focusedPaneId);
+  const closable = countLeaves(node) > 1;
   const draggable = countLeaves(node) > 1;
   const canFocus = countLeaves(node) > 1;
   const hasFocus = canFocus && focusedPaneId !== null;
@@ -41,9 +41,9 @@ export default function SftpPaneTree({
   computeLayout(node, 0, 0, 100, 100, panes, dividers);
 
   const findSplit = (splitId: string) => {
-    const root = useSftpStore.getState().root;
+    const root = useEditorStore.getState().root;
     if (!root) return null;
-    const stack: SftpPaneNode[] = [root];
+    const stack: EditorPaneNode[] = [root];
     while (stack.length) {
       const n = stack.pop();
       if (!n) continue;
@@ -76,7 +76,7 @@ export default function SftpPaneTree({
                   }
             }
           >
-            <SftpPane
+            <EditorPane
               pane={leaf}
               isActive={p.id === activePaneId}
               closable={closable}

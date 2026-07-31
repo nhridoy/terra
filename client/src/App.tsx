@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import AuthGuard from "./components/auth/AuthGuard";
 import Layout from "./components/layout/Layout";
+import EditorPage from "./pages/EditorPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import HistoryPage from "./pages/HistoryPage";
 import HostsPage from "./pages/HostsPage";
@@ -55,6 +56,7 @@ function App() {
             <Route path="history" element={<HistoryPage />} />
             <Route path="terminal" element={<TerminalPage />} />
             <Route path="sftp" element={<SftpPage />} />
+            <Route path="editor" element={<EditorPage />} />
             <Route path="*" element={<Navigate to="/hosts" replace />} />
           </Route>
         </Route>

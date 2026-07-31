@@ -1,4 +1,5 @@
 import {
+  CodeIcon,
   FloppyDiskIcon,
   FolderIcon,
   GearSixIcon,
@@ -95,6 +96,25 @@ export default function Header({
       >
         <FolderIcon className="w-3.5 h-3.5" />
         SFTP
+      </Button>
+
+      {/* Editor Tab */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setActiveView("editor");
+          navigate("/editor");
+        }}
+        className={`shrink-0 rounded ${
+          activeView === "editor"
+            ? "bg-dark-800 text-white"
+            : "hover:bg-dark-800/50"
+        }`}
+      >
+        <CodeIcon className="w-3.5 h-3.5" />
+        Editor
       </Button>
 
       {/* Separator */}
