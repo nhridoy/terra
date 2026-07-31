@@ -505,7 +505,11 @@ async fn connect_local(
             vec!["/K".to_string()]
         } else if shell_path.contains("pwsh") || shell_path.contains("powershell") {
             vec!["-NoExit".to_string(), "-Command".to_string(), "".to_string()]
+        } else if shell_path.contains("wsl") {
+            // Let WSL use its default configured shell; no args needed
+            vec![]
         } else {
+            // Git Bash or other sh-based shells
             vec!["-l".to_string()]
         }
     } else {
