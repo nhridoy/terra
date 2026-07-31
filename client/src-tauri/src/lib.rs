@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtyPair, PtySize};
+use portable_pty::{native_pty_system, Child as PtyChild, ChildKiller, CommandBuilder, PtyPair, PtySize};
 use tauri::{Emitter, Listener, Manager};
 
 pub struct AppState {
@@ -480,7 +480,8 @@ pub struct LocalSessions {
     pub ptys: Mutex<HashMap<String, Arc<Mutex<PtyPair>>>>,
     pub writers: Mutex<HashMap<String, Arc<Mutex<Box<dyn Write + Send>>>>>,
     pub readers: Mutex<HashMap<String, Arc<Mutex<Box<dyn Read + Send>>>>>,
-    pub killers: Mutex<HashMap<String, Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>>> ,
+    pub killers: Mutex<HashMap<String, Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>>>,
+    pub children: Mutex<HashMap<String, Arc<Mutex<Box<dyn PtyChild + Send>>>>>,
 }
 
 #[tauri::command]
@@ -549,6 +550,9 @@ async fn connect_local(
 
         let mut killers = state.killers.lock().map_err(|_| "Lock failed")?;
         killers.insert(session_id.clone(), Arc::new(Mutex::new(child_killer as Box<dyn ChildKiller + Send + Sync>)));
+
+        let mut children = state.children.lock().map_err(|_| "Lock failed")?;
+        children.insert(session_id.clone(), Arc::new(Mutex::new(child as Box<dyn PtyChild + Send>)));
     }
 
     // Emit connected event
@@ -560,46 +564,47 @@ async fn connect_local(
         serde_json::json!({"sessionId": sid2, "type": "connected", "data": ""}),
     );
 
-    // Read loop
+    // Read loop: use a dedicated OS thread because the PTY read is blocking.
+    // Running it on the Tokio executor would stall a worker thread.
     let sid_read = session_id.clone();
     let handle_read = app_handle.clone();
-    let session_for_read = session_id.clone();
-    // Clone the reader arc out of state so the thread doesn't borrow state
     let reader_arc_clone = {
         let readers = state.readers.lock().unwrap();
-        readers.get(&session_for_read).cloned()
+        readers.get(&session_id).cloned()
     };
-    tokio::spawn(async move {
-        loop {
-            let mut buf = [0u8; 4096];
-            let n = if let Some(reader_arc) = reader_arc_clone.as_ref() {
-                let mut r = reader_arc.lock().unwrap();
-                r.read(&mut buf)
-            } else {
-                break;
+    let _ = thread::Builder::new()
+        .name(format!("pty-read-{sid_read}"))
+        .spawn(move || {
+            let Some(reader_arc) = reader_arc_clone else {
+                return;
             };
-            match n {
-                Ok(0) => {
-                    let _ = handle_read.emit(
-                        "ssh-output",
-                        serde_json::json!({"sessionId": sid_read.clone(), "type": "disconnected", "data": ""}),
-                    );
-                    break;
-                }
-                Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    if !data.is_empty() {
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = match reader_arc.lock() {
+                    Ok(mut r) => r.read(&mut buf),
+                    Err(_) => break,
+                };
+                match n {
+                    Ok(0) => {
                         let _ = handle_read.emit(
                             "ssh-output",
-                            serde_json::json!({"sessionId": sid_read.clone(), "type": "output", "data": data}),
+                            serde_json::json!({"sessionId": sid_read.clone(), "type": "disconnected", "data": ""}),
                         );
+                        break;
                     }
+                    Ok(n) => {
+                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        if !data.is_empty() {
+                            let _ = handle_read.emit(
+                                "ssh-output",
+                                serde_json::json!({"sessionId": sid_read.clone(), "type": "output", "data": data}),
+                            );
+                        }
+                    }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        }
-    });
+        });
 
     Ok(())
 }
@@ -612,9 +617,10 @@ async fn send_input_local(
 ) -> Result<(), String> {
     let writers = state.writers.lock().map_err(|_| "Lock failed")?;
     if let Some(writer_arc) = writers.get(&session_id) {
-        let mut w = writer_arc.lock().unwrap();
-        w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        w.flush().map_err(|e| e.to_string())?;
+        if let Ok(mut w) = writer_arc.lock() {
+            w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+            w.flush().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -628,13 +634,14 @@ async fn resize_local(
 ) -> Result<(), String> {
     let ptys = state.ptys.lock().map_err(|_| "Lock failed")?;
     if let Some(pair_arc) = ptys.get(&session_id) {
-        let pair = pair_arc.lock().unwrap();
-        pair.master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        }).map_err(|e| e.to_string())?;
+        if let Ok(pair) = pair_arc.lock() {
+            pair.master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            }).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -644,14 +651,23 @@ async fn disconnect_local(
     session_id: String,
     state: tauri::State<'_, LocalSessions>,
 ) -> Result<(), String> {
-    // Remove killer first so we can consume it
+    // Remove killer and child first so we can consume them
     let killer_opt = {
         let mut killers = state.killers.lock().map_err(|_| "Lock failed")?;
         killers.remove(&session_id)
     };
+    let child_opt = {
+        let mut children = state.children.lock().map_err(|_| "Lock failed")?;
+        children.remove(&session_id)
+    };
     if let Some(killer_arc) = killer_opt {
         let mut killer = killer_arc.lock().unwrap();
         let _ = killer.kill();
+    }
+    // Reap the child so the process + ConPTY are fully released (no leaks)
+    if let Some(child_arc) = child_opt {
+        let mut child = child_arc.lock().unwrap();
+        let _ = child.wait();
     }
     // Clean up all stored resources
     {
@@ -661,8 +677,6 @@ async fn disconnect_local(
         writers.remove(&session_id);
         let mut readers = state.readers.lock().map_err(|_| "Lock failed")?;
         readers.remove(&session_id);
-        let mut killers2 = state.killers.lock().map_err(|_| "Lock failed")?;
-        killers2.remove(&session_id);
     }
     Ok(())
 }
@@ -779,6 +793,7 @@ pub fn run() {
             writers: Mutex::new(HashMap::new()),
             readers: Mutex::new(HashMap::new()),
             killers: Mutex::new(HashMap::new()),
+            children: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_device_id,
