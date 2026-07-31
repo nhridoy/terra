@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { useTerminalStore } from "../../stores/terminalStore";
+import { useEffect, useRef } from 'react'
+import { useTerminalStore } from '../../stores/terminalStore'
 import {
   attachSession,
   destroySession,
@@ -7,22 +7,21 @@ import {
   fitSession,
   getOrCreateSession,
   type Session,
-  updateSessionParams,
-} from "./sessionManager";
+} from './sessionManager'
 
 interface TerminalProps {
-  hostId: string;
-  hostName: string;
-  tabId: string;
-  paneId: string;
-  hostAddress?: string;
-  hostPort?: number;
-  hostUsername?: string;
-  authType?: "password" | "key";
-  keyId?: string;
-  connectionType?: "ssh" | "local";
-  shell?: string;
-  isActive?: boolean;
+  hostId: string
+  hostName: string
+  tabId: string
+  paneId: string
+  hostAddress?: string
+  hostPort?: number
+  hostUsername?: string
+  authType?: 'password' | 'key'
+  keyId?: string
+  connectionType?: 'ssh' | 'local'
+  shell?: string
+  isActive?: boolean
 }
 
 export default function Terminal({
@@ -39,14 +38,11 @@ export default function Terminal({
   shell,
   isActive,
 }: TerminalProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Attach to (or create) the persistent session for this pane. Keyed on
-  // paneId only — moving the pane between tabs or updating connection params
-  // must NOT reconnect; the PTY session is reused.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    const el = containerRef.current
+    if (!el) return
 
     const session: Session = getOrCreateSession({
       paneId,
@@ -60,26 +56,33 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    });
-    attachSession(session, el);
+    })
+    attachSession(session, el)
 
     return () => {
-      detachSession(session, el);
-      // Destroy only if the pane no longer exists anywhere (it was closed,
-      // not moved to another tab).
+      detachSession(session, el)
       const exists = useTerminalStore
         .getState()
-        .tabs.some((t) => paneExistsInTree(t.root, paneId));
-      if (!exists) destroySession(paneId);
-    };
-    // paneId never changes for a given component instance
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paneId]);
+        .tabs.some((t) => paneExistsInTree(t.root, paneId))
+      if (!exists) destroySession(paneId)
+    }
+  }, [
+    paneId,
+    hostName,
+    hostUsername,
+    hostAddress,
+    hostPort,
+    hostId,
+    tabId,
+    authType,
+    keyId,
+    connectionType,
+    shell,
+  ])
 
-  // When connection params change, update the session metadata without
-  // re-attaching (the PTY is already running).
   useEffect(() => {
-    updateSessionParams(paneId, {
+    const session = getOrCreateSession({
+      paneId,
       tabId,
       hostId,
       hostName,
@@ -90,36 +93,34 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    });
+    })
+    session.params.tabId = tabId
+    if (isActive) {
+      const timer = setTimeout(() => fitSession(paneId), 50)
+      return () => clearTimeout(timer)
+    }
   }, [
-    paneId,
+    isActive,
     tabId,
+    paneId,
     hostId,
-    hostName,
-    hostAddress,
-    hostPort,
     hostUsername,
+    hostName,
+    hostPort,
+    hostAddress,
     authType,
     keyId,
     connectionType,
     shell,
-  ]);
+  ])
 
-  // Re-fit when this tab becomes active.
-  useEffect(() => {
-    if (isActive) {
-      const timer = setTimeout(() => fitSession(paneId), 50);
-      return () => clearTimeout(timer);
-    }
-  }, [isActive, paneId]);
-
-  return <div ref={containerRef} className="w-full h-full" />;
+  return <div ref={containerRef} className="w-full h-full" />
 }
 
 function paneExistsInTree(
-  node: import("../../stores/terminalStore").PaneNode,
+  node: import('../../stores/terminalStore').PaneNode,
   paneId: string,
 ): boolean {
-  if (node.type === "leaf") return node.id === paneId;
-  return node.children.some((c) => paneExistsInTree(c, paneId));
+  if (node.type === 'leaf') return node.id === paneId
+  return node.children.some((c) => paneExistsInTree(c, paneId))
 }

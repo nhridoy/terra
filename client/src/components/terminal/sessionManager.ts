@@ -1,197 +1,373 @@
-import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal } from "@xterm/xterm";
-import { type IPty, spawn } from "tauri-pty";
-import { getDefaultShell } from "../../lib/shellDetection";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Terminal as XTerminal } from '@xterm/xterm'
+import '@xterm/xterm/css/xterm.css'
+import { confirm } from '@tauri-apps/plugin-dialog'
+import { useHostStore } from '../../stores/hostStore'
+import { useKeyStore } from '../../stores/keyStore'
+import { useTerminalStore } from '../../stores/terminalStore'
 
 export interface SessionParams {
-  paneId: string;
-  tabId: string;
-  hostId: string;
-  hostName: string;
-  hostAddress?: string;
-  hostPort?: number;
-  hostUsername?: string;
-  authType?: "password" | "key";
-  keyId?: string;
-  connectionType?: "ssh" | "local";
-  shell?: string;
+  paneId: string
+  tabId: string
+  hostId: string
+  hostName: string
+  hostAddress?: string
+  hostPort?: number
+  hostUsername?: string
+  authType?: 'password' | 'key'
+  keyId?: string
+  connectionType?: 'ssh' | 'local'
+  shell?: string
 }
 
 export interface Session {
-  params: SessionParams;
-  xterm: Terminal;
-  pty: IPty;
-  fitAddon: FitAddon;
-  resizeObserver: ResizeObserver | null;
-  resizeTimeout: ReturnType<typeof setTimeout> | null;
-  isAttached: boolean;
+  params: SessionParams
+  xterm: XTerminal
+  fitAddon: FitAddon
+  container: HTMLDivElement
+  opened: boolean
+  resizeObserver: ResizeObserver | null
+  unlisten: (() => void) | null
+  unlistenHostKey: (() => void) | null
 }
 
-const sessionMap = new Map<string, Session>();
+const sessions = new Map<string, Session>()
 
-function getTerminalOptions() {
-  const { settings } = useSettingsStore.getState();
-  return {
-    cursorBlink: settings.cursorBlink,
-    cursorStyle: settings.cursorStyle as "block" | "underline" | "bar",
-    fontSize: settings.fontSize,
-    fontFamily: settings.fontFamily,
-    scrollback: settings.scrollback,
+function createSession(params: SessionParams): Session {
+  const container = document.createElement('div')
+  container.style.width = '100%'
+  container.style.height = '100%'
+  container.style.display = 'block'
+
+  const xterm = new XTerminal({
     theme: {
-      background: "#1e1e1e",
-      foreground: "#d4d4d4",
+      background: '#0f172a',
+      foreground: '#e2e8f0',
+      cursor: '#e2e8f0',
+      cursorAccent: '#0f172a',
+      selectionBackground: 'rgba(14, 165, 233, 0.3)',
+      black: '#0f172a',
+      red: '#ef4444',
+      green: '#22c55e',
+      yellow: '#eab308',
+      blue: '#3b82f6',
+      magenta: '#a855f7',
+      cyan: '#06b6d4',
+      white: '#e2e8f0',
+      brightBlack: '#475569',
+      brightRed: '#f87171',
+      brightGreen: '#4ade80',
+      brightYellow: '#facc15',
+      brightBlue: '#60a5fa',
+      brightMagenta: '#c084fc',
+      brightCyan: '#22d3ee',
+      brightWhite: '#f8fafc',
     },
-  };
+    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+    fontSize: 14,
+    cursorBlink: true,
+    cursorStyle: 'block',
+    allowTransparency: true,
+  })
+
+  const fitAddon = new FitAddon()
+  xterm.loadAddon(fitAddon)
+  xterm.loadAddon(new WebLinksAddon())
+
+  const session: Session = {
+    params,
+    xterm,
+    fitAddon,
+    container,
+    opened: false,
+    resizeObserver: null,
+    unlisten: null,
+    unlistenHostKey: null,
+  }
+
+  return session
+}
+
+async function connectViaTauri(session: Session) {
+  const { invoke } = await import('@tauri-apps/api/core')
+  const { listen } = await import('@tauri-apps/api/event')
+
+  const { params, xterm } = session
+  const cols = xterm.cols
+  const rows = xterm.rows
+
+  xterm.writeln('\x1b[1;36mTermVault\x1b[0m - Self-hosted SSH Client')
+  xterm.writeln('')
+  xterm.writeln(`\x1b[33mConnecting to ${params.hostName}...\x1b[0m`)
+  xterm.writeln('')
+
+  const update = useTerminalStore.getState().updatePaneConnectionStatus
+  update(params.tabId, params.paneId, 'connecting')
+
+  try {
+    let password: string | null = null
+    let privateKey: string | null = null
+    let passphrase: string | null = null
+
+    if (params.authType === 'key' && params.keyId) {
+      const privKey = await useKeyStore
+        .getState()
+        .getCredentialsForKey(params.keyId)
+      if (privKey) {
+        privateKey = privKey
+      }
+    } else {
+      const creds = await useHostStore
+        .getState()
+        .getCredentialsForHost(params.hostId)
+      if (creds.password) {
+        password = creds.password
+      } else if (creds.privateKey) {
+        privateKey = creds.privateKey
+        passphrase = creds.passphrase || null
+      }
+    }
+
+    const config = {
+      host: params.hostAddress || '',
+      port: params.hostPort || 22,
+      username: params.hostUsername || 'root',
+      password,
+      privateKey,
+      passphrase,
+    }
+
+    const unlistenHostKey = await listen<{
+      host: string
+      port: number
+      oldFingerprint: string
+      newFingerprint: string
+    }>('ssh-host-key-changed', async (event) => {
+      const { host, port, oldFingerprint, newFingerprint } = event.payload
+
+      const confirmed = await confirm(
+        `SSH Host Key Changed!\n\n` +
+          `Host: ${host}:${port}\n\n` +
+          `Old fingerprint:\n${oldFingerprint}\n\n` +
+          `New fingerprint:\n${newFingerprint}\n\n` +
+          `This could indicate a MITM attack. Do you trust this new key?`,
+        { title: 'Security Warning', kind: 'warning' },
+      )
+
+      await invoke('accept_host_key', { accepted: confirmed })
+    })
+
+    session.unlistenHostKey = unlistenHostKey
+
+    await invoke('connect', { sessionId: params.paneId, config })
+
+    const unlisten = await listen<{
+      sessionId: string
+      type: string
+      data: string
+    }>('ssh-output', (event) => {
+      const { sessionId, type, data } = event.payload
+      if (sessionId !== params.paneId) return
+
+      switch (type) {
+        case 'connected':
+          update(params.tabId, params.paneId, 'connected')
+          break
+        case 'output':
+          xterm.write(data)
+          break
+        case 'disconnected':
+          xterm.writeln(`\r\n\x1b[33mConnection closed\x1b[0m`)
+          update(params.tabId, params.paneId, 'disconnected')
+          break
+        case 'error':
+          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`)
+          update(params.tabId, params.paneId, 'error')
+          break
+      }
+    })
+
+    session.unlisten = unlisten
+
+    xterm.onData(async (data) => {
+      try {
+        await invoke('send_input', { sessionId: params.paneId, data })
+      } catch {
+        // Session may have been closed
+      }
+    })
+
+    xterm.onResize(async ({ cols: _cols, rows: _rows }) => {
+      try {
+        await invoke('resize', {
+          sessionId: params.paneId,
+          cols,
+          rows,
+        })
+      } catch {
+        // Session may have been closed
+      }
+    })
+  } catch (err) {
+    xterm.writeln(`\r\n\x1b[31mFailed to connect: ${err}\x1b[0m`)
+    update(params.tabId, params.paneId, 'error')
+  }
+}
+
+async function connectLocal(session: Session) {
+  const { invoke } = await import('@tauri-apps/api/core')
+  const { listen } = await import('@tauri-apps/api/event')
+
+  const { params, xterm } = session
+  const cols = xterm.cols
+  const rows = xterm.rows
+
+  xterm.writeln('\x1b[1;36mTermVault\x1b[0m - Local Terminal')
+  xterm.writeln('')
+  xterm.writeln(`\x1b[33mStarting ${params.shell || 'default shell'}...\x1b[0m`)
+  xterm.writeln('')
+
+  const update = useTerminalStore.getState().updatePaneConnectionStatus
+  update(params.tabId, params.paneId, 'connecting')
+
+  try {
+    await invoke('connect_local', {
+      sessionId: params.paneId,
+      shell: params.shell || null,
+      cols,
+      rows,
+    })
+
+    const unlisten = await listen<{
+      sessionId: string
+      type: string
+      data: string
+    }>('ssh-output', (event) => {
+      const { sessionId, type, data } = event.payload
+      if (sessionId !== params.paneId) return
+
+      switch (type) {
+        case 'connected':
+          update(params.tabId, params.paneId, 'connected')
+          break
+        case 'output':
+          xterm.write(data)
+          break
+        case 'disconnected':
+          xterm.writeln(`\r\n\x1b[33mShell exited\x1b[0m`)
+          update(params.tabId, params.paneId, 'disconnected')
+          break
+        case 'error':
+          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`)
+          update(params.tabId, params.paneId, 'error')
+          break
+      }
+    })
+
+    session.unlisten = unlisten
+
+    xterm.onData(async (data) => {
+      try {
+        await invoke('send_input_local', { sessionId: params.paneId, data })
+      } catch {
+        // Session may have been closed
+      }
+    })
+
+    xterm.onResize(async ({ cols: _cols, rows: _rows }) => {
+      try {
+        await invoke('resize_local', {
+          sessionId: params.paneId,
+          cols,
+          rows,
+        })
+      } catch {
+        // Session may have been closed
+      }
+    })
+  } catch (err) {
+    xterm.writeln(`\r\n\x1b[31mFailed to start shell: ${err}\x1b[0m`)
+    update(params.tabId, params.paneId, 'error')
+  }
+}
+
+export function attachSession(session: Session, reactEl: HTMLElement) {
+  reactEl.appendChild(session.container)
+  if (!session.opened) {
+    session.xterm.open(session.container)
+    session.opened = true
+    try {
+      session.fitAddon.fit()
+    } catch {
+      /* container may not be sized yet */
+    }
+    if (session.params.connectionType === 'local') {
+      connectLocal(session)
+    } else {
+      connectViaTauri(session)
+    }
+  }
+
+  const ro = new ResizeObserver(() => {
+    try {
+      session.fitAddon.fit()
+    } catch {
+      /* not yet sized */
+    }
+  })
+  ro.observe(session.container)
+  session.resizeObserver = ro
+}
+
+export function detachSession(session: Session, reactEl: HTMLElement) {
+  session.resizeObserver?.disconnect()
+  session.resizeObserver = null
+  if (reactEl.contains(session.container)) {
+    reactEl.removeChild(session.container)
+  }
 }
 
 export function getOrCreateSession(params: SessionParams): Session {
-  let session = sessionMap.get(params.paneId);
-  if (session) {
-    session.params = { ...params };
-    return session;
+  const existing = sessions.get(params.paneId)
+  if (existing) {
+    existing.params.tabId = params.tabId
+    return existing
   }
-
-  const opts = getTerminalOptions();
-  const term = new Terminal({
-    ...opts,
-    convertEol: true,
-    allowProposedApi: true,
-  });
-
-  const fitAddon = new FitAddon();
-  const webLinksAddon = new WebLinksAddon();
-  const unicodeAddon = new Unicode11Addon();
-
-  term.loadAddon(fitAddon);
-  term.loadAddon(webLinksAddon);
-  term.loadAddon(unicodeAddon);
-  term.unicode.activeVersion = "11";
-
-  const shell = params.shell ?? getDefaultShell();
-  const pty = spawn(shell, [], {
-    cols: term.cols,
-    rows: term.rows,
-    env: {
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-      LANG: "en_US.UTF-8",
-      LC_ALL: "en_US.UTF-8",
-    },
-  });
-
-  pty.onData((data) => {
-    if (!term.element) return;
-    const text =
-      typeof data === "string" ? data : new TextDecoder().decode(data);
-    term.write(text);
-  });
-
-  term.onData((data) => {
-    pty.write(data);
-  });
-
-  term.onResize(({ cols, rows }) => {
-    pty.resize(cols, rows);
-  });
-
-  session = {
-    params: { ...params },
-    xterm: term,
-    pty,
-    fitAddon,
-    resizeObserver: null,
-    resizeTimeout: null,
-    isAttached: false,
-  };
-
-  sessionMap.set(params.paneId, session);
-  return session;
+  const session = createSession(params)
+  sessions.set(params.paneId, session)
+  return session
 }
 
-export function attachSession(session: Session, element: HTMLElement): void {
-  if (session.isAttached) return;
-
-  // xterm.open() can only be called once per instance. If already opened
-  // (e.g. session was detached then re-attached), just re-parent the existing
-  // terminal into the new container — xterm moves the DOM automatically.
-  if (!session.xterm.element) {
-    session.xterm.open(element);
+export function fitSession(paneId: string) {
+  const session = sessions.get(paneId)
+  if (!session) return
+  try {
+    session.fitAddon.fit()
+  } catch {
+    /* not yet sized */
   }
-
-  // Fit after open so dimensions are available
-  requestAnimationFrame(() => {
-    session.fitAddon.fit();
-  });
-
-  // Set up ResizeObserver for responsive fitting
-  session.resizeObserver = new ResizeObserver(() => {
-    if (session.resizeTimeout) clearTimeout(session.resizeTimeout);
-    session.resizeTimeout = setTimeout(() => {
-      session.fitAddon.fit();
-    }, 50);
-  });
-  session.resizeObserver.observe(element);
-
-  session.isAttached = true;
 }
 
-export function detachSession(session: Session, _element: HTMLElement): void {
-  if (!session.isAttached) return;
+export async function destroySession(paneId: string) {
+  const session = sessions.get(paneId)
+  if (!session) return
+  session.resizeObserver?.disconnect()
 
-  // Cancel any pending resize timeout
-  if (session.resizeTimeout) {
-    clearTimeout(session.resizeTimeout);
-    session.resizeTimeout = null;
+  session.unlisten?.()
+  session.unlistenHostKey?.()
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    if (session.params.connectionType === 'local') {
+      await invoke('disconnect_local', { sessionId: paneId })
+    } else {
+      await invoke('disconnect', { sessionId: paneId })
+    }
+  } catch {
+    // Ignore — session may already be closed
   }
 
-  // Disconnect resize observer but keep PTY alive (for background tabs)
-  if (session.resizeObserver) {
-    session.resizeObserver.disconnect();
-    session.resizeObserver = null;
-  }
-
-  session.isAttached = false;
-}
-
-export function fitSession(paneId: string): void {
-  const session = sessionMap.get(paneId);
-  if (!session?.isAttached) return;
-
-  requestAnimationFrame(() => {
-    session.fitAddon.fit();
-  });
-}
-
-export function destroySession(paneId: string): void {
-  const session = sessionMap.get(paneId);
-  if (!session) return;
-
-  if (session.resizeTimeout) clearTimeout(session.resizeTimeout);
-  if (session.resizeObserver) session.resizeObserver.disconnect();
-  session.pty.kill();
-  session.xterm.dispose();
-  sessionMap.delete(paneId);
-}
-
-export function disconnectAllSessions(): void {
-  for (const [, session] of sessionMap) {
-    if (session.resizeTimeout) clearTimeout(session.resizeTimeout);
-    if (session.resizeObserver) session.resizeObserver.disconnect();
-    session.pty.kill();
-    session.xterm.dispose();
-  }
-  sessionMap.clear();
-}
-
-export function updateSessionParams(
-  paneId: string,
-  params: Partial<SessionParams>,
-): void {
-  const session = sessionMap.get(paneId);
-  if (session) {
-    session.params = { ...session.params, ...params };
-  }
+  session.xterm.dispose()
+  sessions.delete(paneId)
 }
