@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
             </h2>
             <p className="text-dark-400 text-sm mb-6">
               If an account exists for{" "}
-              <span className="text-dark-200">{email}</span>, we've sent a
+              <span className="text-dark-300">{email}</span>, we've sent a
               password reset link.
             </p>
             <Link

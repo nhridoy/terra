@@ -235,7 +235,7 @@ export default function HistoryView() {
               <p className="text-dark-400 text-xs uppercase tracking-wider mb-2">
                 Session Output
               </p>
-              <pre className="font-mono text-sm text-dark-200 whitespace-pre-wrap break-words">
+              <pre className="font-mono text-sm text-dark-300 whitespace-pre-wrap break-words">
                 {selectedLog.data}
               </pre>
             </div>

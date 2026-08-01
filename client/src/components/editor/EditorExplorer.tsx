@@ -178,7 +178,7 @@ function Branch({
         ) : (
           <span
             className={`truncate ${
-              isDir || isSelected ? "text-white" : "text-dark-200"
+              isDir || isSelected ? "text-white" : "text-dark-300"
             }`}
             title={file.path}
           >

@@ -62,7 +62,7 @@ export default function PaneHeader({
         </Button>
       )}
 
-      <span className="text-xs text-dark-200 truncate flex-1">{title}</span>
+      <span className="text-xs text-dark-300 truncate flex-1">{title}</span>
 
       {onToggleFocus && (
         <Button

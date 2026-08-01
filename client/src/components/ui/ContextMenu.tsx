@@ -124,7 +124,7 @@ export default function ContextMenu({
                   ? "text-red-400 hover:bg-red-500/10"
                   : index === selectedIndex
                     ? "text-white bg-dark-700"
-                    : "text-dark-200 hover:bg-dark-700"
+                    : "text-dark-300 hover:bg-dark-700"
             }`}
           >
             {item.icon && <span className="w-4 h-4 shrink-0">{item.icon}</span>}

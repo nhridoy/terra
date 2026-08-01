@@ -152,7 +152,7 @@ export default function EditorView({ pane }: EditorViewProps) {
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-t text-xs cursor-pointer select-none whitespace-nowrap border ${
                       isActive
                         ? "bg-dark-800 text-white border-dark-700"
-                        : "bg-transparent text-dark-400 border-transparent hover:text-dark-200"
+                        : "bg-transparent text-dark-400 border-transparent hover:text-dark-300"
                     }`}
                     title={f.path}
                     onClick={() => setActiveFile(pane.id, f.path)}

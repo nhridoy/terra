@@ -214,7 +214,7 @@ export default function Select({
                     ? "text-dark-600 cursor-not-allowed"
                     : isActive
                       ? "bg-dark-700 text-white"
-                      : "text-dark-200 hover:bg-dark-700",
+                      : "text-dark-300 hover:bg-dark-700",
                 )}
               >
                 <span className="truncate">{option.label}</span>
