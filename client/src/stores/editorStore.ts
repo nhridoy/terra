@@ -334,22 +334,35 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   moveFileToView: (sourceViewId, targetViewId, path, name, side = null) => {
     const sourceList = get().openFiles[sourceViewId] ?? [];
-    if (!sourceList.some((f) => f.path === path)) return;
+    if (!sourceList.some((f) => f.path === path)) {
+      console.warn("[moveFileToView] source file not found", {
+        sourceViewId,
+        targetViewId,
+        path,
+      });
+      return;
+    }
     const targetList = get().openFiles[targetViewId] ?? [];
 
-    const existing = get().viewTrees;
-    const tree: EditorViewNode = existing ?? {
+    const tree: EditorViewNode = get().viewTrees ?? {
       type: "leaf",
       id: ROOT_VIEW_ID,
       size: 100,
     };
     const targetLeaf = findLeafUtil(tree, targetViewId);
-    if (!targetLeaf) return;
+    if (!targetLeaf) {
+      console.warn("[moveFileToView] target leaf not found", {
+        sourceViewId,
+        targetViewId,
+        tree,
+      });
+      return;
+    }
 
     let resolvedTarget = targetViewId;
     let nextTree = tree;
 
-    if (side && !existing) {
+    if (side) {
       const newLeaf: EditorViewLeafNode = {
         type: "leaf",
         id: nextEditorViewId(),
@@ -371,9 +384,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     const nextSource = sourceList.filter((f) => f.path !== path);
-    const nextTarget = targetList.some((f) => f.path === path)
-      ? targetList
-      : [...targetList, { path, name }];
+    const nextTarget =
+      resolvedTarget !== targetViewId
+        ? [{ path, name }]
+        : targetList.some((f) => f.path === path)
+          ? targetList
+          : [...targetList, { path, name }];
 
     set({
       viewTrees: nextTree === tree ? get().viewTrees : nextTree,

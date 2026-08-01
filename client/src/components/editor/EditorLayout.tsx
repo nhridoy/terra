@@ -69,19 +69,33 @@ export default function EditorLayout() {
       source?.data?.type === "editor-tab-source" &&
       target?.data?.type === "editor-view"
     ) {
-      const sourceViewId = String(source.data.viewId);
+      const sourcePath = String(source.data.path);
       const targetViewId = String(target.data.viewId);
-      const side = target.data.side as DropSide;
-      if (sourceViewId !== targetViewId) {
-        setEditorViewDrop({ viewId: targetViewId, side });
+      const isSelfDrop =
+        useEditorStore.getState().activeFile[targetViewId] === sourcePath;
+      if (isSelfDrop) {
+        setEditorViewDrop(null);
         return;
       }
+      const side = target.data.side as DropSide;
+      setEditorViewDrop({ viewId: targetViewId, side });
+      return;
     }
     setEditorViewDrop(null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation;
+
+    console.log("[editor-dragend]", {
+      canceled: event.canceled,
+      sourceType: source?.data?.type,
+      sourceId: source?.id,
+      targetId: target?.id,
+      targetType: target?.data?.type,
+      targetViewId: target?.data?.viewId,
+      targetSide: target?.data?.side,
+    });
 
     if (event.canceled || !source) {
       setEditorViewDrop(null);
@@ -106,19 +120,21 @@ export default function EditorLayout() {
       const path = String(source.data.path);
       const name = String(source.data.name);
 
-      if (
-        target?.data?.type === "editor-view" &&
-        String(target.data.viewId) !== sourceViewId
-      ) {
-        useEditorStore
-          .getState()
-          .moveFileToView(
-            sourceViewId,
-            String(target.data.viewId),
-            path,
-            name,
-            target.data.side as DropSide,
-          );
+      if (target?.data?.type === "editor-view") {
+        const targetViewId = String(target.data.viewId);
+        const isSelfDrop =
+          useEditorStore.getState().activeFile[targetViewId] === path;
+        if (!isSelfDrop) {
+          useEditorStore
+            .getState()
+            .moveFileToView(
+              sourceViewId,
+              targetViewId,
+              path,
+              name,
+              target.data.side as DropSide,
+            );
+        }
       } else if (
         target?.data?.type === "editor-tab-source" &&
         String(target.data.viewId) === sourceViewId &&

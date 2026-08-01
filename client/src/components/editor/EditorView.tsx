@@ -407,23 +407,25 @@ export default function EditorView({
                 </div>
               </div>
             )}
+
+            {/* Drop zones for moving tabs between views */}
+            {sides.map((side) => (
+              <DropZone
+                key={side}
+                id={`editor-view-drop:${viewId}:${side}`}
+                side={side}
+                data={{ type: "editor-view", viewId, side }}
+                accept={(draggable) =>
+                  draggable.data?.type === "editor-tab-source"
+                }
+              />
+            ))}
+
+            {/* Drop preview */}
+            {dropSide && <div style={previewStyle(dropSide as DropSide)} />}
           </div>
         </>
       )}
-
-      {/* Drop zones for moving tabs between views */}
-      {sides.map((side) => (
-        <DropZone
-          key={side}
-          id={`editor-view-drop:${viewId}:${side}`}
-          side={side}
-          data={{ type: "editor-view", viewId, side }}
-          accept={(draggable) => draggable.data?.type === "editor-tab-source"}
-        />
-      ))}
-
-      {/* Drop preview */}
-      {dropSide && <div style={previewStyle(dropSide as DropSide)} />}
     </div>
   );
 }
