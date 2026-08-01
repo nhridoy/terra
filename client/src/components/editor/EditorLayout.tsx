@@ -1,4 +1,5 @@
 import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
+import { move } from "@dnd-kit/helpers";
 import {
   DragDropProvider,
   type DragEndEvent,
@@ -8,8 +9,11 @@ import {
   KeyboardSensor,
   useDragDropManager,
 } from "@dnd-kit/react";
+import { isSortable } from "@dnd-kit/react/sortable";
 import { CodeIcon, FileTextIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
+import type { DropSide } from "../../lib/paneLayout";
+import { useDragStore } from "../../stores/dragStore";
 import { useEditorStore } from "../../stores/editorStore";
 import EditorPaneTree from "./EditorPaneTree";
 
@@ -49,12 +53,11 @@ function ShapeRefresher() {
   return null;
 }
 
-type DropSide = "left" | "right" | "top" | "bottom";
-
 export default function EditorLayout() {
   const root = useEditorStore((s) => s.root);
   const activePaneId = useEditorStore((s) => s.activePaneId);
   const movePane = useEditorStore((s) => s.movePane);
+  const setEditorViewDrop = useDragStore((s) => s.setEditorViewDrop);
   const [dropTarget, setDropTarget] = useState<{
     paneId: string;
     side: DropSide;
@@ -75,25 +78,30 @@ export default function EditorLayout() {
     }
   }, []);
 
-  const handleDragStart = (_event: DragStartEvent) => {
-    // File dragging is added with the explorer (next phase)
+  const handleDragStart = (event: DragStartEvent) => {
+    const { source } = event.operation;
+    if (source?.data?.type === "editor-tab-source") {
+      setEditorViewDrop(null);
+    }
   };
 
   const handleDragOver = (event: DragOverEvent) => {
     const { source, target } = event.operation;
     if (
-      source?.data?.type === "editor-pane-source" &&
-      target?.data?.type === "editor-pane"
+      source?.data?.type === "editor-tab-source" &&
+      target?.data?.type === "editor-view"
     ) {
       const sourcePaneId = String(source.data.paneId);
+      const sourceViewId = String(source.data.viewId);
       const targetPaneId = String(target.data.paneId);
+      const targetViewId = String(target.data.viewId);
       const side = target.data.side as DropSide;
-      if (sourcePaneId !== targetPaneId) {
-        setDropTarget({ paneId: targetPaneId, side });
+      if (sourcePaneId === targetPaneId && sourceViewId !== targetViewId) {
+        setEditorViewDrop({ paneId: targetPaneId, viewId: targetViewId, side });
         return;
       }
     }
-    setDropTarget(null);
+    setEditorViewDrop(null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -101,6 +109,7 @@ export default function EditorLayout() {
 
     if (event.canceled || !source) {
       setDropTarget(null);
+      setEditorViewDrop(null);
       return;
     }
 
@@ -121,15 +130,59 @@ export default function EditorLayout() {
       target?.data?.type === "editor-file-drop"
     ) {
       const paneId = String(target.data.paneId);
+      const viewId = String(target.data.viewId);
       const path = String(source.data.path);
       const name = String(source.data.name);
       const kind = String(source.data.kind);
       if (kind === "file") {
-        useEditorStore.getState().openFile(paneId, path, name, true);
+        useEditorStore
+          .getState()
+          .openFileInView(paneId, viewId, path, name, true);
+      }
+    }
+
+    if (source.data?.type === "editor-tab-source") {
+      const sourcePaneId = String(source.data.paneId);
+      const sourceViewId = String(source.data.viewId);
+      const path = String(source.data.path);
+      const name = String(source.data.name);
+
+      if (
+        target?.data?.type === "editor-view" &&
+        String(target.data.paneId) === sourcePaneId &&
+        String(target.data.viewId) !== sourceViewId
+      ) {
+        useEditorStore
+          .getState()
+          .moveFileToView(
+            sourcePaneId,
+            sourceViewId,
+            String(target.data.viewId),
+            path,
+            name,
+            target.data.side as DropSide,
+          );
+      } else if (
+        target?.data?.type === "editor-tab-source" &&
+        String(target.data.paneId) === sourcePaneId &&
+        String(target.data.viewId) === sourceViewId &&
+        isSortable(source)
+      ) {
+        const files = useEditorStore.getState().openFiles[sourceViewId] ?? [];
+        const tabbed = files.map((f) => ({
+          ...f,
+          id: `editor-file-tab:${sourceViewId}:${f.path}`,
+        }));
+        const reordered = move(tabbed, event);
+        useEditorStore.getState().setFileOrder(
+          sourceViewId,
+          reordered.map(({ path, name }) => ({ path, name })),
+        );
       }
     }
 
     setDropTarget(null);
+    setEditorViewDrop(null);
   };
 
   return (
@@ -185,6 +238,19 @@ export default function EditorLayout() {
             );
           }
           if (source.data?.type === "editor-file-source") {
+            return (
+              <div className="flex items-center gap-2 px-3 py-2 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
+                <FileTextIcon
+                  className="w-4 h-4 text-primary-400"
+                  weight="fill"
+                />
+                <span className="text-sm text-white">
+                  {String(source.data.name)}
+                </span>
+              </div>
+            );
+          }
+          if (source.data?.type === "editor-tab-source") {
             return (
               <div className="flex items-center gap-2 px-3 py-2 bg-dark-800 rounded-lg shadow-xl opacity-90 border border-dark-600">
                 <FileTextIcon

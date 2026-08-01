@@ -1,7 +1,15 @@
 import type { Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
+import { closestCenter } from "@dnd-kit/collision";
 import { useDroppable } from "@dnd-kit/react";
-import { CodeIcon, EyeIcon, XIcon } from "@phosphor-icons/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import {
+  CodeIcon,
+  EyeIcon,
+  SplitHorizontalIcon,
+  SplitVerticalIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { basicSetup } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,22 +25,40 @@ import {
   type FileKind,
 } from "../../lib/fileKind";
 import { readLocalFile, writeLocalFile } from "../../lib/localFs";
-import { useEditorStore } from "../../stores/editorStore";
+import { type DropSide, previewStyle } from "../../lib/paneLayout";
+import { countLeaves } from "../../lib/treeUtils";
+import { useDragStore } from "../../stores/dragStore";
+import { type EditorLeafNode, useEditorStore } from "../../stores/editorStore";
 import { useThemeStore } from "../../stores/themeStore";
+import { DropZone } from "../shared/DropZone";
 import MarkdownPreview from "./MarkdownPreview";
 
 interface EditorViewProps {
-  pane: import("../../stores/editorStore").EditorLeafNode;
+  pane: EditorLeafNode;
+  viewId: string;
+  isActive?: boolean;
+  onActivate?: () => void;
 }
 
-export default function EditorView({ pane }: EditorViewProps) {
-  const openFiles = useEditorStore((s) => s.openFiles[pane.id]) ?? [];
-  const activePath = useEditorStore((s) => s.activeFile[pane.id]) ?? null;
-  const previewPath = useEditorStore((s) => s.previewFile[pane.id]) ?? null;
-  const closeFile = useEditorStore((s) => s.closeFile);
-  const setActiveFile = useEditorStore((s) => s.setActiveFile);
-  const makeFilePermanent = useEditorStore((s) => s.makeFilePermanent);
+export default function EditorView({
+  pane,
+  viewId,
+  isActive = true,
+  onActivate,
+}: EditorViewProps) {
+  const openFiles = useEditorStore((s) => s.openFiles[viewId]) ?? [];
+  const activePath = useEditorStore((s) => s.activeFile[viewId]) ?? null;
+  const previewPath = useEditorStore((s) => s.previewFile[viewId]) ?? null;
+  const closeFileInView = useEditorStore((s) => s.closeFileInView);
+  const setActiveFileInView = useEditorStore((s) => s.setActiveFileInView);
+  const makeFilePermanentInView = useEditorStore(
+    (s) => s.makeFilePermanentInView,
+  );
+  const splitView = useEditorStore((s) => s.splitView);
+  const removeView = useEditorStore((s) => s.removeView);
+  const viewTrees = useEditorStore((s) => s.viewTrees);
   const currentTheme = useThemeStore((s) => s.currentTheme);
+  const editorViewDrop = useDragStore((s) => s.editorViewDrop);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -40,14 +66,17 @@ export default function EditorView({ pane }: EditorViewProps) {
   const [viewMode, setViewMode] = useState<"code" | "preview">("code");
 
   const droppable = useDroppable({
-    id: `editor-file-drop-${pane.id}`,
-    data: { type: "editor-file-drop", paneId: pane.id },
+    id: `editor-file-drop-${viewId}`,
+    data: { type: "editor-file-drop", paneId: pane.id, viewId },
   });
 
   const isHost = pane.connectionType === "host";
   const detail = isHost
     ? `${pane.hostUsername ? `${pane.hostUsername}@` : ""}${pane.hostName || pane.hostAddress}${pane.hostPort ? `:${pane.hostPort}` : ""}`
     : pane.localPath || "";
+
+  const viewTree = viewTrees[pane.id] ?? null;
+  const multiView = viewTree ? countLeaves(viewTree) > 1 : false;
 
   useEffect(() => {
     let cancelled = false;
@@ -139,23 +168,37 @@ export default function EditorView({ pane }: EditorViewProps) {
         : fileKind;
   const fileUrl = activePath ? convertFileSrc(activePath) : null;
 
+  const sides = ["left", "right", "top", "bottom"] as const;
+  const dropSide =
+    editorViewDrop &&
+    editorViewDrop.paneId === pane.id &&
+    editorViewDrop.viewId === viewId
+      ? editorViewDrop.side
+      : null;
+
   return (
+    // biome-ignore lint/a11y/useSemanticElements: droppable container, interactive children carry semantics
     <div
       ref={droppable.ref}
-      className={`flex flex-col h-full min-w-0 flex-1 transition-colors ${
+      onClick={onActivate}
+      role="group"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && onActivate) {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+      className={`flex flex-col h-full min-w-0 flex-1 relative transition-colors ${
         droppable.isDropTarget
           ? "bg-primary-500/10 ring-1 ring-inset ring-primary-500"
           : ""
+      } ${
+        isActive
+          ? "ring-1 ring-inset ring-primary-600/40"
+          : "ring-1 ring-inset ring-transparent"
       }`}
     >
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-dark-700 bg-dark-900">
-        <CodeIcon className="w-4 h-4 text-primary-400" weight="bold" />
-        <span className="text-xs font-medium text-white">
-          {isHost ? "Remote" : "Local"}
-        </span>
-        <span className="text-xs text-dark-400 truncate">{detail}</span>
-      </div>
-
       {isHost ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center max-w-sm px-6">
@@ -170,86 +213,36 @@ export default function EditorView({ pane }: EditorViewProps) {
         </div>
       ) : (
         <>
-          {openFiles.length > 0 && (
-            <div
-              role="tablist"
-              className="flex items-stretch gap-0.5 px-2 pt-1.5 bg-dark-900 border-b border-dark-700 overflow-x-auto"
-            >
-              {openFiles.map((f) => {
-                const isActive = f.path === activePath;
-                const isDirty = dirty[f.path] === true;
-                const isPreview = f.path === previewPath;
-                return (
-                  <div
-                    role="tab"
-                    tabIndex={0}
-                    aria-selected={isActive}
-                    key={f.path}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-t text-xs cursor-pointer select-none whitespace-nowrap border ${
-                      isActive
-                        ? "bg-dark-800 text-white border-dark-700"
-                        : "bg-transparent text-dark-400 border-transparent hover:text-dark-300"
-                    }`}
-                    title={`${f.path}${isPreview ? " — preview, double-click to keep open" : ""}`}
-                    onClick={() => setActiveFile(pane.id, f.path)}
-                    onDoubleClick={() => makeFilePermanent(pane.id, f.path)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setActiveFile(pane.id, f.path);
-                      }
-                    }}
-                  >
-                    {isDirty && (
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{
-                          backgroundColor: isActive
-                            ? "var(--color-primary-400)"
-                            : "currentColor",
-                        }}
-                      />
-                    )}
-                    {getFileIcon(
-                      {
-                        name: f.name,
-                        path: f.path,
-                        type: "file",
-                        size: 0,
-                        permissions: "",
-                        owner: "",
-                        group: "",
-                        modifiedAt: "",
-                        isHidden: false,
-                      },
-                      14,
-                    )}
-                    <span
-                      className={`max-w-40 truncate ${isPreview ? "italic" : ""}`}
-                    >
-                      {f.name}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Close ${f.name}`}
-                      className="ml-0.5 p-0.5 rounded hover:bg-dark-700 text-dark-400 hover:text-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeFile(pane.id, f.path);
-                      }}
-                    >
-                      <XIcon className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
+          <div
+            role="tablist"
+            className="flex items-stretch gap-0.5 px-2 pt-1.5 bg-dark-900 border-b border-dark-700 overflow-x-auto shrink-0"
+          >
+            {openFiles.map((f, index) => (
+              <SortableFileTab
+                key={f.path}
+                paneId={pane.id}
+                viewId={viewId}
+                file={f}
+                index={index}
+                isActive={f.path === activePath}
+                isDirty={dirty[f.path] === true}
+                isPreview={f.path === previewPath}
+                onActivate={() => {
+                  onActivate?.();
+                  setActiveFileInView(viewId, f.path);
+                }}
+                onMakePermanent={() => makeFilePermanentInView(viewId, f.path)}
+                onClose={() => closeFileInView(pane.id, viewId, f.path)}
+              />
+            ))}
+            <div className="flex items-center gap-0.5 ml-auto pl-2 shrink-0">
               {activeFile && dualKind && (
                 <button
                   type="button"
                   title={
                     viewMode === "code" ? "Open preview" : "Show source code"
                   }
-                  className={`ml-auto self-center p-1.5 rounded shrink-0 ${
+                  className={`p-1.5 rounded ${
                     viewMode === "preview"
                       ? "text-primary-400 bg-dark-800"
                       : "text-dark-400 hover:text-white hover:bg-dark-700"
@@ -265,10 +258,45 @@ export default function EditorView({ pane }: EditorViewProps) {
                   )}
                 </button>
               )}
+              <button
+                type="button"
+                title="Split right"
+                className="p-1.5 rounded text-dark-400 hover:text-white hover:bg-dark-700"
+                onClick={() => {
+                  onActivate?.();
+                  splitView(pane.id, viewId, "horizontal");
+                }}
+              >
+                <SplitHorizontalIcon className="w-3.5 h-3.5" weight="bold" />
+              </button>
+              <button
+                type="button"
+                title="Split down"
+                className="p-1.5 rounded text-dark-400 hover:text-white hover:bg-dark-700"
+                onClick={() => {
+                  onActivate?.();
+                  splitView(pane.id, viewId, "vertical");
+                }}
+              >
+                <SplitVerticalIcon className="w-3.5 h-3.5" weight="bold" />
+              </button>
+              {multiView && (
+                <button
+                  type="button"
+                  title="Close view"
+                  className="p-1.5 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700"
+                  onClick={() => {
+                    onActivate?.();
+                    removeView(pane.id, viewId);
+                  }}
+                >
+                  <XIcon className="w-3.5 h-3.5" weight="bold" />
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
-          <div className="flex-1 min-h-0 bg-dark-950 overflow-hidden">
+          <div className="flex-1 min-h-0 bg-dark-950 overflow-hidden relative">
             {loading ? (
               <div className="flex items-center justify-center h-full">
                 <div className="w-5 h-5 border-2 border-dark-600 border-t-primary-400 rounded-full animate-spin" />
@@ -382,6 +410,122 @@ export default function EditorView({ pane }: EditorViewProps) {
           </div>
         </>
       )}
+
+      {/* Drop zones for moving tabs between views */}
+      {sides.map((side) => (
+        <DropZone
+          key={side}
+          id={`editor-view-drop:${pane.id}:${viewId}:${side}`}
+          side={side}
+          data={{ type: "editor-view", paneId: pane.id, viewId, side }}
+          accept={(draggable) => draggable.data?.type === "editor-tab-source"}
+        />
+      ))}
+
+      {/* Drop preview */}
+      {dropSide && <div style={previewStyle(dropSide as DropSide)} />}
+    </div>
+  );
+}
+
+interface SortableFileTabProps {
+  paneId: string;
+  viewId: string;
+  file: { path: string; name: string };
+  index: number;
+  isActive: boolean;
+  isDirty: boolean;
+  isPreview: boolean;
+  onActivate: () => void;
+  onMakePermanent: () => void;
+  onClose: () => void;
+}
+
+function SortableFileTab({
+  paneId,
+  viewId,
+  file,
+  index,
+  isActive,
+  isDirty,
+  isPreview,
+  onActivate,
+  onMakePermanent,
+  onClose,
+}: SortableFileTabProps) {
+  const { ref, isDragging } = useSortable({
+    id: `editor-file-tab:${viewId}:${file.path}`,
+    index,
+    data: {
+      type: "editor-tab-source",
+      paneId,
+      viewId,
+      path: file.path,
+      name: file.name,
+    },
+    collisionDetector: closestCenter,
+  });
+
+  return (
+    <div
+      ref={ref}
+      role="tab"
+      tabIndex={0}
+      aria-selected={isActive}
+      onClick={onActivate}
+      onDoubleClick={onMakePermanent}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-t text-xs cursor-pointer select-none whitespace-nowrap border ${
+        isActive
+          ? "bg-dark-800 text-white border-dark-700"
+          : "bg-transparent text-dark-400 border-transparent hover:text-dark-300"
+      } ${isDragging ? "opacity-40" : ""}`}
+      style={{ touchAction: "none" }}
+      title={`${file.path}${isPreview ? " — preview, double-click to keep open" : ""}`}
+    >
+      {isDirty && (
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{
+            backgroundColor: isActive
+              ? "var(--color-primary-400)"
+              : "currentColor",
+          }}
+        />
+      )}
+      {getFileIcon(
+        {
+          name: file.name,
+          path: file.path,
+          type: "file",
+          size: 0,
+          permissions: "",
+          owner: "",
+          group: "",
+          modifiedAt: "",
+          isHidden: false,
+        },
+        14,
+      )}
+      <span className={`max-w-40 truncate ${isPreview ? "italic" : ""}`}>
+        {file.name}
+      </span>
+      <button
+        type="button"
+        aria-label={`Close ${file.name}`}
+        className="ml-0.5 p-0.5 rounded hover:bg-dark-700 text-dark-400 hover:text-white"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <XIcon className="w-3 h-3" />
+      </button>
     </div>
   );
 }

@@ -17,6 +17,14 @@ interface DragState {
   setDraggedPaneId: (id: string | null) => void;
   sourcePane: { tabId: string; paneId: string } | null;
   setSourcePane: (pane: { tabId: string; paneId: string } | null) => void;
+  editorViewDrop: {
+    paneId: string;
+    viewId: string;
+    side: DropSide;
+  } | null;
+  setEditorViewDrop: (
+    drop: { paneId: string; viewId: string; side: DropSide } | null,
+  ) => void;
 }
 
 export const useDragStore = create<DragState>((set) => ({
@@ -28,4 +36,6 @@ export const useDragStore = create<DragState>((set) => ({
   setDraggedPaneId: (id) => set({ draggedPaneId: id }),
   sourcePane: null,
   setSourcePane: (pane) => set({ sourcePane: pane }),
+  editorViewDrop: null,
+  setEditorViewDrop: (drop) => set({ editorViewDrop: drop }),
 }));

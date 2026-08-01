@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   type DropSide,
+  findAllLeaves,
   findFirstLeafId,
   findLeaf as findLeafUtil,
   recomputeSizes as recomputeSizesUtil,
@@ -38,12 +39,30 @@ export interface EditorOpenFile {
   name: string;
 }
 
+export interface EditorViewLeafNode {
+  type: "leaf";
+  id: string;
+  size: number;
+}
+
+export interface EditorViewSplitNode {
+  type: "split";
+  id: string;
+  direction: "horizontal" | "vertical";
+  children: EditorViewNode[];
+  size: number;
+}
+
+export type EditorViewNode = EditorViewLeafNode | EditorViewSplitNode;
+
 export const findLeaf = findLeafUtil;
 
 interface EditorState {
   root: EditorPaneNode | null;
   activePaneId: string | null;
   focusedPaneId: string | null;
+  viewTrees: Record<string, EditorViewNode | null>;
+  activeView: Record<string, string>;
   openFiles: Record<string, EditorOpenFile[]>;
   activeFile: Record<string, string | null>;
   previewFile: Record<string, string | null>;
@@ -59,6 +78,7 @@ interface EditorState {
     isPreview?: boolean,
   ) => void;
   closeFile: (paneId: string, path: string) => void;
+  closeFileInAllViews: (paneId: string, path: string) => void;
   makeFilePermanent: (paneId: string, path: string) => void;
   setActiveFile: (paneId: string, path: string | null) => void;
   movePane: (
@@ -77,11 +97,44 @@ interface EditorState {
     hostUsername?: string,
   ) => void;
   setPaneSizes: (splitId: string, sizes: number[]) => void;
+
+  splitView: (
+    paneId: string,
+    viewId: string,
+    direction: "horizontal" | "vertical",
+  ) => void;
+  removeView: (paneId: string, viewId: string) => void;
+  setActiveView: (paneId: string, viewId: string) => void;
+  setViewSizes: (paneId: string, splitId: string, sizes: number[]) => void;
+  openFileInView: (
+    paneId: string,
+    viewId: string,
+    path: string,
+    name: string,
+    isPreview?: boolean,
+  ) => void;
+  closeFileInView: (paneId: string, viewId: string, path: string) => void;
+  setActiveFileInView: (viewId: string, path: string | null) => void;
+  makeFilePermanentInView: (viewId: string, path: string) => void;
+  setFileOrder: (viewId: string, ordered: EditorOpenFile[]) => void;
+  moveFileToView: (
+    paneId: string,
+    sourceViewId: string,
+    targetViewId: string,
+    path: string,
+    name: string,
+    side?: DropSide | null,
+  ) => void;
 }
 
 let editorPaneCounter = 0;
 function nextEditorPaneId() {
   return `editor-pane-${++editorPaneCounter}-${Date.now()}`;
+}
+
+let editorViewCounter = 0;
+function nextEditorViewId() {
+  return `editor-view-${++editorViewCounter}-${Date.now()}`;
 }
 
 function makeEmptyEditorLeaf(): EditorLeafNode {
@@ -99,10 +152,39 @@ function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   return next;
 }
 
+function viewIdsForPane(
+  viewTrees: Record<string, EditorViewNode | null>,
+  paneId: string,
+): string[] {
+  const tree = viewTrees[paneId];
+  if (!tree) return [paneId];
+  return [paneId, ...findAllLeaves(tree).map((l) => l.id)];
+}
+
+export function activeViewIdFor(
+  viewTrees: Record<string, EditorViewNode | null>,
+  activeView: Record<string, string>,
+  paneId: string,
+): string {
+  const tree = viewTrees[paneId];
+  if (!tree) return paneId;
+  const active = activeView[paneId];
+  if (active && findLeafUtil(tree, active)) return active;
+  return findFirstLeafId(tree) ?? paneId;
+}
+
+export function useActiveViewId(paneId: string): string {
+  const viewTrees = useEditorStore((s) => s.viewTrees);
+  const activeView = useEditorStore((s) => s.activeView);
+  return activeViewIdFor(viewTrees, activeView, paneId);
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   root: null,
   activePaneId: null,
   focusedPaneId: null,
+  viewTrees: {},
+  activeView: {},
   openFiles: {},
   activeFile: {},
   previewFile: {},
@@ -129,6 +211,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   removePane: (paneId) => {
     const root = get().root;
     if (!root) return;
+    const viewIds = viewIdsForPane(get().viewTrees, paneId);
+    const clearMaps = <T>(map: Record<string, T>): Record<string, T> => {
+      const next = { ...map };
+      for (const id of viewIds) delete next[id];
+      return next;
+    };
     const newRoot = removeNode(root, paneId);
     if (!newRoot) {
       const fresh = makeEmptyEditorLeaf();
@@ -136,9 +224,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         root: fresh,
         activePaneId: fresh.id,
         focusedPaneId: null,
-        openFiles: withoutKey(get().openFiles, paneId),
-        activeFile: withoutKey(get().activeFile, paneId),
-        previewFile: withoutKey(get().previewFile, paneId),
+        viewTrees: withoutKey(get().viewTrees, paneId),
+        activeView: withoutKey(get().activeView, paneId),
+        openFiles: clearMaps(get().openFiles),
+        activeFile: clearMaps(get().activeFile),
+        previewFile: clearMaps(get().previewFile),
       });
       return;
     }
@@ -150,9 +240,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : get().activePaneId,
       focusedPaneId:
         get().focusedPaneId === paneId ? null : get().focusedPaneId,
-      openFiles: withoutKey(get().openFiles, paneId),
-      activeFile: withoutKey(get().activeFile, paneId),
-      previewFile: withoutKey(get().previewFile, paneId),
+      viewTrees: withoutKey(get().viewTrees, paneId),
+      activeView: withoutKey(get().activeView, paneId),
+      openFiles: clearMaps(get().openFiles),
+      activeFile: clearMaps(get().activeFile),
+      previewFile: clearMaps(get().previewFile),
     });
   },
 
@@ -160,65 +252,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
 
   openFile: (paneId, path, name, isPreview = false) => {
-    const existing = get().openFiles[paneId] ?? [];
-    const currentPreview = get().previewFile[paneId] ?? null;
-
-    if (existing.some((f) => f.path === path)) {
-      set({
-        activeFile: { ...get().activeFile, [paneId]: path },
-        previewFile: {
-          ...get().previewFile,
-          [paneId]: isPreview ? currentPreview : null,
-        },
-      });
-      return;
-    }
-
-    let next = [...existing, { path, name }];
-    let preview = currentPreview;
-
-    if (isPreview) {
-      if (currentPreview && currentPreview !== path) {
-        next = next.filter((f) => f.path !== currentPreview);
-      }
-      preview = path;
-    } else {
-      preview = null;
-    }
-
-    set({
-      openFiles: { ...get().openFiles, [paneId]: next },
-      activeFile: { ...get().activeFile, [paneId]: path },
-      previewFile: { ...get().previewFile, [paneId]: preview },
-    });
+    const viewId = activeViewIdFor(get().viewTrees, get().activeView, paneId);
+    get().openFileInView(paneId, viewId, path, name, isPreview);
   },
 
   closeFile: (paneId, path) => {
-    const list = get().openFiles[paneId] ?? [];
-    const next = list.filter((f) => f.path !== path);
-    let active = get().activeFile[paneId] ?? null;
-    if (active === path) {
-      const idx = list.findIndex((f) => f.path === path);
-      active = next[idx]?.path ?? next[idx - 1]?.path ?? null;
+    const viewId = activeViewIdFor(get().viewTrees, get().activeView, paneId);
+    get().closeFileInView(paneId, viewId, path);
+  },
+
+  closeFileInAllViews: (paneId, path) => {
+    const viewTrees = get().viewTrees;
+    const ids = viewIdsForPane(viewTrees, paneId);
+    const openFiles = { ...get().openFiles };
+    const activeFile = { ...get().activeFile };
+    const previewFile = { ...get().previewFile };
+    for (const viewId of ids) {
+      const list = openFiles[viewId] ?? [];
+      if (!list.some((f) => f.path === path)) continue;
+      const next = list.filter((f) => f.path !== path);
+      if (activeFile[viewId] === path) {
+        const idx = list.findIndex((f) => f.path === path);
+        activeFile[viewId] = next[idx]?.path ?? next[idx - 1]?.path ?? null;
+      }
+      if (previewFile[viewId] === path) previewFile[viewId] = null;
+      openFiles[viewId] = next;
     }
-    const preview =
-      get().previewFile[paneId] === path ? null : get().previewFile[paneId];
-    set({
-      openFiles: { ...get().openFiles, [paneId]: next },
-      activeFile: { ...get().activeFile, [paneId]: active },
-      previewFile: { ...get().previewFile, [paneId]: preview },
-    });
+    set({ openFiles, activeFile, previewFile });
   },
 
   makeFilePermanent: (paneId, path) => {
-    if (get().previewFile[paneId] !== path) return;
-    set({
-      previewFile: { ...get().previewFile, [paneId]: null },
-    });
+    const viewId = activeViewIdFor(get().viewTrees, get().activeView, paneId);
+    get().makeFilePermanentInView(viewId, path);
   },
 
-  setActiveFile: (paneId, path) =>
-    set({ activeFile: { ...get().activeFile, [paneId]: path } }),
+  setActiveFile: (paneId, path) => {
+    const viewId = activeViewIdFor(get().viewTrees, get().activeView, paneId);
+    get().setActiveFileInView(viewId, path);
+  },
 
   movePane: (sourcePaneId, targetPaneId, side) => {
     const root = get().root;
@@ -330,5 +401,243 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { ...node, children: node.children.map(apply) };
     }
     set({ root: apply(root) });
+  },
+
+  splitView: (paneId, viewId, direction) => {
+    const existing =
+      get().viewTrees[paneId] ??
+      ({
+        type: "leaf",
+        id: paneId,
+        size: 100,
+      } as EditorViewNode);
+    const leaf = findLeafUtil(existing, viewId);
+    if (!leaf) return;
+    const newLeaf: EditorViewLeafNode = {
+      type: "leaf",
+      id: nextEditorViewId(),
+      size: 50,
+    };
+    const split: EditorViewSplitNode = {
+      type: "split",
+      id: nextEditorViewId(),
+      direction,
+      children: [{ ...leaf, size: 50 }, newLeaf],
+      size: leaf.size,
+    };
+    set({
+      viewTrees: {
+        ...get().viewTrees,
+        [paneId]: replaceNode(existing, viewId, split),
+      },
+      activeView: { ...get().activeView, [paneId]: newLeaf.id },
+    });
+  },
+
+  removeView: (paneId, viewId) => {
+    const tree = get().viewTrees[paneId];
+    if (!tree) return;
+    const removed = removeNode(tree, viewId);
+    if (!removed) return;
+    const leaves = findAllLeaves(removed);
+    const cleanedOpen: Record<string, EditorOpenFile[]> = {
+      ...get().openFiles,
+    };
+    const cleanedActive: Record<string, string | null> = {
+      ...get().activeFile,
+    };
+    const cleanedPreview: Record<string, string | null> = {
+      ...get().previewFile,
+    };
+    const activeView = { ...get().activeView };
+    for (const l of leaves) {
+      delete cleanedOpen[l.id];
+      delete cleanedActive[l.id];
+      delete cleanedPreview[l.id];
+      if (activeView[paneId] === l.id) {
+        activeView[paneId] = findFirstLeafId(removed) ?? paneId;
+      }
+    }
+    set({
+      viewTrees: { ...get().viewTrees, [paneId]: removed },
+      activeView,
+      openFiles: cleanedOpen,
+      activeFile: cleanedActive,
+      previewFile: cleanedPreview,
+    });
+  },
+
+  setActiveView: (paneId, viewId) =>
+    set({ activeView: { ...get().activeView, [paneId]: viewId } }),
+
+  setViewSizes: (paneId, splitId, sizes) => {
+    const tree = get().viewTrees[paneId];
+    if (!tree) return;
+    function apply(node: EditorViewNode): EditorViewNode {
+      if (node.type === "leaf") return node;
+      if (node.id === splitId) {
+        return {
+          ...node,
+          children: node.children.map((c, i) => ({
+            ...c,
+            size: sizes[i] ?? c.size,
+          })),
+        };
+      }
+      return { ...node, children: node.children.map(apply) };
+    }
+    set({
+      viewTrees: { ...get().viewTrees, [paneId]: apply(tree) },
+    });
+  },
+
+  openFileInView: (paneId, viewId, path, name, isPreview = false) => {
+    const existing = get().openFiles[viewId] ?? [];
+    const currentPreview = get().previewFile[viewId] ?? null;
+
+    if (existing.some((f) => f.path === path)) {
+      set({
+        activeFile: { ...get().activeFile, [viewId]: path },
+        previewFile: {
+          ...get().previewFile,
+          [viewId]: isPreview ? currentPreview : null,
+        },
+        activeView: { ...get().activeView, [paneId]: viewId },
+      });
+      return;
+    }
+
+    let next = [...existing, { path, name }];
+    let preview = currentPreview;
+
+    if (isPreview) {
+      if (currentPreview && currentPreview !== path) {
+        next = next.filter((f) => f.path !== currentPreview);
+      }
+      preview = path;
+    } else {
+      preview = null;
+    }
+
+    set({
+      openFiles: { ...get().openFiles, [viewId]: next },
+      activeFile: { ...get().activeFile, [viewId]: path },
+      previewFile: { ...get().previewFile, [viewId]: preview },
+      activeView: { ...get().activeView, [paneId]: viewId },
+    });
+  },
+
+  closeFileInView: (paneId, viewId, path) => {
+    const list = get().openFiles[viewId] ?? [];
+    const next = list.filter((f) => f.path !== path);
+    let active = get().activeFile[viewId] ?? null;
+    if (active === path) {
+      const idx = list.findIndex((f) => f.path === path);
+      active = next[idx]?.path ?? next[idx - 1]?.path ?? null;
+    }
+    const preview =
+      get().previewFile[viewId] === path ? null : get().previewFile[viewId];
+    set({
+      openFiles: { ...get().openFiles, [viewId]: next },
+      activeFile: { ...get().activeFile, [viewId]: active },
+      previewFile: { ...get().previewFile, [viewId]: preview },
+      activeView: { ...get().activeView, [paneId]: viewId },
+    });
+  },
+
+  setActiveFileInView: (viewId, path) =>
+    set({ activeFile: { ...get().activeFile, [viewId]: path } }),
+
+  makeFilePermanentInView: (viewId, path) => {
+    if (get().previewFile[viewId] !== path) return;
+    set({
+      previewFile: { ...get().previewFile, [viewId]: null },
+    });
+  },
+
+  setFileOrder: (viewId, ordered) =>
+    set({ openFiles: { ...get().openFiles, [viewId]: ordered } }),
+
+  moveFileToView: (
+    paneId,
+    sourceViewId,
+    targetViewId,
+    path,
+    name,
+    side = null,
+  ) => {
+    const sourceList = get().openFiles[sourceViewId] ?? [];
+    if (!sourceList.some((f) => f.path === path)) return;
+    const targetList = get().openFiles[targetViewId] ?? [];
+
+    const existing = get().viewTrees[paneId];
+    const tree: EditorViewNode = existing ?? {
+      type: "leaf",
+      id: paneId,
+      size: 100,
+    };
+    const targetLeaf = findLeafUtil(tree, targetViewId);
+    if (!targetLeaf) return;
+
+    let resolvedTarget = targetViewId;
+    let nextTree = tree;
+
+    if (side && !existing) {
+      const newLeaf: EditorViewLeafNode = {
+        type: "leaf",
+        id: nextEditorViewId(),
+        size: 50,
+      };
+      const direction = sideToDirection(side);
+      const sourceFirst = sourceFirstFromSide(side);
+      const split: EditorViewSplitNode = {
+        type: "split",
+        id: nextEditorViewId(),
+        direction,
+        children: sourceFirst
+          ? [newLeaf, { ...targetLeaf, size: 50 }]
+          : [{ ...targetLeaf, size: 50 }, newLeaf],
+        size: targetLeaf.size,
+      };
+      nextTree = replaceNode(tree, targetViewId, split);
+      resolvedTarget = newLeaf.id;
+    }
+
+    const nextSource = sourceList.filter((f) => f.path !== path);
+    const nextTarget = targetList.some((f) => f.path === path)
+      ? targetList
+      : [...targetList, { path, name }];
+
+    set({
+      viewTrees:
+        nextTree === tree
+          ? get().viewTrees
+          : { ...get().viewTrees, [paneId]: nextTree },
+      openFiles: {
+        ...get().openFiles,
+        [sourceViewId]: nextSource,
+        [resolvedTarget]: nextTarget,
+      },
+      activeFile: {
+        ...get().activeFile,
+        [sourceViewId]:
+          get().activeFile[sourceViewId] === path
+            ? (nextSource[0]?.path ?? null)
+            : get().activeFile[sourceViewId],
+        [resolvedTarget]: path,
+      },
+      previewFile: {
+        ...get().previewFile,
+        [sourceViewId]:
+          get().previewFile[sourceViewId] === path
+            ? null
+            : get().previewFile[sourceViewId],
+        [resolvedTarget]:
+          get().previewFile[resolvedTarget] === path
+            ? get().previewFile[resolvedTarget]
+            : null,
+      },
+      activeView: { ...get().activeView, [paneId]: resolvedTarget },
+    });
   },
 }));

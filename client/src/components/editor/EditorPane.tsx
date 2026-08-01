@@ -14,7 +14,7 @@ import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
 import PaneHeader from "../ui/PaneHeader";
 import EditorExplorer from "./EditorExplorer";
-import EditorView from "./EditorView";
+import EditorViewTree from "./EditorViewTree";
 
 interface EditorPaneProps {
   pane: EditorLeafNode;
@@ -90,7 +90,7 @@ export default function EditorPane({
         {pane.connectionType === "local" && pane.localPath ? (
           <div className="flex h-full min-h-0 min-w-0">
             <EditorExplorer paneId={pane.id} rootPath={pane.localPath} />
-            <EditorView pane={pane} />
+            <EditorViewTree pane={pane} />
           </div>
         ) : pane.connectionType === "host" ? (
           <div className="flex h-full min-h-0 min-w-0">
@@ -102,7 +102,7 @@ export default function EditorPane({
                 </p>
               </div>
             </div>
-            <EditorView pane={pane} />
+            <EditorViewTree pane={pane} />
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">

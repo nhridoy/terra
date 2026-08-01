@@ -22,7 +22,7 @@ import {
   writeLocalFile,
 } from "../../lib/localFs";
 import type { FileItem } from "../../lib/sftpTypes";
-import { useEditorStore } from "../../stores/editorStore";
+import { useActiveViewId, useEditorStore } from "../../stores/editorStore";
 import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import PromptDialog from "../ui/PromptDialog";
@@ -267,8 +267,8 @@ export default function EditorExplorer({
   rootPath,
 }: EditorExplorerProps) {
   const openFile = useEditorStore((s) => s.openFile);
-  const closeFile = useEditorStore((s) => s.closeFile);
-  const activePath = useEditorStore((s) => s.activeFile[paneId]) ?? null;
+  const activeViewId = useActiveViewId(paneId);
+  const activePath = useEditorStore((s) => s.activeFile[activeViewId]) ?? null;
 
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -449,8 +449,10 @@ export default function EditorExplorer({
       try {
         await renameLocalFile(oldPath, newPath);
         setRenaming(null);
-        if (useEditorStore.getState().activeFile[paneId] === oldPath) {
-          closeFile(paneId, oldPath);
+        const wasActive =
+          useEditorStore.getState().activeFile[activeViewId] === oldPath;
+        useEditorStore.getState().closeFileInAllViews(paneId, oldPath);
+        if (wasActive) {
           openFile(paneId, newPath, newName);
         }
         setSelectedPath(newPath);
@@ -465,7 +467,7 @@ export default function EditorExplorer({
         setRenaming(null);
       }
     },
-    [paneId, closeFile, openFile, resetTree, rootPath, loadDir],
+    [paneId, activeViewId, openFile, resetTree, rootPath, loadDir],
   );
 
   const confirmNewFile = useCallback(
@@ -511,9 +513,7 @@ export default function EditorExplorer({
     if (!deletePath) return;
     try {
       await removeLocalFile(deletePath);
-      if (useEditorStore.getState().activeFile[paneId] === deletePath) {
-        closeFile(paneId, deletePath);
-      }
+      useEditorStore.getState().closeFileInAllViews(paneId, deletePath);
       if (selectedPath === deletePath) setSelectedPath(null);
       setDeletePath(null);
       resetTree();
@@ -526,15 +526,7 @@ export default function EditorExplorer({
       toast.error(extractError(err, "Failed to delete"));
       setDeletePath(null);
     }
-  }, [
-    deletePath,
-    paneId,
-    closeFile,
-    selectedPath,
-    resetTree,
-    rootPath,
-    loadDir,
-  ]);
+  }, [deletePath, paneId, selectedPath, resetTree, rootPath, loadDir]);
 
   const copyPath = useCallback(async (path: string) => {
     try {
