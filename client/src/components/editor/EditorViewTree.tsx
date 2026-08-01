@@ -5,22 +5,18 @@ import {
   type PlacedPane,
 } from "../../lib/paneLayout";
 import {
-  type EditorLeafNode,
   type EditorViewNode,
   findLeaf,
+  ROOT_VIEW_ID,
   useEditorStore,
 } from "../../stores/editorStore";
 import { SplitDivider } from "../shared/SplitDivider";
 import EditorView from "./EditorView";
 
-interface EditorViewTreeProps {
-  pane: EditorLeafNode;
-}
-
-export default function EditorViewTree({ pane }: EditorViewTreeProps) {
+export default function EditorViewTree() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const tree = useEditorStore((s) => s.viewTrees[pane.id] ?? null);
-  const activeViewId = useEditorStore((s) => s.activeView[pane.id] ?? null);
+  const tree = useEditorStore((s) => s.viewTrees);
+  const activeViewId = useEditorStore((s) => s.activeView);
   const setViewSizes = useEditorStore((s) => s.setViewSizes);
   const setActiveView = useEditorStore((s) => s.setActiveView);
 
@@ -29,7 +25,7 @@ export default function EditorViewTree({ pane }: EditorViewTreeProps) {
   if (tree) computeLayout(tree, 0, 0, 100, 100, panes, dividers);
 
   const findSplit = (splitId: string) => {
-    const root = useEditorStore.getState().viewTrees[pane.id];
+    const root = useEditorStore.getState().viewTrees;
     if (!root) return null;
     const stack: EditorViewNode[] = [root];
     while (stack.length) {
@@ -44,7 +40,7 @@ export default function EditorViewTree({ pane }: EditorViewTreeProps) {
   if (!tree) {
     return (
       <div className="flex-1 min-w-0 h-full">
-        <EditorView pane={pane} viewId={pane.id} />
+        <EditorView viewId={ROOT_VIEW_ID} />
       </div>
     );
   }
@@ -66,10 +62,9 @@ export default function EditorViewTree({ pane }: EditorViewTreeProps) {
             }}
           >
             <EditorView
-              pane={pane}
               viewId={leaf.id}
               isActive={leaf.id === activeViewId}
-              onActivate={() => setActiveView(pane.id, leaf.id)}
+              onActivate={() => setActiveView(leaf.id)}
             />
           </div>
         );
@@ -80,7 +75,7 @@ export default function EditorViewTree({ pane }: EditorViewTreeProps) {
           key={d.id}
           divider={d}
           containerRef={containerRef}
-          onResize={(splitId, sizes) => setViewSizes(pane.id, splitId, sizes)}
+          onResize={(splitId, sizes) => setViewSizes(splitId, sizes)}
           findSplit={findSplit}
         />
       ))}

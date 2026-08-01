@@ -28,20 +28,18 @@ import { readLocalFile, writeLocalFile } from "../../lib/localFs";
 import { type DropSide, previewStyle } from "../../lib/paneLayout";
 import { countLeaves } from "../../lib/treeUtils";
 import { useDragStore } from "../../stores/dragStore";
-import { type EditorLeafNode, useEditorStore } from "../../stores/editorStore";
+import { useEditorStore } from "../../stores/editorStore";
 import { useThemeStore } from "../../stores/themeStore";
 import { DropZone } from "../shared/DropZone";
 import MarkdownPreview from "./MarkdownPreview";
 
 interface EditorViewProps {
-  pane: EditorLeafNode;
   viewId: string;
   isActive?: boolean;
   onActivate?: () => void;
 }
 
 export default function EditorView({
-  pane,
   viewId,
   isActive = true,
   onActivate,
@@ -57,6 +55,12 @@ export default function EditorView({
   const splitView = useEditorStore((s) => s.splitView);
   const removeView = useEditorStore((s) => s.removeView);
   const viewTrees = useEditorStore((s) => s.viewTrees);
+  const isHost = useEditorStore((s) => s.connectionType === "host");
+  const hostName = useEditorStore((s) => s.hostName);
+  const hostAddress = useEditorStore((s) => s.hostAddress);
+  const hostPort = useEditorStore((s) => s.hostPort);
+  const hostUsername = useEditorStore((s) => s.hostUsername);
+  const localPath = useEditorStore((s) => s.localPath);
   const currentTheme = useThemeStore((s) => s.currentTheme);
   const editorViewDrop = useDragStore((s) => s.editorViewDrop);
   const [content, setContent] = useState<string | null>(null);
@@ -67,15 +71,14 @@ export default function EditorView({
 
   const droppable = useDroppable({
     id: `editor-file-drop-${viewId}`,
-    data: { type: "editor-file-drop", paneId: pane.id, viewId },
+    data: { type: "editor-file-drop", viewId },
   });
 
-  const isHost = pane.connectionType === "host";
   const detail = isHost
-    ? `${pane.hostUsername ? `${pane.hostUsername}@` : ""}${pane.hostName || pane.hostAddress}${pane.hostPort ? `:${pane.hostPort}` : ""}`
-    : pane.localPath || "";
+    ? `${hostUsername ? `${hostUsername}@` : ""}${hostName || hostAddress}${hostPort ? `:${hostPort}` : ""}`
+    : localPath || "";
 
-  const viewTree = viewTrees[pane.id] ?? null;
+  const viewTree = viewTrees;
   const multiView = viewTree ? countLeaves(viewTree) > 1 : false;
 
   useEffect(() => {
@@ -170,9 +173,7 @@ export default function EditorView({
 
   const sides = ["left", "right", "top", "bottom"] as const;
   const dropSide =
-    editorViewDrop &&
-    editorViewDrop.paneId === pane.id &&
-    editorViewDrop.viewId === viewId
+    editorViewDrop && editorViewDrop.viewId === viewId
       ? editorViewDrop.side
       : null;
 
@@ -220,7 +221,6 @@ export default function EditorView({
             {openFiles.map((f, index) => (
               <SortableFileTab
                 key={f.path}
-                paneId={pane.id}
                 viewId={viewId}
                 file={f}
                 index={index}
@@ -232,7 +232,7 @@ export default function EditorView({
                   setActiveFileInView(viewId, f.path);
                 }}
                 onMakePermanent={() => makeFilePermanentInView(viewId, f.path)}
-                onClose={() => closeFileInView(pane.id, viewId, f.path)}
+                onClose={() => closeFileInView(viewId, f.path)}
               />
             ))}
             <div className="flex items-center gap-0.5 ml-auto pl-2 shrink-0">
@@ -264,7 +264,7 @@ export default function EditorView({
                 className="p-1.5 rounded text-dark-400 hover:text-white hover:bg-dark-700"
                 onClick={() => {
                   onActivate?.();
-                  splitView(pane.id, viewId, "horizontal");
+                  splitView(viewId, "horizontal");
                 }}
               >
                 <SplitHorizontalIcon className="w-3.5 h-3.5" weight="bold" />
@@ -275,7 +275,7 @@ export default function EditorView({
                 className="p-1.5 rounded text-dark-400 hover:text-white hover:bg-dark-700"
                 onClick={() => {
                   onActivate?.();
-                  splitView(pane.id, viewId, "vertical");
+                  splitView(viewId, "vertical");
                 }}
               >
                 <SplitVerticalIcon className="w-3.5 h-3.5" weight="bold" />
@@ -287,7 +287,7 @@ export default function EditorView({
                   className="p-1.5 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700"
                   onClick={() => {
                     onActivate?.();
-                    removeView(pane.id, viewId);
+                    removeView(viewId);
                   }}
                 >
                   <XIcon className="w-3.5 h-3.5" weight="bold" />
@@ -415,9 +415,9 @@ export default function EditorView({
       {sides.map((side) => (
         <DropZone
           key={side}
-          id={`editor-view-drop:${pane.id}:${viewId}:${side}`}
+          id={`editor-view-drop:${viewId}:${side}`}
           side={side}
-          data={{ type: "editor-view", paneId: pane.id, viewId, side }}
+          data={{ type: "editor-view", viewId, side }}
           accept={(draggable) => draggable.data?.type === "editor-tab-source"}
         />
       ))}
@@ -429,7 +429,6 @@ export default function EditorView({
 }
 
 interface SortableFileTabProps {
-  paneId: string;
   viewId: string;
   file: { path: string; name: string };
   index: number;
@@ -442,7 +441,6 @@ interface SortableFileTabProps {
 }
 
 function SortableFileTab({
-  paneId,
   viewId,
   file,
   index,
@@ -458,7 +456,6 @@ function SortableFileTab({
     index,
     data: {
       type: "editor-tab-source",
-      paneId,
       viewId,
       path: file.path,
       name: file.name,

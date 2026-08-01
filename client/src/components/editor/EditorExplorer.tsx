@@ -28,7 +28,6 @@ import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import PromptDialog from "../ui/PromptDialog";
 
 interface EditorExplorerProps {
-  paneId: string;
   rootPath: string;
 }
 
@@ -44,7 +43,6 @@ interface RenameState {
 }
 
 interface Api {
-  paneId: string;
   dirs: Record<string, DirState>;
   selectedPath: string | null;
   activePath: string | null;
@@ -133,7 +131,7 @@ function Branch({
   const indent = 8 + depth * 12;
 
   const draggable = useDraggable({
-    id: `editor-file-${api.paneId}-${file.path}`,
+    id: `editor-file-${file.path}`,
     data: {
       type: "editor-file-source",
       path: file.path,
@@ -262,12 +260,9 @@ function Branch({
   );
 }
 
-export default function EditorExplorer({
-  paneId,
-  rootPath,
-}: EditorExplorerProps) {
+export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   const openFile = useEditorStore((s) => s.openFile);
-  const activeViewId = useActiveViewId(paneId);
+  const activeViewId = useActiveViewId();
   const activePath = useEditorStore((s) => s.activeFile[activeViewId]) ?? null;
 
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
@@ -407,17 +402,17 @@ export default function EditorExplorer({
         toggleDir(file.path);
         return;
       }
-      openFile(paneId, file.path, file.name, true);
+      openFile(file.path, file.name, true);
     },
-    [paneId, openFile, toggleDir],
+    [openFile, toggleDir],
   );
 
   const handleRowDoubleClick = useCallback(
     (file: FileItem) => {
       if (file.type === "directory") return;
-      openFile(paneId, file.path, file.name, false);
+      openFile(file.path, file.name, false);
     },
-    [paneId, openFile],
+    [openFile],
   );
 
   const handleRowMenu = useCallback((e: React.MouseEvent, file: FileItem) => {
@@ -451,9 +446,9 @@ export default function EditorExplorer({
         setRenaming(null);
         const wasActive =
           useEditorStore.getState().activeFile[activeViewId] === oldPath;
-        useEditorStore.getState().closeFileInAllViews(paneId, oldPath);
+        useEditorStore.getState().closeFileEverywhere(oldPath);
         if (wasActive) {
-          openFile(paneId, newPath, newName);
+          openFile(newPath, newName);
         }
         setSelectedPath(newPath);
         resetTree();
@@ -467,7 +462,7 @@ export default function EditorExplorer({
         setRenaming(null);
       }
     },
-    [paneId, activeViewId, openFile, resetTree, rootPath, loadDir],
+    [activeViewId, openFile, resetTree, rootPath, loadDir],
   );
 
   const confirmNewFile = useCallback(
@@ -481,13 +476,13 @@ export default function EditorExplorer({
       }
       try {
         await writeLocalFile(path, "");
-        openFile(paneId, path, name, false);
+        openFile(path, name, false);
         loadDir(parent);
       } catch (err) {
         toast.error(extractError(err, "Failed to create file"));
       }
     },
-    [newFileParent, rootPath, dirs, paneId, openFile, loadDir],
+    [newFileParent, rootPath, dirs, openFile, loadDir],
   );
 
   const confirmNewFolder = useCallback(
@@ -513,7 +508,7 @@ export default function EditorExplorer({
     if (!deletePath) return;
     try {
       await removeLocalFile(deletePath);
-      useEditorStore.getState().closeFileInAllViews(paneId, deletePath);
+      useEditorStore.getState().closeFileEverywhere(deletePath);
       if (selectedPath === deletePath) setSelectedPath(null);
       setDeletePath(null);
       resetTree();
@@ -526,7 +521,7 @@ export default function EditorExplorer({
       toast.error(extractError(err, "Failed to delete"));
       setDeletePath(null);
     }
-  }, [deletePath, paneId, selectedPath, resetTree, rootPath, loadDir]);
+  }, [deletePath, selectedPath, resetTree, rootPath, loadDir]);
 
   const copyPath = useCallback(async (path: string) => {
     try {
@@ -590,7 +585,7 @@ export default function EditorExplorer({
       items.push(
         {
           label: "Open",
-          onClick: () => openFile(paneId, file.path, file.name, false),
+          onClick: () => openFile(file.path, file.name, false),
         },
         {
           label: "Open with Default App",
@@ -645,7 +640,6 @@ export default function EditorExplorer({
   }, [
     menu,
     rootPath,
-    paneId,
     openFile,
     startRename,
     revealInExplorer,
@@ -660,7 +654,6 @@ export default function EditorExplorer({
   );
 
   const api: Api = {
-    paneId,
     dirs,
     selectedPath,
     activePath,
