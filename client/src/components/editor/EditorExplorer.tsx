@@ -50,6 +50,7 @@ interface Api {
   activePath: string | null;
   renaming: RenameState | null;
   onRowClick: (file: FileItem) => void;
+  onRowDoubleClick: (file: FileItem) => void;
   onRowMenu: (e: React.MouseEvent, file: FileItem) => void;
   onNewFile: (parentPath: string) => void;
   onNewFolder: (parentPath: string) => void;
@@ -153,6 +154,7 @@ function Branch({
         } ${draggable.isDragging ? "opacity-40" : ""}`}
         style={{ paddingLeft: indent }}
         onClick={() => api.onRowClick(file)}
+        onDoubleClick={() => api.onRowDoubleClick(file)}
         onKeyDown={accessibleClickHandler(() => api.onRowClick(file))}
         onContextMenu={(e) => api.onRowMenu(e, file)}
       >
@@ -405,9 +407,17 @@ export default function EditorExplorer({
         toggleDir(file.path);
         return;
       }
-      openFile(paneId, file.path, file.name);
+      openFile(paneId, file.path, file.name, true);
     },
     [paneId, openFile, toggleDir],
+  );
+
+  const handleRowDoubleClick = useCallback(
+    (file: FileItem) => {
+      if (file.type === "directory") return;
+      openFile(paneId, file.path, file.name, false);
+    },
+    [paneId, openFile],
   );
 
   const handleRowMenu = useCallback((e: React.MouseEvent, file: FileItem) => {
@@ -469,7 +479,7 @@ export default function EditorExplorer({
       }
       try {
         await writeLocalFile(path, "");
-        openFile(paneId, path, name);
+        openFile(paneId, path, name, false);
         loadDir(parent);
       } catch (err) {
         toast.error(extractError(err, "Failed to create file"));
@@ -588,7 +598,7 @@ export default function EditorExplorer({
       items.push(
         {
           label: "Open",
-          onClick: () => openFile(paneId, file.path, file.name),
+          onClick: () => openFile(paneId, file.path, file.name, false),
         },
         {
           label: "Open with Default App",
@@ -664,6 +674,7 @@ export default function EditorExplorer({
     activePath,
     renaming,
     onRowClick: handleRowClick,
+    onRowDoubleClick: handleRowDoubleClick,
     onRowMenu: handleRowMenu,
     onNewFile: setNewFileParent,
     onNewFolder: setNewFolderParent,

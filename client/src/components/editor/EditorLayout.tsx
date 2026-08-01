@@ -125,7 +125,7 @@ export default function EditorLayout() {
       const name = String(source.data.name);
       const kind = String(source.data.kind);
       if (kind === "file") {
-        useEditorStore.getState().openFile(paneId, path, name);
+        useEditorStore.getState().openFile(paneId, path, name, true);
       }
     }
 

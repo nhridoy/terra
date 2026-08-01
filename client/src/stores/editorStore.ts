@@ -46,13 +46,20 @@ interface EditorState {
   focusedPaneId: string | null;
   openFiles: Record<string, EditorOpenFile[]>;
   activeFile: Record<string, string | null>;
+  previewFile: Record<string, string | null>;
 
   addPane: (leaf: EditorLeafNode) => void;
   removePane: (paneId: string) => void;
   setActivePane: (paneId: string) => void;
   setFocusedPane: (paneId: string | null) => void;
-  openFile: (paneId: string, path: string, name: string) => void;
+  openFile: (
+    paneId: string,
+    path: string,
+    name: string,
+    isPreview?: boolean,
+  ) => void;
   closeFile: (paneId: string, path: string) => void;
+  makeFilePermanent: (paneId: string, path: string) => void;
   setActiveFile: (paneId: string, path: string | null) => void;
   movePane: (
     sourcePaneId: string,
@@ -98,6 +105,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   focusedPaneId: null,
   openFiles: {},
   activeFile: {},
+  previewFile: {},
 
   addPane: (leaf) => {
     const root = get().root;
@@ -130,6 +138,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         focusedPaneId: null,
         openFiles: withoutKey(get().openFiles, paneId),
         activeFile: withoutKey(get().activeFile, paneId),
+        previewFile: withoutKey(get().previewFile, paneId),
       });
       return;
     }
@@ -143,24 +152,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         get().focusedPaneId === paneId ? null : get().focusedPaneId,
       openFiles: withoutKey(get().openFiles, paneId),
       activeFile: withoutKey(get().activeFile, paneId),
+      previewFile: withoutKey(get().previewFile, paneId),
     });
   },
 
   setActivePane: (paneId) => set({ activePaneId: paneId }),
   setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
 
-  openFile: (paneId, path, name) => {
+  openFile: (paneId, path, name, isPreview = false) => {
     const existing = get().openFiles[paneId] ?? [];
+    const currentPreview = get().previewFile[paneId] ?? null;
+
     if (existing.some((f) => f.path === path)) {
-      set({ activeFile: { ...get().activeFile, [paneId]: path } });
+      set({
+        activeFile: { ...get().activeFile, [paneId]: path },
+        previewFile: {
+          ...get().previewFile,
+          [paneId]: isPreview ? currentPreview : null,
+        },
+      });
       return;
     }
+
+    let next = [...existing, { path, name }];
+    let preview = currentPreview;
+
+    if (isPreview) {
+      if (currentPreview && currentPreview !== path) {
+        next = next.filter((f) => f.path !== currentPreview);
+      }
+      preview = path;
+    } else {
+      preview = null;
+    }
+
     set({
-      openFiles: {
-        ...get().openFiles,
-        [paneId]: [...existing, { path, name }],
-      },
+      openFiles: { ...get().openFiles, [paneId]: next },
       activeFile: { ...get().activeFile, [paneId]: path },
+      previewFile: { ...get().previewFile, [paneId]: preview },
     });
   },
 
@@ -172,9 +201,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const idx = list.findIndex((f) => f.path === path);
       active = next[idx]?.path ?? next[idx - 1]?.path ?? null;
     }
+    const preview =
+      get().previewFile[paneId] === path ? null : get().previewFile[paneId];
     set({
       openFiles: { ...get().openFiles, [paneId]: next },
       activeFile: { ...get().activeFile, [paneId]: active },
+      previewFile: { ...get().previewFile, [paneId]: preview },
+    });
+  },
+
+  makeFilePermanent: (paneId, path) => {
+    if (get().previewFile[paneId] !== path) return;
+    set({
+      previewFile: { ...get().previewFile, [paneId]: null },
     });
   },
 

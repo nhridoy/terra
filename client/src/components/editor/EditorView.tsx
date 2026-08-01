@@ -20,8 +20,10 @@ interface EditorViewProps {
 export default function EditorView({ pane }: EditorViewProps) {
   const openFiles = useEditorStore((s) => s.openFiles[pane.id]) ?? [];
   const activePath = useEditorStore((s) => s.activeFile[pane.id]) ?? null;
+  const previewPath = useEditorStore((s) => s.previewFile[pane.id]) ?? null;
   const closeFile = useEditorStore((s) => s.closeFile);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
+  const makeFilePermanent = useEditorStore((s) => s.makeFilePermanent);
   const currentTheme = useThemeStore((s) => s.currentTheme);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,6 +145,7 @@ export default function EditorView({ pane }: EditorViewProps) {
               {openFiles.map((f) => {
                 const isActive = f.path === activePath;
                 const isDirty = dirty[f.path] === true;
+                const isPreview = f.path === previewPath;
                 return (
                   <div
                     role="tab"
@@ -154,8 +157,9 @@ export default function EditorView({ pane }: EditorViewProps) {
                         ? "bg-dark-800 text-white border-dark-700"
                         : "bg-transparent text-dark-400 border-transparent hover:text-dark-300"
                     }`}
-                    title={f.path}
+                    title={`${f.path}${isPreview ? " — preview, double-click to keep open" : ""}`}
                     onClick={() => setActiveFile(pane.id, f.path)}
+                    onDoubleClick={() => makeFilePermanent(pane.id, f.path)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
@@ -174,7 +178,11 @@ export default function EditorView({ pane }: EditorViewProps) {
                       />
                     )}
                     <FileTextIcon className="w-3.5 h-3.5 shrink-0" />
-                    <span className="max-w-40 truncate">{f.name}</span>
+                    <span
+                      className={`max-w-40 truncate ${isPreview ? "italic" : ""}`}
+                    >
+                      {f.name}
+                    </span>
                     <button
                       type="button"
                       aria-label={`Close ${f.name}`}
