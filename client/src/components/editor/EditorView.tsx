@@ -1,7 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { useDroppable } from "@dnd-kit/react";
-import { CodeIcon, FileTextIcon, XIcon } from "@phosphor-icons/react";
+import { CodeIcon, XIcon } from "@phosphor-icons/react";
 import CodeMirror, { basicSetup } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { languageFor } from "../../lib/editorLanguage";
 import { lintExtensionsFor } from "../../lib/editorLint";
 import { DEFAULT_EDITOR_THEME, editorThemes } from "../../lib/editorThemes";
 import { extractError } from "../../lib/extractError";
+import { getFileIcon } from "../../lib/fileHelpers";
 import { readLocalFile, writeLocalFile } from "../../lib/localFs";
 import { useEditorStore } from "../../stores/editorStore";
 import { useThemeStore } from "../../stores/themeStore";
@@ -177,7 +178,20 @@ export default function EditorView({ pane }: EditorViewProps) {
                         }}
                       />
                     )}
-                    <FileTextIcon className="w-3.5 h-3.5 shrink-0" />
+                    {getFileIcon(
+                      {
+                        name: f.name,
+                        path: f.path,
+                        type: "file",
+                        size: 0,
+                        permissions: "",
+                        owner: "",
+                        group: "",
+                        modifiedAt: "",
+                        isHidden: false,
+                      },
+                      14,
+                    )}
                     <span
                       className={`max-w-40 truncate ${isPreview ? "italic" : ""}`}
                     >
@@ -227,7 +241,7 @@ export default function EditorView({ pane }: EditorViewProps) {
             ) : (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center max-w-sm px-6">
-                  <FileTextIcon className="w-10 h-10 mx-auto mb-3 text-dark-600" />
+                  <CodeIcon className="w-10 h-10 mx-auto mb-3 text-dark-600" />
                   <p className="text-sm text-dark-300 mb-1">No file open</p>
                   <p className="text-xs text-dark-500">
                     Open a file from the explorer or drop one here. Ctrl+S
