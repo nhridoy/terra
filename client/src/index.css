@@ -119,3 +119,202 @@ code {
 [data-sonner-toaster] [data-sonner-toast] [data-error] {
   color: var(--color-danger-500) !important;
 }
+
+/* Markdown preview */
+.markdown-preview {
+  color: var(--color-white);
+  font-size: 14px;
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.markdown-preview h1 {
+  font-size: 1.75em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--color-dark-700);
+}
+
+.markdown-preview h2 {
+  font-size: 1.4em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--color-dark-700);
+}
+
+.markdown-preview h3 {
+  font-size: 1.2em;
+}
+
+.markdown-preview p {
+  margin: 0.75em 0;
+}
+
+.markdown-preview a {
+  color: var(--color-primary-400);
+  text-decoration: underline;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 1.5em;
+  margin: 0.75em 0;
+}
+
+.markdown-preview ul {
+  list-style: disc;
+}
+
+.markdown-preview ol {
+  list-style: decimal;
+}
+
+.markdown-preview li {
+  margin: 0.25em 0;
+}
+
+.markdown-preview li > ul,
+.markdown-preview li > ol {
+  margin: 0.25em 0;
+}
+
+.markdown-preview blockquote {
+  margin: 0.75em 0;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--color-primary-500);
+  color: var(--color-dark-400);
+}
+
+.markdown-preview code {
+  background: var(--color-dark-800);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown-preview pre {
+  background: var(--color-dark-900);
+  border: 1px solid var(--color-dark-700);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+/* highlight.js tokens — follow app theme vars */
+.markdown-preview .hljs {
+  color: var(--color-dark-300);
+  background: transparent;
+}
+
+.markdown-preview .hljs-keyword,
+.markdown-preview .hljs-literal,
+.markdown-preview .hljs-selector-tag,
+.markdown-preview .hljs-selector-id,
+.markdown-preview .hljs-selector-class {
+  color: var(--color-primary-400);
+}
+
+.markdown-preview .hljs-string,
+.markdown-preview .hljs-attr,
+.markdown-preview .hljs-attribute,
+.markdown-preview .hljs-regexp,
+.markdown-preview .hljs-char {
+  color: var(--color-danger-400);
+}
+
+.markdown-preview .hljs-comment,
+.markdown-preview .hljs-quote,
+.markdown-preview .hljs-meta {
+  color: var(--color-dark-500);
+  font-style: italic;
+}
+
+.markdown-preview .hljs-number,
+.markdown-preview .hljs-symbol,
+.markdown-preview .hljs-bullet,
+.markdown-preview .hljs-section,
+.markdown-preview .hljs-name,
+.markdown-preview .hljs-title,
+.markdown-preview .hljs-function {
+  color: var(--color-primary-300);
+}
+
+.markdown-preview .hljs-built_in,
+.markdown-preview .hljs-variable,
+.markdown-preview .hljs-params,
+.markdown-preview .hljs-type,
+.markdown-preview .hljs-property {
+  color: var(--color-dark-200);
+}
+
+.markdown-preview .hljs-emphasis {
+  font-style: italic;
+}
+
+.markdown-preview .hljs-strong {
+  font-weight: 600;
+}
+
+.markdown-preview .hljs-deletion {
+  color: var(--color-danger-400);
+}
+
+.markdown-preview .hljs-addition {
+  color: var(--color-primary-400);
+}
+
+.markdown-preview .hljs-link {
+  color: var(--color-primary-400);
+  text-decoration: underline;
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  width: 100%;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--color-dark-700);
+  padding: 0.4em 0.8em;
+  text-align: left;
+}
+
+.markdown-preview th {
+  background: var(--color-dark-800);
+  font-weight: 600;
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid var(--color-dark-700);
+  margin: 1.5em 0;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.markdown-preview input[type="checkbox"] {
+  margin-right: 0.4em;
+}

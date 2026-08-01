@@ -1,7 +1,8 @@
 import type { Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { useDroppable } from "@dnd-kit/react";
-import { CodeIcon, XIcon } from "@phosphor-icons/react";
+import { CodeIcon, EyeIcon, XIcon } from "@phosphor-icons/react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { basicSetup } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -10,9 +11,15 @@ import { lintExtensionsFor } from "../../lib/editorLint";
 import { DEFAULT_EDITOR_THEME, editorThemes } from "../../lib/editorThemes";
 import { extractError } from "../../lib/extractError";
 import { getFileIcon } from "../../lib/fileHelpers";
+import {
+  classifyFilePath,
+  dualModeFor,
+  type FileKind,
+} from "../../lib/fileKind";
 import { readLocalFile, writeLocalFile } from "../../lib/localFs";
 import { useEditorStore } from "../../stores/editorStore";
 import { useThemeStore } from "../../stores/themeStore";
+import MarkdownPreview from "./MarkdownPreview";
 
 interface EditorViewProps {
   pane: import("../../stores/editorStore").EditorLeafNode;
@@ -30,6 +37,7 @@ export default function EditorView({ pane }: EditorViewProps) {
   const [loading, setLoading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"code" | "preview">("code");
 
   const droppable = useDroppable({
     id: `editor-file-drop-${pane.id}`,
@@ -46,6 +54,17 @@ export default function EditorView({ pane }: EditorViewProps) {
     if (!activePath) {
       setContent(null);
       setReadError(null);
+      setLoading(false);
+      setViewMode("code");
+      return;
+    }
+    const kind = classifyFilePath(activePath);
+    const dual = dualModeFor(activePath);
+    setViewMode(dual === "svg" ? "preview" : "code");
+    if (kind !== "code" && dual !== "svg") {
+      setContent(null);
+      setReadError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -104,8 +123,21 @@ export default function EditorView({ pane }: EditorViewProps) {
 
   const editorTheme =
     editorThemes[currentTheme] ?? editorThemes[DEFAULT_EDITOR_THEME];
-
   const activeFile = openFiles.find((f) => f.path === activePath) ?? null;
+  const fileKind: FileKind = activePath ? classifyFilePath(activePath) : "code";
+  const dualKind = activePath ? dualModeFor(activePath) : null;
+
+  const effectiveKind: FileKind =
+    dualKind === "svg"
+      ? viewMode === "code"
+        ? "code"
+        : "image"
+      : dualKind === "markdown"
+        ? viewMode === "code"
+          ? "code"
+          : "markdown"
+        : fileKind;
+  const fileUrl = activePath ? convertFileSrc(activePath) : null;
 
   return (
     <div
@@ -211,6 +243,28 @@ export default function EditorView({ pane }: EditorViewProps) {
                   </div>
                 );
               })}
+              {activeFile && dualKind && (
+                <button
+                  type="button"
+                  title={
+                    viewMode === "code" ? "Open preview" : "Show source code"
+                  }
+                  className={`ml-auto self-center p-1.5 rounded shrink-0 ${
+                    viewMode === "preview"
+                      ? "text-primary-400 bg-dark-800"
+                      : "text-dark-400 hover:text-white hover:bg-dark-700"
+                  }`}
+                  onClick={() =>
+                    setViewMode(viewMode === "code" ? "preview" : "code")
+                  }
+                >
+                  {viewMode === "code" ? (
+                    <EyeIcon className="w-3.5 h-3.5" />
+                  ) : (
+                    <CodeIcon className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              )}
             </div>
           )}
 
@@ -222,6 +276,81 @@ export default function EditorView({ pane }: EditorViewProps) {
             ) : readError ? (
               <div className="flex items-center justify-center h-full text-sm text-red-400 px-6 text-center">
                 {readError}
+              </div>
+            ) : activeFile && effectiveKind === "markdown" ? (
+              <div className="h-full overflow-y-auto bg-dark-950">
+                <MarkdownPreview content={content ?? ""} />
+              </div>
+            ) : activeFile && effectiveKind === "image" ? (
+              <div className="flex items-center justify-center h-full overflow-auto p-4">
+                <img
+                  src={fileUrl ?? undefined}
+                  alt={activeFile.name}
+                  className="max-w-full max-h-full object-contain rounded shadow-lg"
+                />
+              </div>
+            ) : activeFile && fileKind === "video" ? (
+              <div className="flex items-center justify-center h-full overflow-auto p-4 bg-black/40">
+                {/* biome-ignore lint/a11y/useMediaCaption: local file player, no caption track available */}
+                <video
+                  src={fileUrl ?? undefined}
+                  controls
+                  className="max-w-full max-h-full rounded"
+                />
+              </div>
+            ) : activeFile && fileKind === "audio" ? (
+              <div className="flex flex-col items-center justify-center h-full p-6 gap-4">
+                {getFileIcon(
+                  {
+                    name: activeFile.name,
+                    path: activeFile.path,
+                    type: "file",
+                    size: 0,
+                    permissions: "",
+                    owner: "",
+                    group: "",
+                    modifiedAt: "",
+                    isHidden: false,
+                  },
+                  56,
+                )}
+                <p className="text-sm text-dark-300">{activeFile.name}</p>
+                {/* biome-ignore lint/a11y/useMediaCaption: local file player, no caption track available */}
+                <audio
+                  src={fileUrl ?? undefined}
+                  controls
+                  className="w-full max-w-md"
+                />
+              </div>
+            ) : activeFile && fileKind === "pdf" ? (
+              <iframe
+                src={fileUrl ?? undefined}
+                title={activeFile.name}
+                className="w-full h-full bg-white"
+              />
+            ) : activeFile && fileKind === "binary" ? (
+              <div className="flex flex-col items-center justify-center h-full p-6">
+                {getFileIcon(
+                  {
+                    name: activeFile.name,
+                    path: activeFile.path,
+                    type: "file",
+                    size: 0,
+                    permissions: "",
+                    owner: "",
+                    group: "",
+                    modifiedAt: "",
+                    isHidden: false,
+                  },
+                  56,
+                )}
+                <p className="text-sm text-dark-300 mt-4">
+                  Unsupported file type
+                </p>
+                <p className="text-xs text-dark-500 mt-1 max-w-sm text-center">
+                  {activeFile.name} cannot be displayed in the editor. Try
+                  opening it with an external application instead.
+                </p>
               </div>
             ) : activeFile ? (
               <CodeMirror
