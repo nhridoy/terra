@@ -108,11 +108,7 @@ export default function FileListItem({
             className="bg-dark-800 border border-primary-500 rounded px-1 py-0.5 text-sm text-white w-full focus:outline-none"
           />
         ) : (
-          <span
-            className={`block truncate ${file.type === "directory" ? "text-primary-400" : ""}`}
-          >
-            {file.name}
-          </span>
+          <span className="block truncate">{file.name}</span>
         )}
       </td>
       <td
