@@ -175,7 +175,7 @@ export default function EditorLayout() {
         <EditorPane />
       </div>
 
-      <DragOverlay>
+      <DragOverlay dropAnimation={null}>
         {(source) => {
           if (source.data?.type === "editor-file-source") {
             return (
