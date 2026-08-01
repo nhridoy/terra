@@ -36,6 +36,12 @@
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
 }
 
+.cm-scroller {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 body {
   margin: 0;
   font-family:

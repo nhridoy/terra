@@ -188,6 +188,9 @@ importers:
       tauri-pty:
         specifier: ^0.3.1
         version: 0.3.1
+      thememirror:
+        specifier: ^2.0.1
+        version: 2.0.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.1)(@codemirror/view@6.43.7)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1376,6 +1379,13 @@ packages:
 
   tauri-pty@0.3.1:
     resolution: {integrity: sha512-/7fph+RsJ6w/LabaJEjIoa5kzc8a9soRUnjw2D/whBf5EaWQwA+iF0XdU6zdfpA7o4rXijALQRePQ/Fw6YYxzw==}
+
+  thememirror@2.0.1:
+    resolution: {integrity: sha512-d5i6FVvWWPkwrm4cHLI3t9AT1OrkAt7Ig8dtdYSofgF7C/eiyNuq6zQzSTusWTde3jpW9WLvA9J/fzNKMUsd0w==}
+    peerDependencies:
+      '@codemirror/language': ^6.0.0
+      '@codemirror/state': ^6.0.0
+      '@codemirror/view': ^6.0.0
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -2632,6 +2642,12 @@ snapshots:
   tauri-pty@0.3.1:
     dependencies:
       '@tauri-apps/api': 2.11.1
+
+  thememirror@2.0.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.1)(@codemirror/view@6.43.7):
+    dependencies:
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.1
+      '@codemirror/view': 6.43.7
 
   tinybench@2.9.0: {}
 

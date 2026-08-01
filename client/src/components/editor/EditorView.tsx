@@ -5,9 +5,9 @@ import { CodeIcon, FileTextIcon, XIcon } from "@phosphor-icons/react";
 import CodeMirror, { basicSetup } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { codeMirrorThemeFor } from "../../lib/codeMirrorTheme";
 import { languageFor } from "../../lib/editorLanguage";
 import { lintExtensionsFor } from "../../lib/editorLint";
+import { DEFAULT_EDITOR_THEME, editorThemes } from "../../lib/editorThemes";
 import { extractError } from "../../lib/extractError";
 import { readLocalFile, writeLocalFile } from "../../lib/localFs";
 import { useEditorStore } from "../../stores/editorStore";
@@ -99,10 +99,8 @@ export default function EditorView({ pane }: EditorViewProps) {
     return list;
   }, [saveKeymap, activePath]);
 
-  const cmTheme = useMemo(
-    () => codeMirrorThemeFor(currentTheme),
-    [currentTheme],
-  );
+  const editorTheme =
+    editorThemes[currentTheme] ?? editorThemes[DEFAULT_EDITOR_THEME];
 
   const activeFile = openFiles.find((f) => f.path === activePath) ?? null;
 
@@ -209,7 +207,7 @@ export default function EditorView({ pane }: EditorViewProps) {
                 height="100%"
                 style={{ height: "100%" }}
                 basicSetup={false}
-                theme={cmTheme}
+                theme={editorTheme.theme}
                 extensions={extensions}
                 onChange={(value) => {
                   setContent(value);
