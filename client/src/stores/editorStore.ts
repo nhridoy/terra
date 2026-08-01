@@ -334,14 +334,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   moveFileToView: (sourceViewId, targetViewId, path, name, side = null) => {
     const sourceList = get().openFiles[sourceViewId] ?? [];
-    if (!sourceList.some((f) => f.path === path)) {
-      console.warn("[moveFileToView] source file not found", {
-        sourceViewId,
-        targetViewId,
-        path,
-      });
-      return;
-    }
+    if (!sourceList.some((f) => f.path === path)) return;
     const targetList = get().openFiles[targetViewId] ?? [];
 
     const tree: EditorViewNode = get().viewTrees ?? {
@@ -350,17 +343,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       size: 100,
     };
     const targetLeaf = findLeafUtil(tree, targetViewId);
-    if (!targetLeaf) {
-      console.warn("[moveFileToView] target leaf not found", {
-        sourceViewId,
-        targetViewId,
-        tree,
-      });
-      return;
-    }
+    if (!targetLeaf) return;
 
     let resolvedTarget = targetViewId;
-    let nextTree = tree;
+    let nextTree: EditorViewNode | null = tree;
 
     if (side) {
       const newLeaf: EditorViewLeafNode = {
@@ -391,32 +377,65 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? targetList
           : [...targetList, { path, name }];
 
+    let sourceEmpty = false;
+    if (nextSource.length === 0 && sourceViewId !== targetViewId) {
+      sourceEmpty = true;
+      nextTree = removeNode(nextTree, sourceViewId);
+      if (nextTree) {
+        const leaves = findAllLeaves(nextTree);
+        if (leaves.length === 1 && leaves[0].id === ROOT_VIEW_ID) {
+          nextTree = null;
+        }
+      }
+    }
+
     set({
       viewTrees: nextTree === tree ? get().viewTrees : nextTree,
-      openFiles: {
-        ...get().openFiles,
-        [sourceViewId]: nextSource,
-        [resolvedTarget]: nextTarget,
-      },
-      activeFile: {
-        ...get().activeFile,
-        [sourceViewId]:
-          get().activeFile[sourceViewId] === path
-            ? (nextSource[0]?.path ?? null)
-            : get().activeFile[sourceViewId],
-        [resolvedTarget]: path,
-      },
-      previewFile: {
-        ...get().previewFile,
-        [sourceViewId]:
-          get().previewFile[sourceViewId] === path
-            ? null
-            : get().previewFile[sourceViewId],
-        [resolvedTarget]:
-          get().previewFile[resolvedTarget] === path
-            ? get().previewFile[resolvedTarget]
-            : null,
-      },
+      openFiles: sourceEmpty
+        ? withoutKey(
+            { ...get().openFiles, [resolvedTarget]: nextTarget },
+            sourceViewId,
+          )
+        : {
+            ...get().openFiles,
+            [sourceViewId]: nextSource,
+            [resolvedTarget]: nextTarget,
+          },
+      activeFile: sourceEmpty
+        ? withoutKey(
+            { ...get().activeFile, [resolvedTarget]: path },
+            sourceViewId,
+          )
+        : {
+            ...get().activeFile,
+            [sourceViewId]:
+              get().activeFile[sourceViewId] === path
+                ? (nextSource[0]?.path ?? null)
+                : get().activeFile[sourceViewId],
+            [resolvedTarget]: path,
+          },
+      previewFile: sourceEmpty
+        ? withoutKey(
+            {
+              ...get().previewFile,
+              [resolvedTarget]:
+                get().previewFile[resolvedTarget] === path
+                  ? get().previewFile[resolvedTarget]
+                  : null,
+            },
+            sourceViewId,
+          )
+        : {
+            ...get().previewFile,
+            [sourceViewId]:
+              get().previewFile[sourceViewId] === path
+                ? null
+                : get().previewFile[sourceViewId],
+            [resolvedTarget]:
+              get().previewFile[resolvedTarget] === path
+                ? get().previewFile[resolvedTarget]
+                : null,
+          },
       activeView: resolvedTarget,
     });
   },

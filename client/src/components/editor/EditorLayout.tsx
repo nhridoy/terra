@@ -87,16 +87,6 @@ export default function EditorLayout() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation;
 
-    console.log("[editor-dragend]", {
-      canceled: event.canceled,
-      sourceType: source?.data?.type,
-      sourceId: source?.id,
-      targetId: target?.id,
-      targetType: target?.data?.type,
-      targetViewId: target?.data?.viewId,
-      targetSide: target?.data?.side,
-    });
-
     if (event.canceled || !source) {
       setEditorViewDrop(null);
       return;
