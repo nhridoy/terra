@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { FileItem } from "../lib/sftpTypes";
 import {
   type DropSide,
   findAllLeaves,
@@ -12,9 +13,42 @@ import {
 
 export const ROOT_VIEW_ID = "editor-view-root";
 
+const EXPLORER_WIDTH_KEY = "editor.explorerWidth";
+const EXPLORER_VISIBLE_KEY = "editor.explorerVisible";
+export const DEFAULT_EXPLORER_WIDTH = 288;
+const MIN_EXPLORER_WIDTH = 160;
+const MAX_EXPLORER_WIDTH = 640;
+
+function loadExplorerPrefs(): {
+  explorerWidth: number;
+  explorerVisible: boolean;
+} {
+  try {
+    const width = Number(localStorage.getItem(EXPLORER_WIDTH_KEY));
+    const visible = localStorage.getItem(EXPLORER_VISIBLE_KEY);
+    return {
+      explorerWidth:
+        Number.isFinite(width) &&
+        width >= MIN_EXPLORER_WIDTH &&
+        width <= MAX_EXPLORER_WIDTH
+          ? width
+          : DEFAULT_EXPLORER_WIDTH,
+      explorerVisible: visible !== "0",
+    };
+  } catch {
+    return { explorerWidth: DEFAULT_EXPLORER_WIDTH, explorerVisible: true };
+  }
+}
+
 export interface EditorOpenFile {
   path: string;
   name: string;
+}
+
+export interface EditorDirState {
+  children: FileItem[] | null;
+  expanded: boolean;
+  error: string | null;
 }
 
 export interface EditorViewLeafNode {
@@ -87,6 +121,19 @@ interface EditorState {
     name: string,
     side?: DropSide | null,
   ) => void;
+
+  explorerWidth: number;
+  explorerVisible: boolean;
+  explorerDirs: Record<string, EditorDirState>;
+  explorerSelectedPath: string | null;
+  explorerRootPath: string | null;
+  setExplorerWidth: (width: number) => void;
+  setExplorerWidthRaw: (width: number) => void;
+  setExplorerVisible: (visible: boolean) => void;
+  setExplorerDir: (path: string, patch: Partial<EditorDirState>) => void;
+  setExplorerDirs: (dirs: Record<string, EditorDirState>) => void;
+  setExplorerSelectedPath: (path: string | null) => void;
+  setExplorerRootPath: (path: string | null) => void;
 }
 
 let editorViewCounter = 0;
@@ -122,6 +169,9 @@ function resetViews() {
     openFiles: {} as Record<string, EditorOpenFile[]>,
     activeFile: {} as Record<string, string | null>,
     previewFile: {} as Record<string, string | null>,
+    explorerDirs: {} as Record<string, EditorDirState>,
+    explorerSelectedPath: null as string | null,
+    explorerRootPath: null as string | null,
   };
 }
 
@@ -132,6 +182,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   openFiles: {},
   activeFile: {},
   previewFile: {},
+  explorerDirs: {},
+  explorerSelectedPath: null,
+  explorerRootPath: null,
+  ...loadExplorerPrefs(),
 
   connectLocal: (localPath) =>
     set({ connectionType: "local", localPath, ...resetViews() }),
@@ -439,4 +493,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       activeView: resolvedTarget,
     });
   },
+
+  setExplorerWidth: (width) => {
+    const clamped = Math.min(
+      MAX_EXPLORER_WIDTH,
+      Math.max(MIN_EXPLORER_WIDTH, width),
+    );
+    set({ explorerWidth: clamped });
+    try {
+      localStorage.setItem(EXPLORER_WIDTH_KEY, String(clamped));
+    } catch {
+      /* storage unavailable */
+    }
+  },
+
+  setExplorerWidthRaw: (width) => set({ explorerWidth: width }),
+
+  setExplorerVisible: (visible) => {
+    set({ explorerVisible: visible });
+    try {
+      localStorage.setItem(EXPLORER_VISIBLE_KEY, visible ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  },
+
+  setExplorerDir: (path, patch) => {
+    const existing = get().explorerDirs[path] ?? {
+      children: null,
+      expanded: false,
+      error: null,
+    };
+    set({
+      explorerDirs: {
+        ...get().explorerDirs,
+        [path]: { ...existing, ...patch },
+      },
+    });
+  },
+
+  setExplorerDirs: (dirs) => set({ explorerDirs: dirs }),
+
+  setExplorerSelectedPath: (path) => set({ explorerSelectedPath: path }),
+
+  setExplorerRootPath: (path) => set({ explorerRootPath: path }),
 }));

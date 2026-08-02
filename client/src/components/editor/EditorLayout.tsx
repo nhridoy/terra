@@ -56,6 +56,27 @@ function ShapeRefresher() {
 export default function EditorLayout() {
   const setEditorViewDrop = useDragStore((s) => s.setEditorViewDrop);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.includes("Mac");
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+      if (modifier && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+        const target = e.target as HTMLElement | null;
+        if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") {
+          return;
+        }
+        // Capture phase so editors that stopPropagation on keydown
+        // (CodeMirror) cannot swallow the shortcut
+        e.preventDefault();
+        e.stopPropagation();
+        const store = useEditorStore.getState();
+        store.setExplorerVisible(!store.explorerVisible);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   const handleDragStart = (event: DragStartEvent) => {
     const { source } = event.operation;
     if (source?.data?.type === "editor-tab-source") {

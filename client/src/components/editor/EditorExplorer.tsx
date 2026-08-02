@@ -22,7 +22,11 @@ import {
   writeLocalFile,
 } from "../../lib/localFs";
 import type { FileItem } from "../../lib/sftpTypes";
-import { useActiveViewId, useEditorStore } from "../../stores/editorStore";
+import {
+  type EditorDirState,
+  useActiveViewId,
+  useEditorStore,
+} from "../../stores/editorStore";
 import ConfirmDeleteDialog from "../ui/ConfirmDeleteDialog";
 import ContextMenu, { type ContextMenuItem } from "../ui/ContextMenu";
 import PromptDialog from "../ui/PromptDialog";
@@ -31,19 +35,13 @@ interface EditorExplorerProps {
   rootPath: string;
 }
 
-interface DirState {
-  children: FileItem[] | null;
-  expanded: boolean;
-  error: string | null;
-}
-
 interface RenameState {
   path: string;
   name: string;
 }
 
 interface Api {
-  dirs: Record<string, DirState>;
+  dirs: Record<string, EditorDirState>;
   selectedPath: string | null;
   activePath: string | null;
   renaming: RenameState | null;
@@ -265,8 +263,16 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   const activeViewId = useActiveViewId();
   const activePath = useEditorStore((s) => s.activeFile[activeViewId]) ?? null;
 
-  const [dirs, setDirs] = useState<Record<string, DirState>>({});
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const dirs = useEditorStore((s) => s.explorerDirs);
+  const selectedPath = useEditorStore((s) => s.explorerSelectedPath);
+  const explorerRootPath = useEditorStore((s) => s.explorerRootPath);
+  const setExplorerDir = useEditorStore((s) => s.setExplorerDir);
+  const setExplorerDirs = useEditorStore((s) => s.setExplorerDirs);
+  const setExplorerSelectedPath = useEditorStore(
+    (s) => s.setExplorerSelectedPath,
+  );
+  const setExplorerRootPath = useEditorStore((s) => s.setExplorerRootPath);
+
   const [renaming, setRenaming] = useState<RenameState | null>(null);
   const [menu, setMenu] = useState<{
     x: number;
@@ -278,16 +284,12 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   const [deletePath, setDeletePath] = useState<string | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
 
-  const patchDir = useCallback((path: string, patch: Partial<DirState>) => {
-    setDirs((prev) => {
-      const existing = prev[path] ?? {
-        children: null,
-        expanded: false,
-        error: null,
-      };
-      return { ...prev, [path]: { ...existing, ...patch } };
-    });
-  }, []);
+  const patchDir = useCallback(
+    (path: string, patch: Partial<EditorDirState>) => {
+      setExplorerDir(path, patch);
+    },
+    [setExplorerDir],
+  );
 
   const loadDir = useCallback(
     async (path: string) => {
@@ -302,10 +304,7 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
             sensitivity: "base",
           });
         });
-        setDirs((prev) => ({
-          ...prev,
-          [path]: { ...prev[path], children: sorted, error: null },
-        }));
+        patchDir(path, { children: sorted, error: null });
       } catch (err) {
         const message = extractError(err, "Failed to read directory");
         patchDir(path, { children: [], error: message });
@@ -315,27 +314,34 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   );
 
   const resetTree = useCallback(() => {
-    setDirs({});
-    setSelectedPath(null);
+    setExplorerDirs({});
+    setExplorerSelectedPath(null);
     setRenaming(null);
     setMenu(null);
     setDeletePath(null);
-  }, []);
+  }, [setExplorerDirs, setExplorerSelectedPath]);
 
-  // Initialize root when the pane connects
+  // Initialize root when the pane connects (kept in store so the tree
+  // survives unmount when navigating between modules)
   useEffect(() => {
+    if (explorerRootPath === rootPath) return;
     resetTree();
-    setDirs((prev) => ({
-      ...prev,
-      [rootPath]: { children: null, expanded: true, error: null },
-    }));
+    patchDir(rootPath, { children: null, expanded: true, error: null });
     loadDir(rootPath);
-  }, [rootPath, resetTree, loadDir]);
+    setExplorerRootPath(rootPath);
+  }, [
+    rootPath,
+    explorerRootPath,
+    resetTree,
+    patchDir,
+    loadDir,
+    setExplorerRootPath,
+  ]);
 
   // Keep selection in sync with the active editor file
   useEffect(() => {
-    if (activePath) setSelectedPath(activePath);
-  }, [activePath]);
+    if (activePath) setExplorerSelectedPath(activePath);
+  }, [activePath, setExplorerSelectedPath]);
 
   const rootFile = useMemo<FileItem>(
     () => ({
@@ -384,27 +390,25 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   );
 
   const collapseAll = useCallback(() => {
-    setDirs((prev) => {
-      const next: Record<string, DirState> = {};
-      for (const [path, dir] of Object.entries(prev)) {
-        next[path] = { ...dir, expanded: false };
-      }
-      if (next[rootPath]) next[rootPath].expanded = true;
-      return next;
-    });
-  }, [rootPath]);
+    const next: Record<string, EditorDirState> = {};
+    for (const [path, dir] of Object.entries(dirs)) {
+      next[path] = { ...dir, expanded: false };
+    }
+    if (next[rootPath]) next[rootPath].expanded = true;
+    setExplorerDirs(next);
+  }, [dirs, rootPath, setExplorerDirs]);
 
   const handleRowClick = useCallback(
     (file: FileItem) => {
       treeRef.current?.focus();
-      setSelectedPath(file.path);
+      setExplorerSelectedPath(file.path);
       if (file.type === "directory") {
         toggleDir(file.path);
         return;
       }
       openFile(file.path, file.name, true);
     },
-    [openFile, toggleDir],
+    [openFile, toggleDir, setExplorerSelectedPath],
   );
 
   const handleRowDoubleClick = useCallback(
@@ -415,19 +419,25 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
     [openFile],
   );
 
-  const handleRowMenu = useCallback((e: React.MouseEvent, file: FileItem) => {
-    e.preventDefault();
-    e.stopPropagation();
-    treeRef.current?.focus();
-    setSelectedPath(file.path);
-    setMenu({ x: e.clientX, y: e.clientY, file });
-  }, []);
+  const handleRowMenu = useCallback(
+    (e: React.MouseEvent, file: FileItem) => {
+      e.preventDefault();
+      e.stopPropagation();
+      treeRef.current?.focus();
+      setExplorerSelectedPath(file.path);
+      setMenu({ x: e.clientX, y: e.clientY, file });
+    },
+    [setExplorerSelectedPath],
+  );
 
-  const handleBackgroundMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setSelectedPath(null);
-    setMenu({ x: e.clientX, y: e.clientY, file: null });
-  }, []);
+  const handleBackgroundMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setExplorerSelectedPath(null);
+      setMenu({ x: e.clientX, y: e.clientY, file: null });
+    },
+    [setExplorerSelectedPath],
+  );
 
   const startRename = useCallback((file: FileItem) => {
     setRenaming({ path: file.path, name: file.name });
@@ -450,19 +460,24 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
         if (wasActive) {
           openFile(newPath, newName);
         }
-        setSelectedPath(newPath);
+        setExplorerSelectedPath(newPath);
         resetTree();
-        setDirs((prev) => ({
-          ...prev,
-          [rootPath]: { children: null, expanded: true, error: null },
-        }));
+        patchDir(rootPath, { children: null, expanded: true, error: null });
         loadDir(rootPath);
       } catch (err) {
         toast.error(extractError(err, "Failed to rename"));
         setRenaming(null);
       }
     },
-    [activeViewId, openFile, resetTree, rootPath, loadDir],
+    [
+      activeViewId,
+      openFile,
+      resetTree,
+      rootPath,
+      loadDir,
+      setExplorerSelectedPath,
+      patchDir,
+    ],
   );
 
   const confirmNewFile = useCallback(
@@ -509,19 +524,24 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
     try {
       await removeLocalFile(deletePath);
       useEditorStore.getState().closeFileEverywhere(deletePath);
-      if (selectedPath === deletePath) setSelectedPath(null);
+      if (selectedPath === deletePath) setExplorerSelectedPath(null);
       setDeletePath(null);
       resetTree();
-      setDirs((prev) => ({
-        ...prev,
-        [rootPath]: { children: null, expanded: true, error: null },
-      }));
+      patchDir(rootPath, { children: null, expanded: true, error: null });
       loadDir(rootPath);
     } catch (err) {
       toast.error(extractError(err, "Failed to delete"));
       setDeletePath(null);
     }
-  }, [deletePath, selectedPath, resetTree, rootPath, loadDir]);
+  }, [
+    deletePath,
+    selectedPath,
+    setExplorerSelectedPath,
+    resetTree,
+    rootPath,
+    loadDir,
+    patchDir,
+  ]);
 
   const copyPath = useCallback(async (path: string) => {
     try {
@@ -671,7 +691,7 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
 
   if (!isTauriAvailable()) {
     return (
-      <div className="w-72 min-w-40 max-w-[45%] h-full flex flex-col items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
         <FolderIcon className="w-8 h-8 mb-2 text-dark-600" weight="bold" />
         <p className="text-xs text-dark-400">
           Local filesystem requires the desktop app
@@ -683,7 +703,7 @@ export default function EditorExplorer({ rootPath }: EditorExplorerProps) {
   const deleteItem = deletePath ? findItem(deletePath) : null;
 
   return (
-    <div className="w-72 min-w-40 max-w-[45%] h-full flex flex-col bg-dark-900 border-r border-dark-800">
+    <div className="w-full h-full flex flex-col bg-dark-900 border-r border-dark-800">
       {/* Section header */}
       <div className="flex items-center justify-between pl-3 pr-1.5 h-8 border-b border-dark-800 shrink-0">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-dark-300">
