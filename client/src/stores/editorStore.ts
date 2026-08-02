@@ -13,30 +13,41 @@ import {
 
 export const ROOT_VIEW_ID = "editor-view-root";
 
-const EXPLORER_WIDTH_KEY = "editor.explorerWidth";
-const EXPLORER_VISIBLE_KEY = "editor.explorerVisible";
-export const DEFAULT_EXPLORER_WIDTH = 288;
-const MIN_EXPLORER_WIDTH = 160;
-const MAX_EXPLORER_WIDTH = 640;
+const SIDEBAR_WIDTH_KEY = "editor.sidebarWidth";
+const SIDEBAR_VISIBLE_KEY = "editor.sidebarVisible";
+const SIDEBAR_TOOL_KEY = "editor.sidebarTool";
+export const DEFAULT_SIDEBAR_WIDTH = 288;
+const MIN_SIDEBAR_WIDTH = 160;
+const MAX_SIDEBAR_WIDTH = 640;
 
-function loadExplorerPrefs(): {
-  explorerWidth: number;
-  explorerVisible: boolean;
+export type SidebarTool = "explorer" | "search" | "source-control";
+
+function loadSidebarPrefs(): {
+  sidebarWidth: number;
+  sidebarVisible: boolean;
+  sidebarTool: SidebarTool;
 } {
   try {
-    const width = Number(localStorage.getItem(EXPLORER_WIDTH_KEY));
-    const visible = localStorage.getItem(EXPLORER_VISIBLE_KEY);
+    const width = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    const visible = localStorage.getItem(SIDEBAR_VISIBLE_KEY);
+    const tool = localStorage.getItem(SIDEBAR_TOOL_KEY);
     return {
-      explorerWidth:
+      sidebarWidth:
         Number.isFinite(width) &&
-        width >= MIN_EXPLORER_WIDTH &&
-        width <= MAX_EXPLORER_WIDTH
+        width >= MIN_SIDEBAR_WIDTH &&
+        width <= MAX_SIDEBAR_WIDTH
           ? width
-          : DEFAULT_EXPLORER_WIDTH,
-      explorerVisible: visible !== "0",
+          : DEFAULT_SIDEBAR_WIDTH,
+      sidebarVisible: visible !== "0",
+      sidebarTool:
+        tool === "search" || tool === "source-control" ? tool : "explorer",
     };
   } catch {
-    return { explorerWidth: DEFAULT_EXPLORER_WIDTH, explorerVisible: true };
+    return {
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      sidebarVisible: true,
+      sidebarTool: "explorer",
+    };
   }
 }
 
@@ -122,14 +133,16 @@ interface EditorState {
     side?: DropSide | null,
   ) => void;
 
-  explorerWidth: number;
-  explorerVisible: boolean;
+  sidebarWidth: number;
+  sidebarVisible: boolean;
+  sidebarTool: SidebarTool;
   explorerDirs: Record<string, EditorDirState>;
   explorerSelectedPath: string | null;
   explorerRootPath: string | null;
-  setExplorerWidth: (width: number) => void;
-  setExplorerWidthRaw: (width: number) => void;
-  setExplorerVisible: (visible: boolean) => void;
+  setSidebarWidth: (width: number) => void;
+  setSidebarWidthRaw: (width: number) => void;
+  setSidebarVisible: (visible: boolean) => void;
+  setSidebarTool: (tool: SidebarTool) => void;
   setExplorerDir: (path: string, patch: Partial<EditorDirState>) => void;
   setExplorerDirs: (dirs: Record<string, EditorDirState>) => void;
   setExplorerSelectedPath: (path: string | null) => void;
@@ -185,7 +198,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   explorerDirs: {},
   explorerSelectedPath: null,
   explorerRootPath: null,
-  ...loadExplorerPrefs(),
+  ...loadSidebarPrefs(),
 
   connectLocal: (localPath) =>
     set({ connectionType: "local", localPath, ...resetViews() }),
@@ -494,25 +507,34 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  setExplorerWidth: (width) => {
+  setSidebarWidth: (width) => {
     const clamped = Math.min(
-      MAX_EXPLORER_WIDTH,
-      Math.max(MIN_EXPLORER_WIDTH, width),
+      MAX_SIDEBAR_WIDTH,
+      Math.max(MIN_SIDEBAR_WIDTH, width),
     );
-    set({ explorerWidth: clamped });
+    set({ sidebarWidth: clamped });
     try {
-      localStorage.setItem(EXPLORER_WIDTH_KEY, String(clamped));
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped));
     } catch {
       /* storage unavailable */
     }
   },
 
-  setExplorerWidthRaw: (width) => set({ explorerWidth: width }),
+  setSidebarWidthRaw: (width) => set({ sidebarWidth: width }),
 
-  setExplorerVisible: (visible) => {
-    set({ explorerVisible: visible });
+  setSidebarVisible: (visible) => {
+    set({ sidebarVisible: visible });
     try {
-      localStorage.setItem(EXPLORER_VISIBLE_KEY, visible ? "1" : "0");
+      localStorage.setItem(SIDEBAR_VISIBLE_KEY, visible ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  },
+
+  setSidebarTool: (tool) => {
+    set({ sidebarTool: tool });
+    try {
+      localStorage.setItem(SIDEBAR_TOOL_KEY, tool);
     } catch {
       /* storage unavailable */
     }

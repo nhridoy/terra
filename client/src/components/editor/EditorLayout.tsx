@@ -70,7 +70,7 @@ export default function EditorLayout() {
         e.preventDefault();
         e.stopPropagation();
         const store = useEditorStore.getState();
-        store.setExplorerVisible(!store.explorerVisible);
+        store.setSidebarVisible(!store.sidebarVisible);
       }
     };
     window.addEventListener("keydown", onKeyDown, true);

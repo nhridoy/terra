@@ -2,14 +2,16 @@ import {
   CodeIcon,
   DesktopTowerIcon,
   FolderIcon,
+  MagnifyingGlassIcon,
   SidebarSimpleIcon,
 } from "@phosphor-icons/react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../lib/extractError";
 import { openDirectoryPicker } from "../../lib/localFs";
 import {
-  DEFAULT_EXPLORER_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+  type SidebarTool,
   useEditorStore,
 } from "../../stores/editorStore";
 import type { Host } from "../../stores/hostStore";
@@ -17,17 +19,20 @@ import SftpHostPicker from "../sftp/SftpHostPicker";
 import { Button } from "../ui/Button";
 import Modal from "../ui/Modal";
 import PaneHeader from "../ui/PaneHeader";
+import ActivityBar from "./ActivityBar";
 import EditorExplorer from "./EditorExplorer";
+import EditorSearch from "./EditorSearch";
 import EditorViewTree from "./EditorViewTree";
+import SourceControlPanel from "./SourceControlPanel";
 
 const COLLAPSE_THRESHOLD = 48;
 
-function ExplorerResizer() {
-  const width = useEditorStore((s) => s.explorerWidth);
-  const visible = useEditorStore((s) => s.explorerVisible);
-  const setExplorerWidth = useEditorStore((s) => s.setExplorerWidth);
-  const setExplorerWidthRaw = useEditorStore((s) => s.setExplorerWidthRaw);
-  const setExplorerVisible = useEditorStore((s) => s.setExplorerVisible);
+function SidebarResizer() {
+  const width = useEditorStore((s) => s.sidebarWidth);
+  const visible = useEditorStore((s) => s.sidebarVisible);
+  const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth);
+  const setSidebarWidthRaw = useEditorStore((s) => s.setSidebarWidthRaw);
+  const setSidebarVisible = useEditorStore((s) => s.setSidebarVisible);
   const dragRef = useRef<{
     startX: number;
     startWidth: number;
@@ -54,18 +59,18 @@ function ExplorerResizer() {
     if (drag.startVisible) {
       const next = drag.startWidth + delta;
       if (next <= COLLAPSE_THRESHOLD) {
-        setExplorerVisible(false);
-        setExplorerWidthRaw(DEFAULT_EXPLORER_WIDTH);
+        setSidebarVisible(false);
+        setSidebarWidthRaw(DEFAULT_SIDEBAR_WIDTH);
       } else {
-        setExplorerWidthRaw(next);
+        setSidebarWidthRaw(next);
       }
     } else if (openedRef.current && delta <= COLLAPSE_THRESHOLD) {
-      setExplorerVisible(false);
-      setExplorerWidthRaw(DEFAULT_EXPLORER_WIDTH);
+      setSidebarVisible(false);
+      setSidebarWidthRaw(DEFAULT_SIDEBAR_WIDTH);
     } else if (delta >= COLLAPSE_THRESHOLD) {
       openedRef.current = true;
-      setExplorerVisible(true);
-      setExplorerWidthRaw(delta);
+      setSidebarVisible(true);
+      setSidebarWidthRaw(delta);
     }
   };
 
@@ -73,7 +78,7 @@ function ExplorerResizer() {
     dragRef.current = null;
     openedRef.current = false;
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    setExplorerWidth(useEditorStore.getState().explorerWidth);
+    setSidebarWidth(useEditorStore.getState().sidebarWidth);
   };
 
   return (
@@ -83,9 +88,7 @@ function ExplorerResizer() {
       aria-orientation="vertical"
       aria-valuenow={visible ? width : 0}
       tabIndex={-1}
-      title={
-        visible ? "Drag to resize Explorer" : "Drag right to show Explorer"
-      }
+      title={visible ? "Drag to resize Sidebar" : "Drag right to show Sidebar"}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -108,9 +111,11 @@ export default function EditorPane() {
   const connectLocal = useEditorStore((s) => s.connectLocal);
   const connectHost = useEditorStore((s) => s.connectHost);
   const disconnect = useEditorStore((s) => s.disconnect);
-  const explorerWidth = useEditorStore((s) => s.explorerWidth);
-  const explorerVisible = useEditorStore((s) => s.explorerVisible);
-  const setExplorerVisible = useEditorStore((s) => s.setExplorerVisible);
+  const sidebarWidth = useEditorStore((s) => s.sidebarWidth);
+  const sidebarVisible = useEditorStore((s) => s.sidebarVisible);
+  const sidebarTool = useEditorStore((s) => s.sidebarTool);
+  const setSidebarVisible = useEditorStore((s) => s.setSidebarVisible);
+  const setSidebarTool = useEditorStore((s) => s.setSidebarTool);
   const [showHostPicker, setShowHostPicker] = useState(false);
 
   const isHost = connectionType === "host";
@@ -133,6 +138,18 @@ export default function EditorPane() {
     }
   };
 
+  const handleToolSelect = useCallback(
+    (tool: SidebarTool) => {
+      if (sidebarTool === tool && sidebarVisible) {
+        setSidebarVisible(false);
+      } else {
+        setSidebarVisible(true);
+        setSidebarTool(tool);
+      }
+    },
+    [sidebarTool, sidebarVisible, setSidebarVisible, setSidebarTool],
+  );
+
   return (
     <section
       aria-label={displayName}
@@ -151,13 +168,13 @@ export default function EditorPane() {
               size="icon-xs"
               onClick={(e) => {
                 e.stopPropagation();
-                setExplorerVisible(!explorerVisible);
+                setSidebarVisible(!sidebarVisible);
               }}
-              className={`rounded ${explorerVisible ? "" : "text-primary-400"}`}
+              className={`rounded ${sidebarVisible ? "" : "text-primary-400"}`}
               title={
-                explorerVisible
-                  ? "Hide Explorer (Ctrl+B)"
-                  : "Show Explorer (Ctrl+B)"
+                sidebarVisible
+                  ? "Hide Sidebar (Ctrl+B)"
+                  : "Show Sidebar (Ctrl+B)"
               }
             >
               <SidebarSimpleIcon className="w-3.5 h-3.5" weight="bold" />
@@ -169,35 +186,57 @@ export default function EditorPane() {
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {connectionType === "local" && localPath ? (
           <div className="flex h-full min-h-0 min-w-0">
-            <div
-              style={{ width: explorerWidth }}
-              className={`h-full shrink-0 min-w-0 ${
-                explorerVisible ? "" : "hidden"
-              }`}
-            >
-              <EditorExplorer rootPath={localPath} />
-            </div>
-            <ExplorerResizer />
+            <ActivityBar active={sidebarTool} onSelect={handleToolSelect} />
+            {sidebarVisible && (
+              <div
+                style={{ width: sidebarWidth }}
+                className="h-full shrink-0 min-w-0"
+              >
+                {sidebarTool === "search" ? (
+                  <EditorSearch />
+                ) : sidebarTool === "source-control" ? (
+                  <SourceControlPanel />
+                ) : (
+                  <EditorExplorer rootPath={localPath} />
+                )}
+              </div>
+            )}
+            <SidebarResizer />
             <EditorViewTree />
           </div>
         ) : connectionType === "host" ? (
           <div className="flex h-full min-h-0 min-w-0">
-            <div
-              style={{ width: explorerWidth }}
-              className={`h-full shrink-0 min-w-0 ${
-                explorerVisible ? "" : "hidden"
-              }`}
-            >
-              <div className="w-full h-full flex items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
-                <div>
-                  <DesktopTowerIcon className="w-8 h-8 mx-auto mb-2 text-dark-600" />
-                  <p className="text-xs text-dark-400">
-                    Remote explorer arrives with the SFTP transport phase
-                  </p>
-                </div>
+            <ActivityBar active={sidebarTool} onSelect={handleToolSelect} />
+            {sidebarVisible && (
+              <div
+                style={{ width: sidebarWidth }}
+                className="h-full shrink-0 min-w-0"
+              >
+                {sidebarTool === "search" ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
+                    <MagnifyingGlassIcon
+                      className="w-8 h-8 mb-2 text-dark-600"
+                      weight="bold"
+                    />
+                    <p className="text-xs text-dark-400">
+                      Search arrives with the SFTP transport phase
+                    </p>
+                  </div>
+                ) : sidebarTool === "source-control" ? (
+                  <SourceControlPanel />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-dark-900 border-r border-dark-800 px-4 text-center">
+                    <div>
+                      <DesktopTowerIcon className="w-8 h-8 mx-auto mb-2 text-dark-600" />
+                      <p className="text-xs text-dark-400">
+                        Remote explorer arrives with the SFTP transport phase
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            <ExplorerResizer />
+            )}
+            <SidebarResizer />
             <EditorViewTree />
           </div>
         ) : (
