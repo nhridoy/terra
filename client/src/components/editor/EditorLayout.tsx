@@ -110,7 +110,14 @@ export default function EditorLayout() {
       const path = String(source.data.path);
       const name = String(source.data.name);
 
-      if (target?.data?.type === "editor-view") {
+      if (target?.data?.type === "editor-view-tabbar") {
+        const targetViewId = String(target.data.viewId);
+        if (targetViewId !== sourceViewId) {
+          useEditorStore
+            .getState()
+            .moveFileToView(sourceViewId, targetViewId, path, name, null);
+        }
+      } else if (target?.data?.type === "editor-view") {
         const targetViewId = String(target.data.viewId);
         const isSelfDrop =
           useEditorStore.getState().activeFile[targetViewId] === path;

@@ -1,6 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import { closestCenter } from "@dnd-kit/collision";
+import { CollisionPriority } from "@dnd-kit/abstract";
+import { closestCenter, pointerIntersection } from "@dnd-kit/collision";
 import { useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import {
@@ -72,6 +73,16 @@ export default function EditorView({
   const droppable = useDroppable({
     id: `editor-file-drop-${viewId}`,
     data: { type: "editor-file-drop", viewId },
+  });
+
+  const tabbarDrop = useDroppable({
+    id: `editor-view-tabbar:${viewId}`,
+    data: { type: "editor-view-tabbar", viewId },
+    accept: (draggable) =>
+      draggable.data?.type === "editor-tab-source" &&
+      String(draggable.data.viewId) !== viewId,
+    collisionDetector: pointerIntersection,
+    collisionPriority: CollisionPriority.High,
   });
 
   const detail = isHost
@@ -215,8 +226,11 @@ export default function EditorView({
       ) : (
         <>
           <div
+            ref={tabbarDrop.ref}
             role="tablist"
-            className="flex items-stretch gap-0.5 px-2 pt-1.5 bg-dark-900 border-b border-dark-700 overflow-x-auto shrink-0"
+            className={`flex items-stretch gap-0.5 px-2 pt-1.5 border-b border-dark-700 overflow-x-auto shrink-0 ${
+              tabbarDrop.isDropTarget ? "bg-primary-500/10" : "bg-dark-900"
+            }`}
           >
             {openFiles.map((f, index) => (
               <SortableFileTab
