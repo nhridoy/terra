@@ -470,12 +470,16 @@ function SortableFileTab({
   const { ref, isDragging } = useSortable({
     id: `editor-file-tab:${viewId}:${file.path}`,
     index,
+    group: viewId,
     data: {
       type: "editor-tab-source",
       viewId,
       path: file.path,
       name: file.name,
     },
+    accept: (draggable) =>
+      draggable.data?.type === "editor-tab-source" &&
+      String(draggable.data.viewId) === viewId,
     collisionDetector: closestCenter,
   });
 
