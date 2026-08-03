@@ -20,6 +20,8 @@ pub struct GitChange {
     pub worktree_status: String,
     pub staged: bool,
     pub untracked: bool,
+    /// True when the file is in an unmerged state (merge/rebase conflict).
+    pub conflict: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -109,6 +111,7 @@ fn run_git_timeout(
 
     let read_only = match args.first().map(|a| a.as_ref()) {
         Some("status") | Some("rev-parse") | Some("rev-list") | Some("show") => true,
+        Some("ls-files") => true,
         // `git branch -a` lists branches; `git branch -d` deletes
         Some("branch") => args.contains(&"-a"),
         // `git stash list` is read-only; push/pop/apply/drop are writes
@@ -241,6 +244,10 @@ fn parse_status(data: &str) -> (Vec<GitChange>, bool) {
             let worktree_status = xy.as_bytes()[1] as char;
             let staged = index_status != ' ' && index_status != '?';
             let untracked = index_status == '?' && worktree_status == '?';
+            // Unmerged states: UU, AA, DD, AU, UA, DU, UD
+            let conflict = (index_status == 'U' || worktree_status == 'U')
+                || (index_status == 'A' && worktree_status == 'A')
+                || (index_status == 'D' && worktree_status == 'D');
             // Rename/copy entries carry the original path in the next field
             if index_status == 'R' || index_status == 'C' {
                 i += 1;
@@ -251,6 +258,7 @@ fn parse_status(data: &str) -> (Vec<GitChange>, bool) {
                 worktree_status: worktree_status.to_string(),
                 staged,
                 untracked,
+                conflict,
             });
         }
         i += 1;
@@ -615,6 +623,127 @@ pub async fn git_show_file(
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
+}
+
+#[derive(serde::Serialize)]
+pub struct GitConflictStages {
+    /// Merge base (stage 1) — `None` when missing or too large to display.
+    pub base: Option<String>,
+    /// Our version (stage 2).
+    pub ours: Option<String>,
+    /// Their version (stage 3).
+    pub theirs: Option<String>,
+}
+
+/// Fetch the stage contents for an unmerged path. Returns `None` when the
+/// path is not currently in a conflicted state.
+#[tauri::command]
+pub async fn git_conflict_stages(
+    root: String,
+    path: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<Option<GitConflictStages>, String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let rel = repo_relative(&root, &path)?;
+        let out = run_git(&root, &["ls-files", "-u", "-z", "--", &rel])?;
+        require_success(&out, "Check conflict state")?;
+        if out.stdout.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(GitConflictStages {
+            base: show_stage_text(&root, &rel, '1'),
+            ours: show_stage_text(&root, &rel, '2'),
+            theirs: show_stage_text(&root, &rel, '3'),
+        }))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Resolve a conflicted file: `ours`, `theirs`, or `both` (concatenated).
+/// Always stages the result, which removes the file from the unmerged list.
+#[tauri::command]
+pub async fn git_resolve_conflict(
+    root: String,
+    path: String,
+    mode: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    if !matches!(mode.as_str(), "ours" | "theirs" | "both") {
+        return Err(format!("Unknown resolve mode: {mode}"));
+    }
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let rel = repo_relative(&root, &path)?;
+        match mode.as_str() {
+            "ours" => {
+                let out = run_git(&root, &["checkout", "--ours", "--", &rel])?;
+                require_success(&out, "Accept ours")?;
+            }
+            "theirs" => {
+                let out = run_git(&root, &["checkout", "--theirs", "--", &rel])?;
+                require_success(&out, "Accept theirs")?;
+            }
+            "both" => {
+                let ours = show_stage_bytes(&root, &rel, '2');
+                let theirs = show_stage_bytes(&root, &rel, '3');
+                if ours.is_none() && theirs.is_none() {
+                    return Err(
+                        "File is deleted on both sides — nothing to keep".to_string(),
+                    );
+                }
+                let combined = match (ours, theirs) {
+                    (Some(mut a), Some(b)) => {
+                        a.push(b'\n');
+                        a.extend_from_slice(&b);
+                        a
+                    }
+                    (Some(a), None) => a,
+                    (None, Some(b)) => b,
+                    (None, None) => unreachable!(),
+                };
+                let abs = Path::new(root.trim_end_matches(['/', '\\'])).join(&rel);
+                std::fs::write(&abs, combined).map_err(|e| {
+                    format!("Failed to write resolved file: {e}")
+                })?;
+            }
+            _ => unreachable!(),
+        }
+        let out = run_git(&root, &["add", "--", &rel])?;
+        require_success(&out, "Stage resolution")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Read a single index stage (`1`/`2`/`3`) as text for display. Returns `None`
+/// when the stage is missing, binary, or too large.
+fn show_stage_text(root: &str, rel: &str, stage: char) -> Option<String> {
+    let bytes = show_stage_bytes(root, rel, stage)?;
+    if bytes.contains(&0) {
+        return None; // binary content
+    }
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Read a single index stage (`1`/`2`/`3`) as raw bytes. Returns `None` when
+/// the stage is missing or too large.
+fn show_stage_bytes(root: &str, rel: &str, stage: char) -> Option<Vec<u8>> {
+    let out = run_git(root, &["show", &format!(":{stage}:{rel}")]).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    if out.stdout.len() > GIT_FILE_CAP_BYTES {
+        return None;
+    }
+    Some(out.stdout)
 }
 
 /// Pull the current branch from its upstream, fast-forward only.

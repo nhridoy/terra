@@ -28,6 +28,7 @@ interface GitChange {
   worktree_status: string;
   staged: boolean;
   untracked: boolean;
+  conflict: boolean;
 }
 
 interface GitStatus {
@@ -86,7 +87,11 @@ function ChangeRow({
       <button
         type="button"
         onClick={onOpen}
-        title={`Open ${fileName(change.path)}`}
+        title={
+          change.conflict
+            ? `Resolve conflict in ${fileName(change.path)}`
+            : `Open ${fileName(change.path)}`
+        }
         className="flex flex-1 items-center gap-1.5 min-w-0 text-left"
       >
         {getFileIcon(
@@ -106,44 +111,15 @@ function ChangeRow({
         <span className="text-[11px] text-dark-200 truncate min-w-0">
           {change.path}
         </span>
+        {change.conflict && (
+          <span className="text-[9px] font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded px-1 py-px uppercase tracking-wide shrink-0">
+            Conflict
+          </span>
+        )}
       </button>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        {change.untracked ? (
-          <button
-            type="button"
-            title="Stage changes"
-            aria-label={`Stage ${change.path}`}
-            disabled={busy}
-            onClick={onStage}
-            className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
-          >
-            <PlusIcon className="w-3.5 h-3.5" />
-          </button>
-        ) : change.staged ? (
-          <>
-            <button
-              type="button"
-              title="Unstage changes"
-              aria-label={`Unstage ${change.path}`}
-              disabled={busy}
-              onClick={onUnstage}
-              className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
-            >
-              <ArrowUUpLeftIcon className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              title="Discard changes"
-              aria-label={`Discard changes in ${change.path}`}
-              disabled={busy}
-              onClick={onDiscard}
-              className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40"
-            >
-              <ArrowCounterClockwiseIcon className="w-3.5 h-3.5" />
-            </button>
-          </>
-        ) : (
-          <>
+      {!change.conflict && (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          {change.untracked ? (
             <button
               type="button"
               title="Stage changes"
@@ -154,19 +130,55 @@ function ChangeRow({
             >
               <PlusIcon className="w-3.5 h-3.5" />
             </button>
-            <button
-              type="button"
-              title="Discard changes"
-              aria-label={`Discard changes in ${change.path}`}
-              disabled={busy}
-              onClick={onDiscard}
-              className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40"
-            >
-              <ArrowCounterClockwiseIcon className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
-      </div>
+          ) : change.staged ? (
+            <>
+              <button
+                type="button"
+                title="Unstage changes"
+                aria-label={`Unstage ${change.path}`}
+                disabled={busy}
+                onClick={onUnstage}
+                className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+              >
+                <ArrowUUpLeftIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Discard changes"
+                aria-label={`Discard changes in ${change.path}`}
+                disabled={busy}
+                onClick={onDiscard}
+                className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40"
+              >
+                <ArrowCounterClockwiseIcon className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                title="Stage changes"
+                aria-label={`Stage ${change.path}`}
+                disabled={busy}
+                onClick={onStage}
+                className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+              >
+                <PlusIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Discard changes"
+                aria-label={`Discard changes in ${change.path}`}
+                disabled={busy}
+                onClick={onDiscard}
+                className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40"
+              >
+                <ArrowCounterClockwiseIcon className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

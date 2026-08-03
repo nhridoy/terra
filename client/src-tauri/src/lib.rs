@@ -829,6 +829,8 @@ pub fn run() {
             git::git_create_branch,
             git::git_delete_branch,
             git::git_show_file,
+            git::git_conflict_stages,
+            git::git_resolve_conflict,
             git::git_pull,
             git::git_push,
             git::git_publish,
