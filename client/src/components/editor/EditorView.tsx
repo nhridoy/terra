@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { keymap } from "@codemirror/view";
+import { EditorView as CodeMirrorView, keymap } from "@codemirror/view";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { closestCenter, pointerIntersection } from "@dnd-kit/collision";
 import { useDroppable } from "@dnd-kit/react";
@@ -69,6 +69,54 @@ export default function EditorView({
   const [readError, setReadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<"code" | "preview">("code");
+  const revealRequest = useEditorStore((s) => s.revealRequest);
+  const setRevealRequest = useEditorStore((s) => s.setRevealRequest);
+  const [editorView, setEditorView] = useState<CodeMirrorView | null>(null);
+
+  const handleCreate = useCallback((view: CodeMirrorView) => {
+    setEditorView(view);
+  }, []);
+
+  useEffect(() => {
+    if (!revealRequest || revealRequest.path !== activePath) return;
+    if (content === null || editorView === null) return;
+    const kind = classifyFilePath(activePath ?? "");
+    const dual = dualModeFor(activePath ?? "");
+    if (kind !== "code") {
+      setRevealRequest(null);
+      return;
+    }
+    if (dual === "markdown" && viewMode === "preview") {
+      setViewMode("code");
+      return;
+    }
+    if (dual === "svg") {
+      setRevealRequest(null);
+      return;
+    }
+    try {
+      const docLine = editorView.state.doc.line(
+        Math.max(1, revealRequest.line),
+      );
+      const column = Math.min(revealRequest.column ?? 0, docLine.length);
+      const pos = docLine.from + column;
+      editorView.dispatch({
+        selection: { anchor: pos, head: pos },
+        effects: [CodeMirrorView.scrollIntoView(pos, { y: "center" })],
+      });
+      editorView.focus();
+    } catch {
+      // line out of range — nothing to reveal
+    }
+    setRevealRequest(null);
+  }, [
+    revealRequest,
+    activePath,
+    content,
+    editorView,
+    setRevealRequest,
+    viewMode,
+  ]);
 
   const droppable = useDroppable({
     id: `editor-file-drop-${viewId}`,
@@ -402,6 +450,7 @@ export default function EditorView({
                 basicSetup={false}
                 theme={editorTheme.theme}
                 extensions={extensions}
+                onCreateEditor={handleCreate}
                 onChange={(value) => {
                   setContent(value);
                   if (activePath) {

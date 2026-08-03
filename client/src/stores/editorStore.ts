@@ -107,6 +107,14 @@ interface EditorState {
 
   openFile: (path: string, name: string, isPreview?: boolean) => void;
   closeFile: (path: string) => void;
+  revealRequest: {
+    path: string;
+    line: number;
+    column?: number;
+  } | null;
+  setRevealRequest: (
+    request: { path: string; line: number; column?: number } | null,
+  ) => void;
   closeFileEverywhere: (path: string) => void;
   makeFilePermanent: (path: string) => void;
   setActiveFile: (path: string | null) => void;
@@ -188,6 +196,11 @@ function resetViews() {
     explorerDirs: {} as Record<string, EditorDirState>,
     explorerSelectedPath: null as string | null,
     explorerRootPath: null as string | null,
+    revealRequest: null as {
+      path: string;
+      line: number;
+      column?: number;
+    } | null,
   };
 }
 
@@ -202,6 +215,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   explorerSelectedPath: null,
   explorerRootPath: null,
   quickOpenOpen: false,
+  revealRequest: null,
   ...loadSidebarPrefs(),
 
   connectLocal: (localPath) =>
@@ -545,6 +559,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setQuickOpenOpen: (open) => set({ quickOpenOpen: open }),
+
+  setRevealRequest: (request) => set({ revealRequest: request }),
 
   setExplorerDir: (path, patch) => {
     const existing = get().explorerDirs[path] ?? {
