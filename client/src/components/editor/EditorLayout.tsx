@@ -16,6 +16,7 @@ import type { DropSide } from "../../lib/paneLayout";
 import { useDragStore } from "../../stores/dragStore";
 import { useEditorStore } from "../../stores/editorStore";
 import EditorPane from "./EditorPane";
+import QuickOpen from "./QuickOpen";
 
 type Manager = ReturnType<typeof useDragDropManager>;
 
@@ -55,11 +56,19 @@ function ShapeRefresher() {
 
 export default function EditorLayout() {
   const setEditorViewDrop = useDragStore((s) => s.setEditorViewDrop);
+  const quickOpenOpen = useEditorStore((s) => s.quickOpenOpen);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.includes("Mac");
       const modifier = isMac ? e.metaKey : e.ctrlKey;
+      if (modifier && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
+        // Quick open works from any focus, like VS Code, so no target check
+        e.preventDefault();
+        e.stopPropagation();
+        useEditorStore.getState().setQuickOpenOpen(true);
+        return;
+      }
       if (modifier && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
         const target = e.target as HTMLElement | null;
         if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") {
@@ -202,6 +211,8 @@ export default function EditorLayout() {
       <div className="flex-1 relative bg-dark-900 overflow-hidden">
         <EditorPane />
       </div>
+
+      {quickOpenOpen && <QuickOpen />}
 
       <DragOverlay dropAnimation={null}>
         {(source) => {

@@ -143,6 +143,9 @@ interface EditorState {
   setSidebarWidthRaw: (width: number) => void;
   setSidebarVisible: (visible: boolean) => void;
   setSidebarTool: (tool: SidebarTool) => void;
+
+  quickOpenOpen: boolean;
+  setQuickOpenOpen: (open: boolean) => void;
   setExplorerDir: (path: string, patch: Partial<EditorDirState>) => void;
   setExplorerDirs: (dirs: Record<string, EditorDirState>) => void;
   setExplorerSelectedPath: (path: string | null) => void;
@@ -198,6 +201,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   explorerDirs: {},
   explorerSelectedPath: null,
   explorerRootPath: null,
+  quickOpenOpen: false,
   ...loadSidebarPrefs(),
 
   connectLocal: (localPath) =>
@@ -539,6 +543,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       /* storage unavailable */
     }
   },
+
+  setQuickOpenOpen: (open) => set({ quickOpenOpen: open }),
 
   setExplorerDir: (path, patch) => {
     const existing = get().explorerDirs[path] ?? {
