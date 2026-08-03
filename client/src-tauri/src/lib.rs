@@ -829,6 +829,14 @@ pub fn run() {
             git::git_create_branch,
             git::git_delete_branch,
             git::git_show_file,
+            git::git_pull,
+            git::git_push,
+            git::git_publish,
+            git::git_stash_list,
+            git::git_stash_push,
+            git::git_stash_pop,
+            git::git_stash_apply,
+            git::git_stash_drop,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

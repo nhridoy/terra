@@ -1,13 +1,17 @@
 import {
+  ArchiveIcon,
   ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
   CaretDownIcon,
   CheckIcon,
+  CloudArrowDownIcon,
+  CloudArrowUpIcon,
   GitBranchIcon,
   GitCommitIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   TrashIcon,
+  UploadSimpleIcon,
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
@@ -28,10 +32,16 @@ interface GitChange {
 
 interface GitStatus {
   branch: string | null;
+  upstream: string | null;
   ahead: number;
   behind: number;
   changes: GitChange[];
   truncated: boolean;
+}
+
+interface GitStash {
+  reference: string;
+  subject: string;
 }
 
 interface GitBranch {
@@ -216,6 +226,9 @@ export default function SourceControlPanel() {
   const bumpStatusVersion = useEditorStore((s) => s.bumpStatusVersion);
 
   const [status, setStatus] = useState<GitStatus | null>(null);
+  const [stashes, setStashes] = useState<GitStash[]>([]);
+  const [stashInputOpen, setStashInputOpen] = useState(false);
+  const [stashMessage, setStashMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -230,16 +243,19 @@ export default function SourceControlPanel() {
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const result = await invoke<GitStatus>("git_status", {
-          root: localPath,
-        });
+        const [result, stashResult] = await Promise.all([
+          invoke<GitStatus>("git_status", { root: localPath }),
+          invoke<GitStash[]>("git_stash_list", { root: localPath }),
+        ]);
         if (id === requestIdRef.current) {
           setStatus(result);
+          setStashes(stashResult);
           bumpStatusVersion();
         }
       } catch (err) {
         if (id === requestIdRef.current) {
           setStatus(null);
+          setStashes([]);
           setError(extractError(err, "Unable to load git status"));
         }
       } finally {
@@ -382,6 +398,30 @@ export default function SourceControlPanel() {
       : true,
   );
 
+  const doStash = () => {
+    if (busy) return;
+    const text = stashMessage.trim();
+    void runAction("git_stash_push", { message: text }).then(() => {
+      setStashInputOpen(false);
+      setStashMessage("");
+    });
+  };
+
+  const popStash = () => {
+    if (busy || stashes.length === 0) return;
+    void runAction("git_stash_pop", {});
+  };
+
+  const dropStash = async (stash: GitStash) => {
+    if (busy) return;
+    const confirmed = await tauriConfirm(
+      `Drop stash "${stash.subject}"? This cannot be undone.`,
+      { title: "Drop Stash", kind: "warning" },
+    );
+    if (confirmed)
+      void runAction("git_stash_drop", { reference: stash.reference });
+  };
+
   const changes = status?.changes ?? [];
   const staged = changes.filter((c) => c.staged);
   const modified = changes.filter((c) => !c.staged && !c.untracked);
@@ -448,6 +488,49 @@ export default function SourceControlPanel() {
               }`}
             />
           </button>
+          {status.branch && status.upstream && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title="Pull latest changes from upstream"
+                aria-label="Pull from upstream"
+                disabled={busy}
+                onClick={() => void runAction("git_pull", {})}
+                className="flex items-center gap-1 px-1.5 h-6 rounded text-[10px] text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+              >
+                <CloudArrowDownIcon className="w-3 h-3" />
+                Pull
+              </button>
+              <button
+                type="button"
+                title="Push commits to upstream"
+                aria-label="Push to upstream"
+                disabled={busy}
+                onClick={() => void runAction("git_push", {})}
+                className="flex items-center gap-1 px-1.5 h-6 rounded text-[10px] text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+              >
+                <CloudArrowUpIcon className="w-3 h-3" />
+                Push
+              </button>
+            </div>
+          )}
+          {status.branch && !status.upstream && (
+            <button
+              type="button"
+              title="Publish this branch to the first configured remote"
+              aria-label="Publish branch"
+              disabled={busy}
+              onClick={() =>
+                void runAction("git_publish", {
+                  branch: status.branch,
+                })
+              }
+              className="flex items-center gap-1 px-1.5 h-6 rounded text-[10px] text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+            >
+              <UploadSimpleIcon className="w-3 h-3" />
+              Publish
+            </button>
+          )}
           {branchesOpen && (
             <div className="border border-dark-700 rounded bg-dark-950 overflow-hidden">
               <div className="flex items-center gap-1.5 px-2 h-7 border-b border-dark-800">
@@ -602,6 +685,52 @@ export default function SourceControlPanel() {
               No staged changes &mdash; stage files below to commit.
             </p>
           )}
+          <div className="border-t border-dark-800 pt-2">
+            <button
+              type="button"
+              title="Stash all changes, including untracked files"
+              aria-label="Stash changes"
+              disabled={
+                busy || modified.length + staged.length + untracked.length === 0
+              }
+              onClick={() => setStashInputOpen((open) => !open)}
+              className="flex items-center gap-1 px-1.5 h-6 rounded text-[10px] text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+            >
+              <ArchiveIcon className="w-3 h-3" />
+              Stash
+            </button>
+            {stashInputOpen && (
+              <div className="flex items-center gap-0.5 mt-1.5">
+                <input
+                  value={stashMessage}
+                  onChange={(e) => setStashMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") doStash();
+                    if (e.key === "Escape") {
+                      setStashInputOpen(false);
+                      setStashMessage("");
+                    }
+                  }}
+                  placeholder="Stash message (Enter to stash)"
+                  aria-label="Stash message"
+                  ref={(el) => {
+                    if (el) el.focus();
+                  }}
+                  className="flex-1 min-w-0 h-7 bg-dark-950 border border-dark-700 focus:border-primary-500 rounded px-2 text-xs text-white placeholder:text-dark-500 outline-none"
+                />
+                <button
+                  type="button"
+                  title="Create stash"
+                  aria-label="Create stash"
+                  disabled={busy}
+                  onClick={doStash}
+                  className="p-1.5 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-30"
+                >
+                  <CheckIcon className="w-4 h-4" weight="bold" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -738,7 +867,63 @@ export default function SourceControlPanel() {
                 />
               ))}
             </ChangeSection>
-            {changes.length === 0 && (
+            {stashes.length > 0 && (
+              <div className="mt-1 border-t border-dark-800 pt-1.5">
+                <div className="flex items-center justify-between px-3 py-1">
+                  <span className="text-[10px] font-medium text-dark-500 uppercase tracking-wide">
+                    Stashed Changes
+                  </span>
+                  <span className="text-[10px] text-dark-500">
+                    {stashes.length}
+                  </span>
+                </div>
+                {stashes.map((stash) => (
+                  <div
+                    key={stash.reference}
+                    className="group flex items-center gap-1.5 px-3 h-7 hover:bg-dark-800/70 min-w-0"
+                  >
+                    <button
+                      type="button"
+                      title="Apply stash"
+                      aria-label={`Apply stash ${stash.reference}`}
+                      disabled={busy}
+                      onClick={() =>
+                        void runAction("git_stash_apply", {
+                          reference: stash.reference,
+                        })
+                      }
+                      className="flex flex-1 items-center gap-1.5 min-w-0 text-left"
+                    >
+                      <ArchiveIcon className="w-3.5 h-3.5 text-dark-500 shrink-0" />
+                      <span className="text-[11px] text-dark-200 truncate min-w-0">
+                        {stash.subject || stash.reference}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      title="Pop stash (apply and remove)"
+                      aria-label={`Pop stash ${stash.reference}`}
+                      disabled={busy}
+                      onClick={popStash}
+                      className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40 shrink-0"
+                    >
+                      <ArrowUUpLeftIcon className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Drop stash"
+                      aria-label={`Drop stash ${stash.reference}`}
+                      disabled={busy}
+                      onClick={() => void dropStash(stash)}
+                      className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    >
+                      <TrashIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {changes.length === 0 && stashes.length === 0 && (
               <div className="px-3 py-6 text-center text-xs text-dark-500">
                 Clean working tree. Nothing to commit.
               </div>

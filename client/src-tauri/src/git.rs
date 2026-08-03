@@ -5,6 +5,9 @@ use std::time::Duration;
 
 pub const GIT_TIMEOUT_MS: u64 = 30_000;
 const GIT_CHANGE_CAP: usize = 10_000;
+/// Network operations (pull/push) can legitimately take minutes on large
+/// repositories or slow connections.
+const GIT_NETWORK_TIMEOUT_MS: u64 = 300_000;
 
 /// Serializes all git operations so concurrent UI actions can never corrupt
 /// the index or race reads against writes.
@@ -22,10 +25,19 @@ pub struct GitChange {
 #[derive(serde::Serialize)]
 pub struct GitStatus {
     pub branch: Option<String>,
+    /// Upstream tracking branch, e.g. `origin/main`. `None` when the branch
+    /// has no upstream configured.
+    pub upstream: Option<String>,
     pub ahead: i32,
     pub behind: i32,
     pub changes: Vec<GitChange>,
     pub truncated: bool,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct GitStash {
+    pub reference: String,
+    pub subject: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -74,6 +86,14 @@ fn resolve_git() -> String {
 }
 
 fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
+    run_git_timeout(root, args, GIT_TIMEOUT_MS)
+}
+
+fn run_git_timeout(
+    root: &str,
+    args: &[&str],
+    timeout_ms: u64,
+) -> Result<Output, String> {
     let git = resolve_git();
     let mut cmd = Command::new(&git);
     cmd.arg("-C")
@@ -91,6 +111,8 @@ fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
         Some("status") | Some("rev-parse") | Some("rev-list") | Some("show") => true,
         // `git branch -a` lists branches; `git branch -d` deletes
         Some("branch") => args.contains(&"-a"),
+        // `git stash list` is read-only; push/pop/apply/drop are writes
+        Some("stash") => args.contains(&"list"),
         _ => false,
     };
     if read_only {
@@ -114,7 +136,7 @@ fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
         let _ = tx.send(output);
     });
 
-    match rx.recv_timeout(Duration::from_millis(GIT_TIMEOUT_MS)) {
+    match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
         Ok(output) => Ok(output),
         Err(_) => {
             #[cfg(target_os = "windows")]
@@ -128,7 +150,10 @@ fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
                 let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
             }
             drop(waiter);
-            Err(format!("git command timed out after {GIT_TIMEOUT_MS}ms"))
+            Err(format!(
+                "git command timed out after {}ms",
+                timeout_ms / 1000
+            ))
         }
     }
 }
@@ -186,6 +211,23 @@ fn ahead_behind(root: &str) -> (i32, i32) {
     (ahead, behind)
 }
 
+fn upstream_name(root: &str) -> Option<String> {
+    let out = run_git(
+        root,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() || name == "@{upstream}" {
+        None
+    } else {
+        Some(name)
+    }
+}
+
 fn parse_status(data: &str) -> (Vec<GitChange>, bool) {
     let fields: Vec<&str> = data.split('\0').filter(|s| !s.is_empty()).collect();
     let mut changes = Vec::new();
@@ -231,6 +273,7 @@ fn status_inner(root: &str) -> Result<GitStatus, String> {
     let (changes, truncated) = parse_status(&data);
     Ok(GitStatus {
         branch: branch_name(root),
+        upstream: upstream_name(root),
         ahead,
         behind,
         changes,
@@ -569,6 +612,217 @@ pub async fn git_show_file(
             return Ok(None); // too large
         }
         Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Pull the current branch from its upstream, fast-forward only.
+#[tauri::command]
+pub async fn git_pull(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git_timeout(
+            &root,
+            &["pull", "--ff-only"],
+            GIT_NETWORK_TIMEOUT_MS,
+        )?;
+        require_success(&out, "Pull")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Push the current branch to its upstream.
+#[tauri::command]
+pub async fn git_push(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git_timeout(&root, &["push"], GIT_NETWORK_TIMEOUT_MS)?;
+        require_success(&out, "Push")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Publish the current branch to the default remote with `-u` so the
+/// upstream is set for future push/pull.
+#[tauri::command]
+pub async fn git_publish(
+    root: String,
+    branch: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    validate_branch_name(&branch)?;
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["remote"])?;
+        require_success(&out, "List remotes")?;
+        let remote = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if remote.is_empty() {
+            return Err(
+                "No git remotes configured — add a remote to publish this branch"
+                    .to_string(),
+            );
+        }
+        let out = run_git_timeout(
+            &root,
+            &["push", "-u", &remote, &branch],
+            GIT_NETWORK_TIMEOUT_MS,
+        )?;
+        require_success(&out, "Publish branch")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+fn parse_stashes(data: &str) -> Vec<GitStash> {
+    let mut stashes = Vec::new();
+    for line in data.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\0');
+        let reference = parts.next().unwrap_or("");
+        let subject = parts.next().unwrap_or("");
+        if reference.is_empty() {
+            continue;
+        }
+        stashes.push(GitStash {
+            reference: reference.to_string(),
+            subject: subject.to_string(),
+        });
+    }
+    stashes
+}
+
+#[tauri::command]
+pub async fn git_stash_list(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<Vec<GitStash>, String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["stash", "list", "--format=%gd%00%gs"])?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if stderr.is_empty() {
+                "git stash list failed".to_string()
+            } else {
+                stderr
+            });
+        }
+        Ok(parse_stashes(&String::from_utf8_lossy(&out.stdout)))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Stash all changes (including untracked) with an optional message.
+#[tauri::command]
+pub async fn git_stash_push(
+    root: String,
+    message: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let trimmed = message.trim();
+        let out = if trimmed.is_empty() {
+            run_git(&root, &["stash", "push", "-u"])?
+        } else {
+            run_git(&root, &["stash", "push", "-u", "-m", trimmed])?
+        };
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        if stderr.contains("No local changes to save") {
+            return Err("Nothing to stash — working tree is clean".to_string());
+        }
+        require_success(&out, "Stash")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Restore the most recent stash and drop it.
+#[tauri::command]
+pub async fn git_stash_pop(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["stash", "pop"])?;
+        require_success(&out, "Pop stash")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Apply a specific stash without dropping it.
+#[tauri::command]
+pub async fn git_stash_apply(
+    root: String,
+    reference: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["stash", "apply", &reference])?;
+        require_success(&out, "Apply stash")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Drop a specific stash.
+#[tauri::command]
+pub async fn git_stash_drop(
+    root: String,
+    reference: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["stash", "drop", &reference])?;
+        require_success(&out, "Drop stash")
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
