@@ -825,6 +825,7 @@ pub fn run() {
             git::git_discard,
             git::git_commit,
             git::git_branches,
+            git::git_log,
             git::git_switch_branch,
             git::git_create_branch,
             git::git_delete_branch,

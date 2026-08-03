@@ -43,6 +43,22 @@ pub struct GitStash {
 }
 
 #[derive(serde::Serialize, Clone)]
+pub struct GitCommit {
+    /// Full 40-char hash.
+    pub hash: String,
+    /// Short hash, e.g. `f622c12`.
+    pub short: String,
+    /// One-line subject.
+    pub subject: String,
+    /// Author name.
+    pub author: String,
+    /// Author date, unix seconds.
+    pub date: i64,
+    /// Ref decorations, e.g. `HEAD -> ai, origin/ai` (may be empty).
+    pub refs: String,
+}
+
+#[derive(serde::Serialize, Clone)]
 pub struct GitBranch {
     /// Display name, e.g. `main` or `origin/main`
     pub name: String,
@@ -111,6 +127,7 @@ fn run_git_timeout(
 
     let read_only = match args.first().map(|a| a.as_ref()) {
         Some("status") | Some("rev-parse") | Some("rev-list") | Some("show") => true,
+        Some("log") => true,
         Some("ls-files") => true,
         // `git branch -a` lists branches; `git branch -d` deletes
         Some("branch") => args.contains(&"-a"),
@@ -577,6 +594,70 @@ pub async fn git_branches(
             .lock()
             .map_err(|e| format!("git lock poisoned: {e}"))?;
         branches_inner(&root)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+const GIT_LOG_CAP: usize = 100;
+
+fn parse_log(data: &str) -> Vec<GitCommit> {
+    let mut commits = Vec::new();
+    for line in data.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\0');
+        let hash = parts.next().unwrap_or("").to_string();
+        let short = parts.next().unwrap_or("").to_string();
+        let subject = parts.next().unwrap_or("").to_string();
+        let author = parts.next().unwrap_or("").to_string();
+        let date = parts
+            .next()
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        let refs = parts.next().unwrap_or("").to_string();
+        if hash.is_empty() {
+            continue;
+        }
+        commits.push(GitCommit {
+            hash,
+            short,
+            subject,
+            author,
+            date,
+            refs,
+        });
+        if commits.len() >= GIT_LOG_CAP {
+            break;
+        }
+    }
+    commits
+}
+
+/// List commits on the current branch, newest first, for the commit history
+/// view. `%D` gives ref decorations (HEAD, branches, tags) per commit.
+#[tauri::command]
+pub async fn git_log(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<Vec<GitCommit>, String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(
+            &root,
+            &[
+                "log",
+                "-n",
+                &GIT_LOG_CAP.to_string(),
+                "--format=%H%x00%h%x00%s%x00%an%x00%at%x00%D",
+            ],
+        )?;
+        require_success(&out, "Show commit history")?;
+        Ok(parse_log(&String::from_utf8_lossy(&out.stdout)))
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?

@@ -45,6 +45,15 @@ interface GitStash {
   subject: string;
 }
 
+interface GitCommit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  date: number;
+  refs: string;
+}
+
 interface GitBranch {
   name: string;
   refname: string;
@@ -65,6 +74,20 @@ function fileName(path: string): string {
 function absolutePath(localPath: string | undefined, rel: string): string {
   if (!localPath) return rel;
   return `${localPath.replace(/\\/g, "/").replace(/\/+$/, "")}/${rel}`;
+}
+
+function relativeTime(unixSeconds: number): string {
+  const diff = Date.now() / 1000 - unixSeconds;
+  if (diff < 60) return "just now";
+  const minutes = Math.floor(diff / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 }
 
 function ChangeRow({
@@ -231,6 +254,45 @@ function SectionAction({
     </button>
   );
 }
+
+const DEFAULT_CHANGES_HEIGHT = 280;
+const DEFAULT_STASHES_HEIGHT = 160;
+const MIN_SECTION_HEIGHT = 48;
+const MAX_SECTION_HEIGHT = 800;
+const DIVIDER_HEIGHT = 8;
+
+/** Thin horizontal drag handle between sections, like VS Code. */
+function SectionDivider({
+  onDrag,
+  onReset,
+  label = "Resize section",
+}: {
+  onDrag: (dy: number) => void;
+  onReset: () => void;
+  label?: string;
+}) {
+  const lastY = useRef(0);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title="Drag to resize (double-click to reset)"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        lastY.current = e.clientY;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        const dy = e.clientY - lastY.current;
+        lastY.current = e.clientY;
+        onDrag(dy);
+      }}
+      onDoubleClick={onReset}
+      className="block h-1.5 w-full shrink-0 cursor-row-resize border-b border-dark-800 p-0 hover:bg-primary-400/20 active:bg-primary-400/30 transition-colors"
+    />
+  );
+}
 export default function SourceControlPanel() {
   const connectionType = useEditorStore((s) => s.connectionType);
   const localPath = useEditorStore((s) => s.localPath);
@@ -239,6 +301,12 @@ export default function SourceControlPanel() {
 
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [stashes, setStashes] = useState<GitStash[]>([]);
+  const [commits, setCommits] = useState<GitCommit[]>([]);
+  const [commitsOpen, setCommitsOpen] = useState(true);
+  const [changesHeight, setChangesHeight] = useState(DEFAULT_CHANGES_HEIGHT);
+  const [stashesHeight, setStashesHeight] = useState(DEFAULT_STASHES_HEIGHT);
+  const [panelHeight, setPanelHeight] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [stashInputOpen, setStashInputOpen] = useState(false);
   const [stashMessage, setStashMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -255,19 +323,22 @@ export default function SourceControlPanel() {
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const [result, stashResult] = await Promise.all([
+        const [result, stashResult, logResult] = await Promise.all([
           invoke<GitStatus>("git_status", { root: localPath }),
           invoke<GitStash[]>("git_stash_list", { root: localPath }),
+          invoke<GitCommit[]>("git_log", { root: localPath }),
         ]);
         if (id === requestIdRef.current) {
           setStatus(result);
           setStashes(stashResult);
+          setCommits(logResult);
           bumpStatusVersion();
         }
       } catch (err) {
         if (id === requestIdRef.current) {
           setStatus(null);
           setStashes([]);
+          setCommits([]);
           setError(extractError(err, "Unable to load git status"));
         }
       } finally {
@@ -287,6 +358,58 @@ export default function SourceControlPanel() {
     return () => clearInterval(interval);
   }, [load]);
 
+  const changesFixed = stashes.length > 0 || commits.length > 0;
+  const dividerCount =
+    (changesFixed ? 1 : 0) + (stashes.length > 0 && commits.length > 0 ? 1 : 0);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const update = () => setPanelHeight(el.clientHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (panelHeight <= 0) return;
+    const available = panelHeight - dividerCount * DIVIDER_HEIGHT;
+    let nextChanges = changesHeight;
+    let nextStashes = stashesHeight;
+    if (stashes.length > 0 && commits.length > 0) {
+      nextChanges = Math.min(
+        changesHeight,
+        Math.max(
+          MIN_SECTION_HEIGHT,
+          available - MIN_SECTION_HEIGHT - stashesHeight,
+        ),
+      );
+      nextStashes = Math.min(
+        stashesHeight,
+        Math.max(
+          MIN_SECTION_HEIGHT,
+          available - MIN_SECTION_HEIGHT - nextChanges,
+        ),
+      );
+    } else if (changesFixed) {
+      nextChanges = Math.min(
+        changesHeight,
+        Math.max(MIN_SECTION_HEIGHT, available - MIN_SECTION_HEIGHT),
+      );
+    }
+    if (nextChanges !== changesHeight) setChangesHeight(nextChanges);
+    if (nextStashes !== stashesHeight) setStashesHeight(nextStashes);
+  }, [
+    panelHeight,
+    changesHeight,
+    stashesHeight,
+    dividerCount,
+    changesFixed,
+    stashes.length,
+    commits.length,
+  ]);
+
   const runAction = useCallback(
     async (command: string, args: Record<string, unknown>) => {
       if (!localPath) return;
@@ -303,6 +426,49 @@ export default function SourceControlPanel() {
       }
     },
     [localPath, load],
+  );
+
+  const dragChanges = useCallback(
+    (dy: number) => {
+      setChangesHeight((h) => {
+        if (!panelHeight) return h;
+        const otherFixed = commits.length > 0 ? stashesHeight : 0;
+        const max = Math.max(
+          MIN_SECTION_HEIGHT,
+          panelHeight -
+            MIN_SECTION_HEIGHT -
+            dividerCount * DIVIDER_HEIGHT -
+            otherFixed,
+        );
+        return Math.min(
+          MAX_SECTION_HEIGHT,
+          Math.max(MIN_SECTION_HEIGHT, h + dy),
+          max,
+        );
+      });
+    },
+    [panelHeight, stashesHeight, commits.length, dividerCount],
+  );
+
+  const dragStashes = useCallback(
+    (dy: number) => {
+      setStashesHeight((h) => {
+        if (!panelHeight) return h;
+        const max = Math.max(
+          MIN_SECTION_HEIGHT,
+          panelHeight -
+            MIN_SECTION_HEIGHT -
+            dividerCount * DIVIDER_HEIGHT -
+            changesHeight,
+        );
+        return Math.min(
+          MAX_SECTION_HEIGHT,
+          Math.max(MIN_SECTION_HEIGHT, h + dy),
+          max,
+        );
+      });
+    },
+    [panelHeight, changesHeight, dividerCount],
   );
 
   const handleDiscard = useCallback(
@@ -747,201 +913,286 @@ export default function SourceControlPanel() {
       )}
 
       {/* Changes */}
-      <div className="flex-1 overflow-y-auto min-h-0 text-xs">
-        {loading && !status ? (
-          <div className="flex items-center gap-2 px-3 py-2 text-dark-400">
-            <ArrowCounterClockwiseIcon className="w-3.5 h-3.5 animate-spin" />
-            Loading repository status...
-          </div>
-        ) : gitMissing ? (
-          <div className="px-4 py-6 text-center">
-            <GitBranchIcon
-              className="w-8 h-8 mx-auto mb-2 text-dark-600"
-              weight="bold"
-            />
-            <p className="text-xs text-dark-400">
-              Git could not be found on this system.
-            </p>
-            <p className="text-[11px] text-dark-500 mt-1">
-              Install Git from git-scm.com, then restart the app.
-            </p>
-          </div>
-        ) : notARepo ? (
-          <div className="px-4 py-6 text-center">
-            <GitBranchIcon
-              className="w-8 h-8 mx-auto mb-2 text-dark-600"
-              weight="bold"
-            />
-            <p className="text-xs text-dark-400">
-              No Git repository detected in this folder.
-            </p>
-            <p className="text-[11px] text-dark-500 mt-1">
-              Run <code className="text-dark-300">git init</code> in the folder,
-              or open a folder inside a repository.
-            </p>
-          </div>
-        ) : error ? (
-          <div className="px-3 py-2 text-red-400">{error}</div>
-        ) : status ? (
-          <div className="pb-2">
-            {status.truncated && (
-              <div className="px-3 py-1.5 text-[10px] text-dark-500">
-                Showing first {CHANGE_CAP} changes.
-              </div>
-            )}
-            <ChangeSection
-              title="Staged Changes"
-              count={staged.length}
-              action={
-                <SectionAction
-                  label="Unstage All"
-                  title="Unstage all staged changes"
-                  disabled={busy || staged.length === 0}
-                  onClick={() => void runAction("git_unstage_all", {})}
-                />
-              }
-            >
-              {staged.map((change) => (
-                <ChangeRow
-                  key={change.path}
-                  change={change}
-                  busy={busy}
-                  onOpen={() =>
-                    openFile(
-                      diffTabPath(absolutePath(localPath, change.path)),
-                      fileName(change.path),
-                      true,
-                      "diff",
-                    )
-                  }
-                  onStage={() =>
-                    void runAction("git_stage", { path: change.path })
-                  }
-                  onUnstage={() =>
-                    void runAction("git_unstage", { path: change.path })
-                  }
-                  onDiscard={() => void handleDiscard(change.path)}
-                />
-              ))}
-            </ChangeSection>
-            <ChangeSection
-              title="Changes"
-              count={modified.length}
-              action={
-                <SectionAction
-                  label="Stage All"
-                  title="Stage all modified and untracked files"
-                  disabled={busy || modified.length + untracked.length === 0}
-                  onClick={() => void runAction("git_stage_all", {})}
-                />
-              }
-            >
-              {modified.map((change) => (
-                <ChangeRow
-                  key={change.path}
-                  change={change}
-                  busy={busy}
-                  onOpen={() =>
-                    openFile(
-                      diffTabPath(absolutePath(localPath, change.path)),
-                      fileName(change.path),
-                      true,
-                      "diff",
-                    )
-                  }
-                  onStage={() =>
-                    void runAction("git_stage", { path: change.path })
-                  }
-                  onUnstage={() => {}}
-                  onDiscard={() => void handleDiscard(change.path)}
-                />
-              ))}
-            </ChangeSection>
-            <ChangeSection title="Untracked" count={untracked.length}>
-              {untracked.map((change) => (
-                <ChangeRow
-                  key={change.path}
-                  change={change}
-                  busy={busy}
-                  onOpen={() =>
-                    openFile(
-                      diffTabPath(absolutePath(localPath, change.path)),
-                      fileName(change.path),
-                      true,
-                      "diff",
-                    )
-                  }
-                  onStage={() =>
-                    void runAction("git_stage", { path: change.path })
-                  }
-                  onUnstage={() => {}}
-                  onDiscard={() => {}}
-                />
-              ))}
-            </ChangeSection>
-            {stashes.length > 0 && (
-              <div className="mt-1 border-t border-dark-800 pt-1.5">
-                <div className="flex items-center justify-between px-3 py-1">
-                  <span className="text-[10px] font-medium text-dark-500 uppercase tracking-wide">
-                    Stashed Changes
-                  </span>
-                  <span className="text-[10px] text-dark-500">
-                    {stashes.length}
-                  </span>
+      <div
+        ref={panelRef}
+        className="flex flex-col flex-1 min-h-0 overflow-hidden text-xs"
+      >
+        <div
+          className={`overflow-y-auto min-h-0 ${
+            stashes.length > 0 || commits.length > 0 ? "shrink-0" : "flex-1"
+          }`}
+          style={
+            stashes.length > 0 || commits.length > 0
+              ? { height: changesHeight }
+              : undefined
+          }
+        >
+          {loading && !status ? (
+            <div className="flex items-center gap-2 px-3 py-2 text-dark-400">
+              <ArrowCounterClockwiseIcon className="w-3.5 h-3.5 animate-spin" />
+              Loading repository status...
+            </div>
+          ) : gitMissing ? (
+            <div className="px-4 py-6 text-center">
+              <GitBranchIcon
+                className="w-8 h-8 mx-auto mb-2 text-dark-600"
+                weight="bold"
+              />
+              <p className="text-xs text-dark-400">
+                Git could not be found on this system.
+              </p>
+              <p className="text-[11px] text-dark-500 mt-1">
+                Install Git from git-scm.com, then restart the app.
+              </p>
+            </div>
+          ) : notARepo ? (
+            <div className="px-4 py-6 text-center">
+              <GitBranchIcon
+                className="w-8 h-8 mx-auto mb-2 text-dark-600"
+                weight="bold"
+              />
+              <p className="text-xs text-dark-400">
+                No Git repository detected in this folder.
+              </p>
+              <p className="text-[11px] text-dark-500 mt-1">
+                Run <code className="text-dark-300">git init</code> in the
+                folder, or open a folder inside a repository.
+              </p>
+            </div>
+          ) : error ? (
+            <div className="px-3 py-2 text-red-400">{error}</div>
+          ) : status ? (
+            <div className="pb-2">
+              {status.truncated && (
+                <div className="px-3 py-1.5 text-[10px] text-dark-500">
+                  Showing first {CHANGE_CAP} changes.
                 </div>
-                {stashes.map((stash) => (
-                  <div
-                    key={stash.reference}
-                    className="group flex items-center gap-1.5 px-3 h-7 hover:bg-dark-800/70 min-w-0"
+              )}
+              <ChangeSection
+                title="Staged Changes"
+                count={staged.length}
+                action={
+                  <SectionAction
+                    label="Unstage All"
+                    title="Unstage all staged changes"
+                    disabled={busy || staged.length === 0}
+                    onClick={() => void runAction("git_unstage_all", {})}
+                  />
+                }
+              >
+                {staged.map((change) => (
+                  <ChangeRow
+                    key={change.path}
+                    change={change}
+                    busy={busy}
+                    onOpen={() =>
+                      openFile(
+                        diffTabPath(absolutePath(localPath, change.path)),
+                        fileName(change.path),
+                        true,
+                        "diff",
+                      )
+                    }
+                    onStage={() =>
+                      void runAction("git_stage", { path: change.path })
+                    }
+                    onUnstage={() =>
+                      void runAction("git_unstage", { path: change.path })
+                    }
+                    onDiscard={() => void handleDiscard(change.path)}
+                  />
+                ))}
+              </ChangeSection>
+              <ChangeSection
+                title="Changes"
+                count={modified.length}
+                action={
+                  <SectionAction
+                    label="Stage All"
+                    title="Stage all modified and untracked files"
+                    disabled={busy || modified.length + untracked.length === 0}
+                    onClick={() => void runAction("git_stage_all", {})}
+                  />
+                }
+              >
+                {modified.map((change) => (
+                  <ChangeRow
+                    key={change.path}
+                    change={change}
+                    busy={busy}
+                    onOpen={() =>
+                      openFile(
+                        diffTabPath(absolutePath(localPath, change.path)),
+                        fileName(change.path),
+                        true,
+                        "diff",
+                      )
+                    }
+                    onStage={() =>
+                      void runAction("git_stage", { path: change.path })
+                    }
+                    onUnstage={() => {}}
+                    onDiscard={() => void handleDiscard(change.path)}
+                  />
+                ))}
+              </ChangeSection>
+              <ChangeSection title="Untracked" count={untracked.length}>
+                {untracked.map((change) => (
+                  <ChangeRow
+                    key={change.path}
+                    change={change}
+                    busy={busy}
+                    onOpen={() =>
+                      openFile(
+                        diffTabPath(absolutePath(localPath, change.path)),
+                        fileName(change.path),
+                        true,
+                        "diff",
+                      )
+                    }
+                    onStage={() =>
+                      void runAction("git_stage", { path: change.path })
+                    }
+                    onUnstage={() => {}}
+                    onDiscard={() => {}}
+                  />
+                ))}
+              </ChangeSection>
+              {changes.length === 0 && stashes.length === 0 && (
+                <div className="px-3 py-6 text-center text-xs text-dark-500">
+                  Clean working tree. Nothing to commit.
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+        {(stashes.length > 0 || commits.length > 0) && (
+          <SectionDivider
+            onDrag={dragChanges}
+            onReset={() => setChangesHeight(DEFAULT_CHANGES_HEIGHT)}
+            label="Resize changes section"
+          />
+        )}
+        {stashes.length > 0 && (
+          <div
+            className={`overflow-y-auto min-h-0 ${
+              commits.length > 0 ? "shrink-0" : "flex-1"
+            }`}
+            style={commits.length > 0 ? { height: stashesHeight } : undefined}
+          >
+            <div className="mt-1 border-t border-dark-800 pt-1.5">
+              <div className="flex items-center justify-between px-3 py-1">
+                <span className="text-[10px] font-medium text-dark-500 uppercase tracking-wide">
+                  Stashed Changes
+                </span>
+                <span className="text-[10px] text-dark-500">
+                  {stashes.length}
+                </span>
+              </div>
+              {stashes.map((stash) => (
+                <div
+                  key={stash.reference}
+                  className="group flex items-center gap-1.5 px-3 h-7 hover:bg-dark-800/70 min-w-0"
+                >
+                  <button
+                    type="button"
+                    title="Apply stash"
+                    aria-label={`Apply stash ${stash.reference}`}
+                    disabled={busy}
+                    onClick={() =>
+                      void runAction("git_stash_apply", {
+                        reference: stash.reference,
+                      })
+                    }
+                    className="flex flex-1 items-center gap-1.5 min-w-0 text-left"
                   >
-                    <button
-                      type="button"
-                      title="Apply stash"
-                      aria-label={`Apply stash ${stash.reference}`}
-                      disabled={busy}
-                      onClick={() =>
-                        void runAction("git_stash_apply", {
-                          reference: stash.reference,
-                        })
-                      }
-                      className="flex flex-1 items-center gap-1.5 min-w-0 text-left"
-                    >
-                      <ArchiveIcon className="w-3.5 h-3.5 text-dark-500 shrink-0" />
-                      <span className="text-[11px] text-dark-200 truncate min-w-0">
-                        {stash.subject || stash.reference}
+                    <ArchiveIcon className="w-3.5 h-3.5 text-dark-500 shrink-0" />
+                    <span className="text-[11px] text-dark-200 truncate min-w-0">
+                      {stash.subject || stash.reference}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    title="Pop stash (apply and remove)"
+                    aria-label={`Pop stash ${stash.reference}`}
+                    disabled={busy}
+                    onClick={popStash}
+                    className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40 shrink-0"
+                  >
+                    <ArrowUUpLeftIcon className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Drop stash"
+                    aria-label={`Drop stash ${stash.reference}`}
+                    disabled={busy}
+                    onClick={() => void dropStash(stash)}
+                    className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  >
+                    <TrashIcon className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {stashes.length > 0 && commits.length > 0 && (
+          <SectionDivider
+            onDrag={dragStashes}
+            onReset={() => setStashesHeight(DEFAULT_STASHES_HEIGHT)}
+            label="Resize stashed changes section"
+          />
+        )}
+        {commits.length > 0 && (
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="mt-1 border-t border-dark-800 pt-1.5">
+              <button
+                type="button"
+                onClick={() => setCommitsOpen((open) => !open)}
+                aria-expanded={commitsOpen}
+                className="flex items-center gap-1.5 w-full px-3 py-1 hover:bg-dark-800/40 text-left"
+              >
+                <CaretDownIcon
+                  weight="bold"
+                  className={`w-3 h-3 text-dark-500 shrink-0 transition-transform ${
+                    commitsOpen ? "rotate-0" : "-rotate-90"
+                  }`}
+                />
+                <span className="text-[10px] font-medium text-dark-500 uppercase tracking-wide">
+                  Commit History
+                </span>
+                <span className="text-[10px] text-dark-500">
+                  {commits.length}
+                </span>
+              </button>
+              {commitsOpen &&
+                commits.map((commit) => (
+                  <div
+                    key={commit.hash}
+                    className="group flex items-center gap-1.5 pl-6 pr-2 py-1 hover:bg-dark-800/40 min-w-0"
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-[11px] text-dark-200 truncate">
+                        {commit.subject}
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      title="Pop stash (apply and remove)"
-                      aria-label={`Pop stash ${stash.reference}`}
-                      disabled={busy}
-                      onClick={popStash}
-                      className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40 shrink-0"
-                    >
-                      <ArrowUUpLeftIcon className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Drop stash"
-                      aria-label={`Drop stash ${stash.reference}`}
-                      disabled={busy}
-                      onClick={() => void dropStash(stash)}
-                      className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                    >
-                      <TrashIcon className="w-3 h-3" />
-                    </button>
+                      <span className="text-[10px] text-dark-500 truncate">
+                        {commit.author} &middot; {relativeTime(commit.date)}{" "}
+                        &middot; {commit.short}
+                      </span>
+                    </div>
+                    {commit.refs && (
+                      <span
+                        title={commit.refs}
+                        className="text-[9px] font-medium text-primary-400 bg-primary-400/10 border border-primary-400/20 rounded px-1 py-px truncate max-w-28 shrink-0"
+                      >
+                        {commit.refs.split(",")[0]?.trim()}
+                      </span>
+                    )}
                   </div>
                 ))}
-              </div>
-            )}
-            {changes.length === 0 && stashes.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-dark-500">
-                Clean working tree. Nothing to commit.
-              </div>
-            )}
+            </div>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
