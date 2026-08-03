@@ -7,7 +7,8 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { extractError } from "../../lib/extractError";
 import { getFileIcon } from "../../lib/fileHelpers";
@@ -26,9 +27,13 @@ interface GitStatus {
   ahead: number;
   behind: number;
   changes: GitChange[];
+  truncated: boolean;
 }
 
 const NOT_A_REPO = "not a git repository";
+const GIT_MISSING = "Failed to run git";
+const POLL_INTERVAL_MS = 5000;
+const CHANGE_CAP = 10000;
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
@@ -88,16 +93,28 @@ function ChangeRow({
             <PlusIcon className="w-3.5 h-3.5" />
           </button>
         ) : change.staged ? (
-          <button
-            type="button"
-            title="Unstage changes"
-            aria-label={`Unstage ${change.path}`}
-            disabled={busy}
-            onClick={onUnstage}
-            className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
-          >
-            <ArrowUUpLeftIcon className="w-3.5 h-3.5" />
-          </button>
+          <>
+            <button
+              type="button"
+              title="Unstage changes"
+              aria-label={`Unstage ${change.path}`}
+              disabled={busy}
+              onClick={onUnstage}
+              className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-40"
+            >
+              <ArrowUUpLeftIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              title="Discard changes"
+              aria-label={`Discard changes in ${change.path}`}
+              disabled={busy}
+              onClick={onDiscard}
+              className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40"
+            >
+              <ArrowCounterClockwiseIcon className="w-3.5 h-3.5" />
+            </button>
+          </>
         ) : (
           <>
             <button
@@ -130,10 +147,12 @@ function ChangeRow({
 function ChangeSection({
   title,
   count,
+  action,
   children,
 }: {
   title: string;
   count: number;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -141,12 +160,38 @@ function ChangeSection({
       <div className="flex items-center gap-1.5 px-2 h-6 text-[10px] font-semibold uppercase tracking-wider text-dark-400 select-none">
         <span>{title}</span>
         <span className="text-dark-500">{count}</span>
+        {action && (
+          <span className="ml-auto flex items-center gap-0.5">{action}</span>
+        )}
       </div>
       {children}
     </div>
   );
 }
 
+function SectionAction({
+  label,
+  title,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="px-1 py-0.5 rounded text-[10px] text-dark-400 hover:text-white hover:bg-dark-700 disabled:opacity-30"
+    >
+      {label}
+    </button>
+  );
+}
 export default function SourceControlPanel() {
   const connectionType = useEditorStore((s) => s.connectionType);
   const localPath = useEditorStore((s) => s.localPath);
@@ -157,36 +202,46 @@ export default function SourceControlPanel() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const requestIdRef = useRef(0);
+  const busyRef = useRef(false);
 
-  const load = useCallback(async () => {
-    if (!localPath) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await invoke<GitStatus>("git_status", { root: localPath });
-      setStatus(result);
-    } catch (err) {
-      setStatus(null);
-      setError(extractError(err, "Unable to load git status"));
-    } finally {
-      setLoading(false);
-    }
-  }, [localPath]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!localPath) return;
+      const id = ++requestIdRef.current;
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        const result = await invoke<GitStatus>("git_status", {
+          root: localPath,
+        });
+        if (id === requestIdRef.current) setStatus(result);
+      } catch (err) {
+        if (id === requestIdRef.current) {
+          setStatus(null);
+          setError(extractError(err, "Unable to load git status"));
+        }
+      } finally {
+        if (id === requestIdRef.current && !silent) setLoading(false);
+      }
+    },
+    [localPath],
+  );
 
   useEffect(() => {
     setStatus(null);
     setError(null);
     void load();
+    const interval = setInterval(() => {
+      if (!busyRef.current) void load(true);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [load]);
-
-  const changes = status?.changes ?? [];
-  const staged = changes.filter((c) => c.staged);
-  const modified = changes.filter((c) => !c.staged && !c.untracked);
-  const untracked = changes.filter((c) => c.untracked);
 
   const runAction = useCallback(
     async (command: string, args: Record<string, unknown>) => {
       if (!localPath) return;
+      busyRef.current = true;
       setBusy(true);
       try {
         await invoke(command, { root: localPath, ...args });
@@ -194,10 +249,23 @@ export default function SourceControlPanel() {
       } catch (err) {
         toast.error(extractError(err, "Operation failed"));
       } finally {
+        busyRef.current = false;
         setBusy(false);
       }
     },
     [localPath, load],
+  );
+
+  const handleDiscard = useCallback(
+    async (path: string) => {
+      if (!localPath) return;
+      const confirmed = await tauriConfirm(
+        `Discard all changes in "${path}"? This cannot be undone.`,
+        { title: "Discard Changes", kind: "warning" },
+      );
+      if (confirmed) void runAction("git_discard", { path });
+    },
+    [localPath, runAction],
   );
 
   const handleCommit = () => {
@@ -206,8 +274,15 @@ export default function SourceControlPanel() {
     void runAction("git_commit", { message: text }).then(() => setMessage(""));
   };
 
+  const gitMissing = error?.includes(GIT_MISSING);
+
   const notARepo =
     !loading && error !== null && error.toLowerCase().includes(NOT_A_REPO);
+
+  const changes = status?.changes ?? [];
+  const staged = changes.filter((c) => c.staged);
+  const modified = changes.filter((c) => !c.staged && !c.untracked);
+  const untracked = changes.filter((c) => c.untracked);
 
   if (connectionType !== "local" || !localPath) {
     return (
@@ -296,6 +371,19 @@ export default function SourceControlPanel() {
             <ArrowCounterClockwiseIcon className="w-3.5 h-3.5 animate-spin" />
             Loading repository status...
           </div>
+        ) : gitMissing ? (
+          <div className="px-4 py-6 text-center">
+            <GitBranchIcon
+              className="w-8 h-8 mx-auto mb-2 text-dark-600"
+              weight="bold"
+            />
+            <p className="text-xs text-dark-400">
+              Git could not be found on this system.
+            </p>
+            <p className="text-[11px] text-dark-500 mt-1">
+              Install Git from git-scm.com, then restart the app.
+            </p>
+          </div>
         ) : notARepo ? (
           <div className="px-4 py-6 text-center">
             <GitBranchIcon
@@ -314,7 +402,23 @@ export default function SourceControlPanel() {
           <div className="px-3 py-2 text-red-400">{error}</div>
         ) : status ? (
           <div className="pb-2">
-            <ChangeSection title="Staged Changes" count={staged.length}>
+            {status.truncated && (
+              <div className="px-3 py-1.5 text-[10px] text-dark-500">
+                Showing first {CHANGE_CAP} changes.
+              </div>
+            )}
+            <ChangeSection
+              title="Staged Changes"
+              count={staged.length}
+              action={
+                <SectionAction
+                  label="Unstage All"
+                  title="Unstage all staged changes"
+                  disabled={busy || staged.length === 0}
+                  onClick={() => void runAction("git_unstage_all", {})}
+                />
+              }
+            >
               {staged.map((change) => (
                 <ChangeRow
                   key={change.path}
@@ -329,11 +433,22 @@ export default function SourceControlPanel() {
                   onUnstage={() =>
                     void runAction("git_unstage", { path: change.path })
                   }
-                  onDiscard={() => {}}
+                  onDiscard={() => void handleDiscard(change.path)}
                 />
               ))}
             </ChangeSection>
-            <ChangeSection title="Changes" count={modified.length}>
+            <ChangeSection
+              title="Changes"
+              count={modified.length}
+              action={
+                <SectionAction
+                  label="Stage All"
+                  title="Stage all modified and untracked files"
+                  disabled={busy || modified.length + untracked.length === 0}
+                  onClick={() => void runAction("git_stage_all", {})}
+                />
+              }
+            >
               {modified.map((change) => (
                 <ChangeRow
                   key={change.path}
@@ -346,9 +461,7 @@ export default function SourceControlPanel() {
                     void runAction("git_stage", { path: change.path })
                   }
                   onUnstage={() => {}}
-                  onDiscard={() =>
-                    void runAction("git_discard", { path: change.path })
-                  }
+                  onDiscard={() => void handleDiscard(change.path)}
                 />
               ))}
             </ChangeSection>

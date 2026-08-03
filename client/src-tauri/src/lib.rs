@@ -790,6 +790,7 @@ pub fn run() {
         .manage(CancelTokens {
             tokens: Mutex::new(HashMap::new()),
         })
+        .manage(git::GitLock(std::sync::Arc::new(Mutex::new(()))))
         .manage(LocalSessions {
             ptys: Mutex::new(HashMap::new()),
             writers: Mutex::new(HashMap::new()),
@@ -818,7 +819,9 @@ pub fn run() {
             accept_host_key,
             git::git_status,
             git::git_stage,
+            git::git_stage_all,
             git::git_unstage,
+            git::git_unstage_all,
             git::git_discard,
             git::git_commit,
         ])
