@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod git;
+
 use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -814,6 +816,11 @@ pub fn run() {
             send_input,
             resize,
             accept_host_key,
+            git::git_status,
+            git::git_stage,
+            git::git_unstage,
+            git::git_discard,
+            git::git_commit,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
