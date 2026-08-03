@@ -40,7 +40,7 @@ function ConflictLines({ text }: { text: string }) {
   const truncated = lines.length > MAX_CONFLICT_LINES;
   const shown = truncated ? lines.slice(0, MAX_CONFLICT_LINES) : lines;
   return (
-    <div className="font-mono text-[12px] leading-5 whitespace-pre">
+    <div className="font-mono text-[12px] leading-5 whitespace-pre text-dark-200">
       {shown.map((line, _i) => {
         const trimmed = line.trimStart();
         let cls = "";
