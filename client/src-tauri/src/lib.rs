@@ -828,6 +828,7 @@ pub fn run() {
             git::git_switch_branch,
             git::git_create_branch,
             git::git_delete_branch,
+            git::git_show_file,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

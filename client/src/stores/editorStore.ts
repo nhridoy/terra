@@ -54,6 +54,7 @@ function loadSidebarPrefs(): {
 export interface EditorOpenFile {
   path: string;
   name: string;
+  kind?: "file" | "diff";
 }
 
 export interface EditorDirState {
@@ -105,7 +106,12 @@ interface EditorState {
   ) => void;
   disconnect: () => void;
 
-  openFile: (path: string, name: string, isPreview?: boolean) => void;
+  openFile: (
+    path: string,
+    name: string,
+    isPreview?: boolean,
+    kind?: EditorOpenFile["kind"],
+  ) => void;
   closeFile: (path: string) => void;
   revealRequest: {
     path: string;
@@ -128,6 +134,7 @@ interface EditorState {
     path: string,
     name: string,
     isPreview?: boolean,
+    kind?: EditorOpenFile["kind"],
   ) => void;
   closeFileInView: (viewId: string, path: string) => void;
   setActiveFileInView: (viewId: string, path: string | null) => void;
@@ -151,6 +158,9 @@ interface EditorState {
   setSidebarWidthRaw: (width: number) => void;
   setSidebarVisible: (visible: boolean) => void;
   setSidebarTool: (tool: SidebarTool) => void;
+
+  statusVersion: number;
+  bumpStatusVersion: () => void;
 
   quickOpenOpen: boolean;
   setQuickOpenOpen: (open: boolean) => void;
@@ -216,6 +226,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   explorerRootPath: null,
   quickOpenOpen: false,
   revealRequest: null,
+  statusVersion: 0,
   ...loadSidebarPrefs(),
 
   connectLocal: (localPath) =>
@@ -234,9 +245,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   disconnect: () => set({ connectionType: null, ...resetViews() }),
 
-  openFile: (path, name, isPreview = false) => {
+  openFile: (path, name, isPreview = false, kind) => {
     const viewId = activeViewIdFor(get().viewTrees, get().activeView);
-    get().openFileInView(viewId, path, name, isPreview);
+    get().openFileInView(viewId, path, name, isPreview, kind);
   },
 
   closeFile: (path) => {
@@ -350,7 +361,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ viewTrees: apply(tree) });
   },
 
-  openFileInView: (viewId, path, name, isPreview = false) => {
+  openFileInView: (viewId, path, name, isPreview = false, kind = "file") => {
     const existing = get().openFiles[viewId] ?? [];
     const currentPreview = get().previewFile[viewId] ?? null;
 
@@ -366,7 +377,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
 
-    let next = [...existing, { path, name }];
+    let next = [...existing, { path, name, kind }];
     let preview = currentPreview;
 
     if (isPreview) {
@@ -559,6 +570,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setQuickOpenOpen: (open) => set({ quickOpenOpen: open }),
+
+  bumpStatusVersion: () => set({ statusVersion: get().statusVersion + 1 }),
 
   setRevealRequest: (request) => set({ revealRequest: request }),
 

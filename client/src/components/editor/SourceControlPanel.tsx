@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { extractError } from "../../lib/extractError";
 import { getFileIcon } from "../../lib/fileHelpers";
 import { useEditorStore } from "../../stores/editorStore";
+import { diffTabPath } from "./DiffEditor";
 
 interface GitChange {
   path: string;
@@ -47,6 +48,12 @@ const CHANGE_CAP = 10000;
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
+}
+
+/** Git status returns repo-relative paths; the editor needs absolute ones. */
+function absolutePath(localPath: string | undefined, rel: string): string {
+  if (!localPath) return rel;
+  return `${localPath.replace(/\\/g, "/").replace(/\/+$/, "")}/${rel}`;
 }
 
 function ChangeRow({
@@ -206,6 +213,7 @@ export default function SourceControlPanel() {
   const connectionType = useEditorStore((s) => s.connectionType);
   const localPath = useEditorStore((s) => s.localPath);
   const openFile = useEditorStore((s) => s.openFile);
+  const bumpStatusVersion = useEditorStore((s) => s.bumpStatusVersion);
 
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -225,7 +233,10 @@ export default function SourceControlPanel() {
         const result = await invoke<GitStatus>("git_status", {
           root: localPath,
         });
-        if (id === requestIdRef.current) setStatus(result);
+        if (id === requestIdRef.current) {
+          setStatus(result);
+          bumpStatusVersion();
+        }
       } catch (err) {
         if (id === requestIdRef.current) {
           setStatus(null);
@@ -235,7 +246,7 @@ export default function SourceControlPanel() {
         if (id === requestIdRef.current && !silent) setLoading(false);
       }
     },
-    [localPath],
+    [localPath, bumpStatusVersion],
   );
 
   useEffect(() => {
@@ -655,7 +666,12 @@ export default function SourceControlPanel() {
                   change={change}
                   busy={busy}
                   onOpen={() =>
-                    openFile(change.path, fileName(change.path), true)
+                    openFile(
+                      diffTabPath(absolutePath(localPath, change.path)),
+                      fileName(change.path),
+                      true,
+                      "diff",
+                    )
                   }
                   onStage={() =>
                     void runAction("git_stage", { path: change.path })
@@ -685,7 +701,12 @@ export default function SourceControlPanel() {
                   change={change}
                   busy={busy}
                   onOpen={() =>
-                    openFile(change.path, fileName(change.path), true)
+                    openFile(
+                      diffTabPath(absolutePath(localPath, change.path)),
+                      fileName(change.path),
+                      true,
+                      "diff",
+                    )
                   }
                   onStage={() =>
                     void runAction("git_stage", { path: change.path })
@@ -702,7 +723,12 @@ export default function SourceControlPanel() {
                   change={change}
                   busy={busy}
                   onOpen={() =>
-                    openFile(change.path, fileName(change.path), true)
+                    openFile(
+                      diffTabPath(absolutePath(localPath, change.path)),
+                      fileName(change.path),
+                      true,
+                      "diff",
+                    )
                   }
                   onStage={() =>
                     void runAction("git_stage", { path: change.path })

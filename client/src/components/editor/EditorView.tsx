@@ -32,6 +32,7 @@ import { useDragStore } from "../../stores/dragStore";
 import { useEditorStore } from "../../stores/editorStore";
 import { useThemeStore } from "../../stores/themeStore";
 import { DropZone } from "../shared/DropZone";
+import DiffEditor, { isDiffTab } from "./DiffEditor";
 import MarkdownPreview from "./MarkdownPreview";
 
 interface EditorViewProps {
@@ -139,10 +140,11 @@ export default function EditorView({
 
   const viewTree = viewTrees;
   const multiView = viewTree ? countLeaves(viewTree) > 1 : false;
+  const activeIsDiff = activePath !== null && isDiffTab(activePath);
 
   useEffect(() => {
     let cancelled = false;
-    if (!activePath) {
+    if (!activePath || activeIsDiff) {
       setContent(null);
       setReadError(null);
       setLoading(false);
@@ -177,7 +179,7 @@ export default function EditorView({
     return () => {
       cancelled = true;
     };
-  }, [activePath]);
+  }, [activePath, activeIsDiff]);
 
   const handleSave = useCallback(async () => {
     if (!activePath || content === null) return;
@@ -367,6 +369,8 @@ export default function EditorView({
               <div className="flex items-center justify-center h-full text-sm text-red-400 px-6 text-center">
                 {readError}
               </div>
+            ) : activeFile && activeIsDiff && activePath ? (
+              <DiffEditor path={activePath} name={activeFile.name} />
             ) : activeFile && effectiveKind === "markdown" ? (
               <div className="h-full overflow-y-auto bg-dark-950">
                 <MarkdownPreview content={content ?? ""} />

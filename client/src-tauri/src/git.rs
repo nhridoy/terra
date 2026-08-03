@@ -88,7 +88,7 @@ fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
         .env("LANG", "C");
 
     let read_only = match args.first().map(|a| a.as_ref()) {
-        Some("status") | Some("rev-parse") | Some("rev-list") => true,
+        Some("status") | Some("rev-parse") | Some("rev-list") | Some("show") => true,
         // `git branch -a` lists branches; `git branch -d` deletes
         Some("branch") => args.contains(&"-a"),
         _ => false,
@@ -520,6 +520,55 @@ pub async fn git_branches(
             .lock()
             .map_err(|e| format!("git lock poisoned: {e}"))?;
         branches_inner(&root)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Return the repo-relative, forward-slash path of `path` inside `root`.
+fn repo_relative(root: &str, path: &str) -> Result<String, String> {
+    let root_norm = root.replace('\\', "/").trim_end_matches('/').to_string();
+    let path_norm = path.replace('\\', "/");
+    let root_lower = root_norm.to_lowercase();
+    let path_lower = path_norm.to_lowercase();
+    if path_lower == root_lower {
+        return Err("Path is the workspace root, not a file".to_string());
+    }
+    if !path_lower.starts_with(&format!("{root_lower}/")) {
+        return Err("Path is outside the workspace".to_string());
+    }
+    Ok(path_norm[root_norm.len() + 1..].to_string())
+}
+
+const GIT_FILE_CAP_BYTES: usize = 4 * 1024 * 1024;
+
+/// Fetch the version of a file at HEAD for the diff "original" side.
+/// Returns `None` for untracked files, binary content, or files too large
+/// to diff comfortably.
+#[tauri::command]
+pub async fn git_show_file(
+    root: String,
+    path: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<Option<String>, String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let rel = repo_relative(&root, &path)?;
+        let out = run_git(&root, &["show", &format!("HEAD:{rel}")])?;
+        if !out.status.success() {
+            // Untracked or deleted at HEAD — treat as "no original"
+            return Ok(None);
+        }
+        if out.stdout.contains(&0) {
+            return Ok(None); // binary content
+        }
+        if out.stdout.len() > GIT_FILE_CAP_BYTES {
+            return Ok(None); // too large
+        }
+        Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
