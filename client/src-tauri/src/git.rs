@@ -511,7 +511,13 @@ pub async fn git_switch_branch(
                 &["switch", "-c", &local, "--track", &refname],
             )?
         } else {
-            run_git(&root, &["switch", &refname])?
+            // `git switch` takes a branch name, not a full refname
+            // (only `git checkout` accepts `refs/heads/...`).
+            let local = refname
+                .strip_prefix("refs/heads/")
+                .unwrap_or(&refname)
+                .to_string();
+            run_git(&root, &["switch", &local])?
         };
         require_success(&out, "Switch branch")
     })
