@@ -824,6 +824,10 @@ pub fn run() {
             git::git_unstage_all,
             git::git_discard,
             git::git_commit,
+            git::git_branches,
+            git::git_switch_branch,
+            git::git_create_branch,
+            git::git_delete_branch,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

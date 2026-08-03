@@ -1,10 +1,13 @@
 import {
   ArrowCounterClockwiseIcon,
   ArrowUUpLeftIcon,
+  CaretDownIcon,
   CheckIcon,
   GitBranchIcon,
   GitCommitIcon,
+  MagnifyingGlassIcon,
   PlusIcon,
+  TrashIcon,
 } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
@@ -28,6 +31,13 @@ interface GitStatus {
   behind: number;
   changes: GitChange[];
   truncated: boolean;
+}
+
+interface GitBranch {
+  name: string;
+  refname: string;
+  remote: boolean;
+  current: boolean;
 }
 
 const NOT_A_REPO = "not a git repository";
@@ -279,6 +289,88 @@ export default function SourceControlPanel() {
   const notARepo =
     !loading && error !== null && error.toLowerCase().includes(NOT_A_REPO);
 
+  const [branchesOpen, setBranchesOpen] = useState(false);
+  const [branches, setBranches] = useState<GitBranch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const branchSearchRef = useRef<HTMLInputElement>(null);
+  const newBranchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (branchesOpen) branchSearchRef.current?.focus();
+  }, [branchesOpen]);
+
+  useEffect(() => {
+    if (creatingBranch) newBranchRef.current?.focus();
+  }, [creatingBranch]);
+
+  const loadBranches = useCallback(async () => {
+    if (!localPath) return;
+    setBranchesLoading(true);
+    try {
+      setBranches(
+        await invoke<GitBranch[]>("git_branches", { root: localPath }),
+      );
+    } catch (err) {
+      toast.error(extractError(err, "Unable to load branches"));
+    } finally {
+      setBranchesLoading(false);
+    }
+  }, [localPath]);
+
+  const toggleBranches = () => {
+    if (branchesOpen) {
+      setBranchesOpen(false);
+      setBranchFilter("");
+      setCreatingBranch(false);
+      setNewBranchName("");
+    } else {
+      setBranchesOpen(true);
+      void loadBranches();
+    }
+  };
+
+  const switchBranch = (branch: GitBranch) => {
+    if (branch.current || busy) return;
+    void runAction("git_switch_branch", { refname: branch.refname }).then(
+      () => {
+        setBranchesOpen(false);
+        setBranchFilter("");
+        void loadBranches();
+      },
+    );
+  };
+
+  const createBranch = () => {
+    const name = newBranchName.trim();
+    if (!name || busy) return;
+    void runAction("git_create_branch", { name }).then(() => {
+      setBranchesOpen(false);
+      setCreatingBranch(false);
+      setNewBranchName("");
+    });
+  };
+
+  const deleteBranch = async (branch: GitBranch) => {
+    if (branch.current || busy) return;
+    const confirmed = await tauriConfirm(`Delete branch "${branch.name}"?`, {
+      title: "Delete Branch",
+      kind: "warning",
+    });
+    if (!confirmed) return;
+    void runAction("git_delete_branch", { name: branch.name }).then(
+      () => void loadBranches(),
+    );
+  };
+
+  const filteredBranches = branches.filter((b) =>
+    branchFilter
+      ? b.name.toLowerCase().includes(branchFilter.toLowerCase())
+      : true,
+  );
+
   const changes = status?.changes ?? [];
   const staged = changes.filter((c) => c.staged);
   const modified = changes.filter((c) => !c.staged && !c.untracked);
@@ -320,7 +412,13 @@ export default function SourceControlPanel() {
       {/* Branch + commit box */}
       {status && (
         <div className="px-2 py-2 space-y-2 shrink-0 border-b border-dark-800">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            type="button"
+            onClick={toggleBranches}
+            title={branchesOpen ? "Close branch list" : "Switch branch"}
+            aria-label="Switch branch"
+            className="flex items-center gap-1.5 min-w-0 w-full text-left"
+          >
             <GitCommitIcon className="w-3.5 h-3.5 text-primary-400 shrink-0" />
             <span className="text-[11px] text-dark-200 truncate min-w-0">
               {status.branch ?? "Detached HEAD"}
@@ -332,7 +430,139 @@ export default function SourceControlPanel() {
                 {status.behind > 0 ? `${status.behind}\u2193` : ""}
               </span>
             )}
-          </div>
+            <CaretDownIcon
+              weight="bold"
+              className={`w-3 h-3 text-dark-500 ml-auto shrink-0 transition-transform ${
+                branchesOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+          {branchesOpen && (
+            <div className="border border-dark-700 rounded bg-dark-950 overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2 h-7 border-b border-dark-800">
+                <MagnifyingGlassIcon className="w-3.5 h-3.5 text-dark-500 shrink-0" />
+                <input
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") toggleBranches();
+                  }}
+                  placeholder="Search branches"
+                  aria-label="Search branches"
+                  ref={branchSearchRef}
+                  className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder:text-dark-500 outline-none"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {!creatingBranch && (
+                  <button
+                    type="button"
+                    onClick={() => setCreatingBranch(true)}
+                    className="flex items-center gap-1.5 w-full pl-2 pr-2 h-7 hover:bg-dark-800/70 text-left"
+                  >
+                    <PlusIcon
+                      className="w-3.5 h-3.5 text-primary-400 shrink-0"
+                      weight="bold"
+                    />
+                    <span className="text-[11px] text-dark-200">
+                      Create New Branch...
+                    </span>
+                  </button>
+                )}
+                {creatingBranch && (
+                  <div className="flex items-center gap-1.5 px-2 h-7 border-b border-dark-800">
+                    <input
+                      value={newBranchName}
+                      onChange={(e) => setNewBranchName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") createBranch();
+                        if (e.key === "Escape") {
+                          setCreatingBranch(false);
+                          setNewBranchName("");
+                        }
+                      }}
+                      placeholder="Branch name (Enter to create)"
+                      aria-label="New branch name"
+                      ref={newBranchRef}
+                      className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder:text-dark-500 outline-none"
+                    />
+                  </div>
+                )}
+                {branchesLoading && (
+                  <div className="px-3 py-2 text-[11px] text-dark-500">
+                    Loading branches...
+                  </div>
+                )}
+                {!branchesLoading &&
+                  filteredBranches.map((branch) => (
+                    <div
+                      key={branch.refname}
+                      className="group flex items-center gap-1.5 pl-2 pr-1 h-7 hover:bg-dark-800/70 min-w-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => switchBranch(branch)}
+                        disabled={branch.current || busy}
+                        title={
+                          branch.current
+                            ? "Current branch"
+                            : branch.remote
+                              ? `Check out ${branch.name} as a new local branch`
+                              : `Switch to ${branch.name}`
+                        }
+                        className="flex flex-1 items-center gap-1.5 min-w-0 text-left"
+                      >
+                        <GitBranchIcon
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            branch.current
+                              ? "text-primary-400"
+                              : "text-dark-500"
+                          }`}
+                          weight={branch.current ? "fill" : "regular"}
+                        />
+                        <span
+                          className={`text-[11px] truncate min-w-0 ${
+                            branch.current ? "text-white" : "text-dark-200"
+                          }`}
+                        >
+                          {branch.name}
+                        </span>
+                        {branch.remote && (
+                          <span className="text-[10px] text-dark-500 shrink-0">
+                            remote
+                          </span>
+                        )}
+                        {branch.current && (
+                          <CheckIcon
+                            className="w-3.5 h-3.5 text-primary-400 ml-auto shrink-0"
+                            weight="bold"
+                          />
+                        )}
+                      </button>
+                      {!branch.current && (
+                        <button
+                          type="button"
+                          title="Delete branch"
+                          aria-label={`Delete branch ${branch.name}`}
+                          disabled={busy}
+                          onClick={() => void deleteBranch(branch)}
+                          className="p-1 rounded text-dark-400 hover:text-red-400 hover:bg-dark-700 disabled:opacity-40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                        >
+                          <TrashIcon className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                {!branchesLoading &&
+                  !creatingBranch &&
+                  filteredBranches.length === 0 && (
+                    <div className="px-3 py-2 text-[11px] text-dark-500">
+                      No branches match &ldquo;{branchFilter}&rdquo;
+                    </div>
+                  )}
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-0.5">
             <input
               value={message}

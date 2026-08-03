@@ -28,6 +28,16 @@ pub struct GitStatus {
     pub truncated: bool,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct GitBranch {
+    /// Display name, e.g. `main` or `origin/main`
+    pub name: String,
+    /// Full refname, e.g. `refs/heads/main` or `refs/remotes/origin/main`
+    pub refname: String,
+    pub remote: bool,
+    pub current: bool,
+}
+
 fn git_candidates() -> Vec<std::ffi::OsString> {
     let mut candidates: Vec<std::ffi::OsString> = vec![
         "git".into(),
@@ -77,10 +87,12 @@ fn run_git(root: &str, args: &[&str]) -> Result<Output, String> {
         .env("LC_ALL", "C")
         .env("LANG", "C");
 
-    let read_only = args
-        .first()
-        .map(|a| matches!(a.as_ref(), "status" | "rev-parse" | "rev-list"))
-        .unwrap_or(false);
+    let read_only = match args.first().map(|a| a.as_ref()) {
+        Some("status") | Some("rev-parse") | Some("rev-list") => true,
+        // `git branch -a` lists branches; `git branch -d` deletes
+        Some("branch") => args.contains(&"-a"),
+        _ => false,
+    };
     if read_only {
         // Avoid lock contention with other git processes on status/rev-parse
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
@@ -348,6 +360,166 @@ pub async fn git_commit(
             .map_err(|e| format!("git lock poisoned: {e}"))?;
         let out = run_git(&root, &["commit", "-m", &message])?;
         require_success(&out, "Commit")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+fn parse_branches(data: &str) -> Vec<GitBranch> {
+    let mut branches = Vec::new();
+    for line in data.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\0');
+        let head = parts.next().unwrap_or("");
+        let refname = parts.next().unwrap_or("");
+        let (name, remote) = if let Some(local) = refname.strip_prefix("refs/remotes/") {
+            (local.to_string(), true)
+        } else if let Some(local) = refname.strip_prefix("refs/heads/") {
+            (local.to_string(), false)
+        } else {
+            continue;
+        };
+        branches.push(GitBranch {
+            name,
+            refname: refname.to_string(),
+            remote,
+            current: head == "*",
+        });
+    }
+    branches
+}
+
+fn branches_inner(root: &str) -> Result<Vec<GitBranch>, String> {
+    let out = run_git(
+        root,
+        &["branch", "-a", "--no-color", "--format=%(HEAD)%00%(refname)"],
+    )?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "git branch failed".to_string()
+        } else {
+            stderr
+        });
+    }
+    let data = String::from_utf8_lossy(&out.stdout).into_owned();
+    Ok(parse_branches(&data))
+}
+
+/// Reject branch names that could inject git options or are invalid refs.
+fn validate_branch_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Branch name is empty".to_string());
+    }
+    if name.starts_with('-') {
+        return Err("Branch name cannot start with '-'".to_string());
+    }
+    if name == "." || name == ".." {
+        return Err(format!("'{name}' is not a valid branch name"));
+    }
+    if name
+        .bytes()
+        .any(|b| b < 0x20 || b == b' ' || b == 0x7f)
+    {
+        return Err("Branch name cannot contain whitespace".to_string());
+    }
+    for bad in ['~', '^', ':', '?', '*', '[', '\\', '\u{7f}'] {
+        if name.contains(bad) {
+            return Err(format!("'{bad}' is not allowed in a branch name"));
+        }
+    }
+    Ok(())
+}
+
+/// Switch to a branch by full refname. Remote branches are checked out into a
+/// new local branch tracking the remote one (never detached HEAD).
+#[tauri::command]
+pub async fn git_switch_branch(
+    root: String,
+    refname: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    if !refname.starts_with("refs/heads/") && !refname.starts_with("refs/remotes/") {
+        return Err(format!("Invalid branch refname: {refname}"));
+    }
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = if let Some(remote) = refname.strip_prefix("refs/remotes/") {
+            let local = remote
+                .rsplit('/')
+                .next()
+                .unwrap_or(remote)
+                .to_string();
+            run_git(
+                &root,
+                &["switch", "-c", &local, "--track", &refname],
+            )?
+        } else {
+            run_git(&root, &["switch", &refname])?
+        };
+        require_success(&out, "Switch branch")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Create a branch from the current HEAD and switch to it.
+#[tauri::command]
+pub async fn git_create_branch(
+    root: String,
+    name: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    validate_branch_name(&name)?;
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["switch", "-c", &name])?;
+        require_success(&out, "Create branch")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+/// Delete a branch. Refuses to delete unmerged branches (exit 1) unless forced
+/// by the user, which is intentionally not exposed here.
+#[tauri::command]
+pub async fn git_delete_branch(
+    root: String,
+    name: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<(), String> {
+    validate_branch_name(&name)?;
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        let out = run_git(&root, &["branch", "-d", "--", &name])?;
+        require_success(&out, "Delete branch")
+    })
+    .await
+    .map_err(|e| format!("Task failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn git_branches(
+    root: String,
+    lock: tauri::State<'_, GitLock>,
+) -> Result<Vec<GitBranch>, String> {
+    let git_lock = lock.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = git_lock
+            .lock()
+            .map_err(|e| format!("git lock poisoned: {e}"))?;
+        branches_inner(&root)
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))?
