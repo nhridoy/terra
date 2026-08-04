@@ -29,6 +29,7 @@ export interface Session {
   container: HTMLDivElement
   opened: boolean
   resizeObserver: ResizeObserver | null
+  resizeRaf: number
   unlisten: (() => void) | null
   unlistenHostKey: (() => void) | null
 }
@@ -62,6 +63,7 @@ function createSession(params: SessionParams): Session {
     container,
     opened: false,
     resizeObserver: null,
+    resizeRaf: 0,
     unlisten: null,
     unlistenHostKey: null,
   }
@@ -178,12 +180,15 @@ async function connectViaTauri(session: Session) {
       }
     })
 
-    xterm.onResize(async ({ cols: _cols, rows: _rows }) => {
+    let lastResize = { cols, rows }
+    xterm.onResize(async ({ cols: newCols, rows: newRows }) => {
+      if (newCols === lastResize.cols && newRows === lastResize.rows) return
+      lastResize = { cols: newCols, rows: newRows }
       try {
         await invoke('resize', {
           sessionId: params.paneId,
-          cols,
-          rows,
+          cols: newCols,
+          rows: newRows,
         })
       } catch {
         // Session may have been closed
@@ -255,12 +260,15 @@ async function connectLocal(session: Session) {
       }
     })
 
-    xterm.onResize(async ({ cols: _cols, rows: _rows }) => {
+    let lastResize = { cols, rows }
+    xterm.onResize(async ({ cols: newCols, rows: newRows }) => {
+      if (newCols === lastResize.cols && newRows === lastResize.rows) return
+      lastResize = { cols: newCols, rows: newRows }
       try {
         await invoke('resize_local', {
           sessionId: params.paneId,
-          cols,
-          rows,
+          cols: newCols,
+          rows: newRows,
         })
       } catch {
         // Session may have been closed
@@ -277,11 +285,7 @@ export function attachSession(session: Session, reactEl: HTMLElement) {
   if (!session.opened) {
     session.xterm.open(session.container)
     session.opened = true
-    try {
-      session.fitAddon.fit()
-    } catch {
-      /* container may not be sized yet */
-    }
+    fitSessionSafe(session)
     if (session.params.connectionType === 'local') {
       connectLocal(session)
     } else {
@@ -290,11 +294,11 @@ export function attachSession(session: Session, reactEl: HTMLElement) {
   }
 
   const ro = new ResizeObserver(() => {
-    try {
-      session.fitAddon.fit()
-    } catch {
-      /* not yet sized */
-    }
+    if (session.resizeRaf) return
+    session.resizeRaf = requestAnimationFrame(() => {
+      session.resizeRaf = 0
+      fitSessionSafe(session)
+    })
   })
   ro.observe(session.container)
   session.resizeObserver = ro
@@ -322,11 +326,21 @@ export function getOrCreateSession(params: SessionParams): Session {
 export function fitSession(paneId: string) {
   const session = sessions.get(paneId)
   if (!session) return
+  fitSessionSafe(session)
+}
+
+function fitSessionSafe(session: Session) {
+  const el = session.container
+  if (el.clientWidth === 0 || el.clientHeight === 0) return
+  const { xterm, fitAddon } = session
+  const buffer = xterm.buffer.active
+  const wasAtBottom = buffer.baseY - buffer.viewportY <= 0
   try {
-    session.fitAddon.fit()
+    fitAddon.fit()
   } catch {
-    /* not yet sized */
+    /* container may not be sized yet */
   }
+  if (wasAtBottom) xterm.scrollToBottom()
 }
 
 export function applyTerminalTheme() {
@@ -348,6 +362,7 @@ export async function destroySession(paneId: string) {
   const session = sessions.get(paneId)
   if (!session) return
   session.resizeObserver?.disconnect()
+  if (session.resizeRaf) cancelAnimationFrame(session.resizeRaf)
 
   session.unlisten?.()
   session.unlistenHostKey?.()
