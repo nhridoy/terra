@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { listen, type Event } from "@tauri-apps/api/event";
 import type { DragDropEvent } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -212,7 +212,7 @@ export function useTauriDragDrop({
     const appWindow = getCurrentWebviewWindow();
 
     appWindow
-      .onDragDropEvent((event: DragDropEvent) => {
+      .onDragDropEvent((event: Event<DragDropEvent>) => {
         if (cancelled) return;
         const payload = event.payload;
 

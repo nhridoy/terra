@@ -1,4 +1,3 @@
-import type { DragDropManager } from "@dnd-kit/abstract";
 import { PointerActivationConstraints, PointerSensor } from "@dnd-kit/dom";
 import {
   DragDropProvider,
@@ -15,7 +14,9 @@ import { type FileDragState, useSftpStore } from "@/stores/sftp/sftpStore";
 import FileTransfer from "@/components/sftp/transfer/FileTransfer";
 import SftpPaneTree from "@/components/sftp/views/SftpPaneTree";
 
-function refreshDroppableShapes(manager: DragDropManager | null) {
+type Manager = ReturnType<typeof useDragDropManager>;
+
+function refreshDroppableShapes(manager: Manager | null) {
   if (!manager) return;
   for (const droppable of manager.registry.droppables) {
     (droppable as { refreshShape?: () => void }).refreshShape?.();
