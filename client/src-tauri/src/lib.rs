@@ -2,6 +2,8 @@
 
 mod git;
 mod crypto;
+mod keystore;
+mod db;
 
 use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsString;
