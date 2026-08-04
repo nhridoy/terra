@@ -4,13 +4,15 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import AuthGuard from "@/components/auth/guard/AuthGuard";
 import Layout from "@/components/layout/shell/Layout";
+import LoginPage from "@/pages/auth/LoginPage";
+import RecoveryPage from "@/pages/auth/RecoveryPage";
+import RegisterPage from "@/pages/auth/RegisterPage";
+import SetupPage from "@/pages/auth/SetupPage";
 import EditorPage from "@/pages/EditorPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import HistoryPage from "@/pages/HistoryPage";
 import HostsPage from "@/pages/HostsPage";
 import KeysPage from "@/pages/KeysPage";
-import LoginPage from "@/pages/LoginPage";
-import RegisterPage from "@/pages/RegisterPage";
 import SftpPage from "@/pages/SftpPage";
 import SnippetsPage from "@/pages/SnippetsPage";
 import TerminalPage from "@/pages/TerminalPage";
@@ -44,6 +46,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/setup" element={<SetupPage />} />
+          <Route path="/recovery" element={<RecoveryPage />} />
         </Route>
 
         <Route element={<AuthGuard requireAuth={true} />}>

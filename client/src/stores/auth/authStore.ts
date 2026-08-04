@@ -13,6 +13,7 @@ interface AuthState {
   tokens: TokenPair | null;
   isAuthenticated: boolean;
   isUnlocked: boolean;
+  isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
 
@@ -51,6 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   tokens: null,
   isAuthenticated: false,
   isUnlocked: false,
+  isInitialized: false,
   isLoading: false,
   error: null,
 
@@ -197,6 +199,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   restoreSession: async () => {
     // TODO: load tokens from secure storage, call /me
-    set({ isLoading: false });
+    set({ isLoading: false, isInitialized: true });
   },
 }));

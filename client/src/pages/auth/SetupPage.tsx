@@ -1,0 +1,142 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
+import {
+  type SetupFormSchema,
+  setupFormDefaultValues,
+  setupFormSchema,
+} from "@/lib/schema/auth/setupFormSchema";
+import { useAuthStore } from "@/stores/auth/authStore";
+import RecoveryRevealModal from "./RecoveryRevealModal";
+
+export default function SetupPage() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+
+  const { control, handleSubmit } = useForm<SetupFormSchema>({
+    defaultValues: setupFormDefaultValues,
+    resolver: zodResolver(setupFormSchema),
+  });
+
+  const onSubmit = async (_data: SetupFormSchema) => {
+    setError("");
+    setIsLoading(true);
+
+    try {
+      // TODO: call oauthSetup API with encryption password
+      // For now, simulate the setup and show recovery code
+      const mockRecoveryCode = crypto
+        .randomUUID()
+        .replace(/-/g, "")
+        .slice(0, 24);
+      setRecoveryCode(mockRecoveryCode);
+      setShowRecoveryModal(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Setup failed";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRecoveryDownload = () => {
+    const content = [
+      "TermVault Recovery Kit",
+      "=====================",
+      "",
+      `Account: ${user?.email || "unknown"}`,
+      `Recovery Code: ${recoveryCode}`,
+      "",
+      "Keep this code safe. You will need it to recover your account if you forget your password.",
+      "This code provides access to your encrypted data.",
+    ].join("\n");
+
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "termvault-recovery-kit.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRecoveryClose = () => {
+    setShowRecoveryModal(false);
+    navigate("/hosts");
+  };
+
+  return (
+    <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-white font-bold text-2xl">TV</span>
+          </div>
+          <h1 className="text-3xl font-bold text-white">TermVault</h1>
+          <p className="text-dark-400 mt-2">Self-hosted SSH client</p>
+        </div>
+
+        <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
+          <h2 className="text-xl font-semibold text-white mb-2">
+            Set Encryption Password
+          </h2>
+          <p className="text-dark-400 text-sm mb-6">
+            Create a password to encrypt your SSH keys and secrets. This
+            password never leaves your device.
+          </p>
+
+          {error && (
+            <div className="mb-4">
+              <Alert variant="error">{error}</Alert>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <FormInput
+              control={control}
+              name="password"
+              label="Encryption Password"
+              type="password"
+              placeholder="••••••••"
+              required
+            />
+
+            <FormInput
+              control={control}
+              name="confirmPassword"
+              label="Confirm Password"
+              type="password"
+              placeholder="••••••••"
+              required
+            />
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              variant="default"
+              size="sm"
+              className="w-full"
+            >
+              {isLoading ? "Setting up..." : "Complete Setup"}
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      <RecoveryRevealModal
+        open={showRecoveryModal}
+        recoveryCode={recoveryCode}
+        onDownload={handleRecoveryDownload}
+        onClose={handleRecoveryClose}
+      />
+    </div>
+  );
+}
