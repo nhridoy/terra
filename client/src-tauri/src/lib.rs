@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use portable_pty::{native_pty_system, Child as PtyChild, ChildKiller, CommandBuilder, PtyPair, PtySize};
 use tauri::{Emitter, Listener, Manager};
+use tauri_plugin_prevent_default::PlatformOptions;
 
 pub struct AppState {
     pub device_id: String,
@@ -763,6 +764,11 @@ pub fn run() {
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_prevent_default::Builder::new()
+                .platform(PlatformOptions::new().browser_accelerator_keys(false))
+                .build(),
+        )
         .setup(|app| {
             let window = app
                 .get_webview_window("main")

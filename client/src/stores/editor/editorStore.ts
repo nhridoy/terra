@@ -211,6 +211,7 @@ function resetViews() {
       line: number;
       column?: number;
     } | null,
+    sidebarTool: "explorer" as SidebarTool,
   };
 }
 
