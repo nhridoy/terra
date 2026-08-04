@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod git;
+mod crypto;
 
 use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsString;
@@ -755,6 +756,103 @@ fn get_or_create_device_id() -> String {
     id
 }
 
+pub struct CryptoState {
+    pub session: std::sync::Mutex<crypto::KeySession>,
+}
+
+#[tauri::command]
+fn generate_account_material(state: tauri::State<'_, CryptoState>) -> Result<crypto::AccountMaterial, String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::generate_account_material(&mut session)
+}
+
+#[tauri::command]
+fn derive_kek(password: String, salt_cl: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::derive_kek(&password, &salt_cl, &mut session)
+}
+
+#[tauri::command]
+fn compute_login_proof(kek: String, server_salt: String, nonce: String) -> Result<crypto::LoginProof, String> {
+    let kek_bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &kek,
+    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
+    if kek_bytes.len() != 32 {
+        return Err("Invalid KEK length".to_string());
+    }
+    let mut kek_arr = [0u8; 32];
+    kek_arr.copy_from_slice(&kek_bytes);
+    crypto::compute_login_proof(&kek_arr, &server_salt, &nonce)
+}
+
+#[tauri::command]
+fn build_keyring_rows(kek: String, recovery_code: String, state: tauri::State<'_, CryptoState>) -> Result<crypto::KeyringRows, String> {
+    let kek_bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &kek,
+    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
+    if kek_bytes.len() != 32 {
+        return Err("Invalid KEK length".to_string());
+    }
+    let mut kek_arr = [0u8; 32];
+    kek_arr.copy_from_slice(&kek_bytes);
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::build_keyring_rows(&kek_arr, &recovery_code, &session)
+}
+
+#[tauri::command]
+fn encrypt_secret(plaintext: String, record_type: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::encrypt_secret(&plaintext, &record_type, &session)
+}
+
+#[tauri::command]
+fn decrypt_secret(payload: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::decrypt_secret(&payload, &session)
+}
+
+#[tauri::command]
+fn unwrap_dek(kek: String, wrapped: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let kek_bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &kek,
+    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
+    if kek_bytes.len() != 32 {
+        return Err("Invalid KEK length".to_string());
+    }
+    let mut kek_arr = [0u8; 32];
+    kek_arr.copy_from_slice(&kek_bytes);
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::unwrap_dek(&kek_arr, &wrapped, &mut session)
+}
+
+#[tauri::command]
+fn recovery_unwrap_dek(recovery_code: String, salt_cl: String, wrapped: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::recovery_unwrap_dek(&recovery_code, &salt_cl, &wrapped, &mut session)
+}
+
+#[tauri::command]
+fn sign_challenge(nonce: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::sign_challenge(&nonce, &session)
+}
+
+#[tauri::command]
+fn lock_session(state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::lock(&mut session);
+    Ok(())
+}
+
+#[tauri::command]
+fn unlock(password: String, salt_cl: String, wrapped_dek: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::unlock(&password, &salt_cl, &wrapped_dek, &mut session)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -795,6 +893,9 @@ pub fn run() {
         })
         .manage(CancelTokens {
             tokens: Mutex::new(HashMap::new()),
+        })
+        .manage(CryptoState {
+            session: std::sync::Mutex::new(crypto::KeySession::new()),
         })
         .manage(git::GitLock(std::sync::Arc::new(Mutex::new(()))))
         .manage(LocalSessions {
@@ -846,6 +947,17 @@ pub fn run() {
             git::git_stash_pop,
             git::git_stash_apply,
             git::git_stash_drop,
+            generate_account_material,
+            derive_kek,
+            compute_login_proof,
+            build_keyring_rows,
+            encrypt_secret,
+            decrypt_secret,
+            unwrap_dek,
+            recovery_unwrap_dek,
+            sign_challenge,
+            lock_session,
+            unlock,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

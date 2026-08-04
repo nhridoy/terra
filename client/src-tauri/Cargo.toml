@@ -26,6 +26,16 @@ dirs = "6"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-prevent-default = { version = "5", features = ["platform-windows"] }
 tokio = { version = "1.53.1", features = ["full"] }
+argon2 = "0.5"
+chacha20poly1305 = "0.9"
+cipher = "0.4"
+rand = "0.8"
+rand_core = "0.6"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+sha2 = "0.10"
+hmac = "0.12"
+zeroize = { version = "1", features = ["derive"] }
+base64 = "0.22"
 
 [features]
 default = ["custom-protocol"]
