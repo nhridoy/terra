@@ -1,5 +1,5 @@
-import FileInput from "../FileInput";
-import { FormBase, type FormControlFunc } from "./FormBase";
+import FileInput from "@/components/ui/FileInput";
+import { FormBase, type FormControlFunc } from "@/components/ui/forms/FormBase";
 
 export const FormFileInput: FormControlFunc<{
   accept?: Record<string, string[]>;

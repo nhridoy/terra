@@ -1,6 +1,6 @@
-import { Button } from "../../ui/Button";
-import { SectionHeader } from "../../ui/SectionHeader";
-import type { SshTabProps } from "./types";
+import { Button } from "@/components/ui/Button";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+import type { SshTabProps } from "@/types/settings/types";
 
 export default function SshTab({
   knownHosts,

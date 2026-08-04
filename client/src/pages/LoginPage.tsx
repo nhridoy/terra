@@ -1,18 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
-import OAuthLogin from "../components/auth/OAuthLogin";
-import ServerConfig from "../components/auth/ServerConfig";
-import { Alert } from "../components/ui/Alert";
-import { Button } from "../components/ui/Button";
-import { FormInput } from "../components/ui/forms/FormInput";
+import OAuthLogin from "@/components/auth/forms/OAuthLogin";
+import ServerConfig from "@/components/auth/forms/ServerConfig";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import {
   type LoginFormSchema,
   loginFormDefaultValues,
   loginFormSchema,
   requiredFields,
-} from "../lib/schema/loginFormSchema";
-import { useAuthStore } from "../stores/authStore";
+} from "@/lib/schema/auth/loginFormSchema";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function LoginPage() {
   const { login, isLoading, error, clearError } = useAuthStore();

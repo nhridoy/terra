@@ -1,22 +1,22 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { extractError } from "../../../lib/extractError";
+import { extractError } from "@/lib/common/extractError";
 import {
   type ChangePasswordFormSchema,
   changePasswordFormDefaultValues,
   changePasswordFormSchema,
-} from "../../../lib/schema/changePasswordFormSchema";
+} from "@/lib/schema/auth/changePasswordFormSchema";
 import {
   type ProfileFormSchema,
   profileFormDefaultValues,
   profileFormSchema,
-} from "../../../lib/schema/profileFormSchema";
-import { useAuthStore } from "../../../stores/authStore";
-import { Alert } from "../../ui/Alert";
-import { Button } from "../../ui/Button";
-import { FormInput } from "../../ui/forms/FormInput";
-import type { SecurityTabProps } from "./types";
+} from "@/lib/schema/settings/profileFormSchema";
+import { useAuthStore } from "@/stores/auth/authStore";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
+import type { SecurityTabProps } from "@/types/settings/types";
 
 export default function SecurityTab({
   tabs,

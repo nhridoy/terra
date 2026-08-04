@@ -1,7 +1,7 @@
-import Checkbox from "../../ui/Checkbox";
-import Select from "../../ui/Select";
-import Slider from "../../ui/Slider";
-import type { TerminalTabProps } from "./types";
+import Checkbox from "@/components/ui/Checkbox";
+import Select from "@/components/ui/Select";
+import Slider from "@/components/ui/Slider";
+import type { TerminalTabProps } from "@/types/settings/types";
 
 export default function TerminalTab({
   cursorStyle,

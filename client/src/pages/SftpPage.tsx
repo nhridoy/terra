@@ -1,4 +1,4 @@
-import SftpLayout from "../components/sftp/SftpLayout";
+import SftpLayout from "@/components/sftp/views/SftpLayout";
 
 export default function SftpPage() {
   return (

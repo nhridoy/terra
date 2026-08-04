@@ -1,5 +1,5 @@
-import Checkbox from "../Checkbox";
-import { FormBase, type FormControlFunc } from "./FormBase";
+import Checkbox from "@/components/ui/Checkbox";
+import { FormBase, type FormControlFunc } from "@/components/ui/forms/FormBase";
 
 export const FormCheckbox: FormControlFunc = (props) => {
   return (

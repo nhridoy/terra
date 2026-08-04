@@ -1,6 +1,6 @@
 import { ArrowsClockwiseIcon, SignOutIcon } from "@phosphor-icons/react";
-import { Button } from "../ui/Button";
-import { StatusDot } from "../ui/StatusDot";
+import { Button } from "@/components/ui/Button";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface ConnectionStatusProps {
   status: "connected" | "connecting" | "disconnected" | "error";

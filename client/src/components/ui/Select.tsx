@@ -1,6 +1,6 @@
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/common/utils";
 
 export interface SelectOption {
   value: string;

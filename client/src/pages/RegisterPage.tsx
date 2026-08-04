@@ -1,18 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
-import OAuthLogin from "../components/auth/OAuthLogin";
-import ServerConfig from "../components/auth/ServerConfig";
-import { Alert } from "../components/ui/Alert";
-import { Button } from "../components/ui/Button";
-import { FormInput } from "../components/ui/forms/FormInput";
+import OAuthLogin from "@/components/auth/forms/OAuthLogin";
+import ServerConfig from "@/components/auth/forms/ServerConfig";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import {
   type RegisterFormSchema,
   registerFormDefaultValues,
   registerFormSchema,
   requiredFields,
-} from "../lib/schema/registerFormSchema";
-import { useAuthStore } from "../stores/authStore";
+} from "@/lib/schema/auth/registerFormSchema";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function RegisterPage() {
   const { register, isLoading, error, clearError } = useAuthStore();

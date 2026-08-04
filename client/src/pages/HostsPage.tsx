@@ -1,10 +1,10 @@
 import { useState } from "react";
-import GroupForm from "../components/groups/GroupForm";
-import HostForm, { type HostData } from "../components/hosts/HostForm";
-import HostsPanel from "../components/hosts/HostsPanel";
-import { useModal } from "../hooks/useModal";
-import { type Group, type Host, useHostStore } from "../stores/hostStore";
-import { useTerminalStore } from "../stores/terminalStore";
+import GroupForm from "@/components/hosts/forms/GroupForm";
+import HostForm, { type HostData } from "@/components/hosts/forms/HostForm";
+import HostsPanel from "@/components/hosts/panels/HostsPanel";
+import { useModal } from "@/hooks/useModal";
+import { type Group, type Host, useHostStore } from "@/stores/hosts/hostStore";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
 
 export default function HostsPage() {
   const { deleteHost, deleteGroup } = useHostStore();

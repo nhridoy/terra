@@ -1,5 +1,5 @@
 import type { ElementType } from "react";
-import { Button } from "./Button";
+import { Button } from "@/components/ui/Button";
 
 interface EmptyActionStateProps {
   icon?: ElementType;

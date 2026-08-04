@@ -11,7 +11,7 @@ import {
   FieldDescription,
   FieldError,
   FieldLabel,
-} from "../field";
+} from "@/components/ui/field";
 
 type FormControlProps<
   TFieldValues extends FieldValues = FieldValues,

@@ -7,9 +7,9 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import type { ReactNode, Ref } from "react";
-import type { ConnectionStatus } from "../../lib/connectionStatus";
-import { Button } from "./Button";
-import { StatusDot } from "./StatusDot";
+import type { ConnectionStatus } from "@/lib/common/connectionStatus";
+import { Button } from "@/components/ui/Button";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface PaneHeaderProps {
   title: string;

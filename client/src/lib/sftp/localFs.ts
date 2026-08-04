@@ -1,0 +1,154 @@
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  exists,
+  copyFile as fsCopyFile,
+  mkdir,
+  readDir,
+  readFile,
+  remove,
+  rename,
+  stat,
+  writeFile,
+} from "@tauri-apps/plugin-fs";
+import type { FileItem } from "@/types/sftp/sftpTypes";
+
+export async function listLocalFiles(dirPath: string): Promise<FileItem[]> {
+  const entries = await readDir(dirPath);
+  const items: FileItem[] = [];
+
+  for (const entry of entries) {
+    const fullPath = dirPath.endsWith("/")
+      ? `${dirPath}${entry.name}`
+      : `${dirPath}/${entry.name}`;
+
+    let fileStat: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      fileStat = await stat(fullPath);
+    } catch {
+      // stat can fail on broken symlinks
+    }
+
+    items.push({
+      name: entry.name,
+      path: fullPath,
+      type: entry.isDirectory
+        ? "directory"
+        : entry.isSymlink
+          ? "symlink"
+          : "file",
+      size: fileStat?.size ?? 0,
+      permissions: "",
+      owner: "",
+      group: "",
+      modifiedAt: fileStat?.mtime?.toISOString() ?? new Date().toISOString(),
+      isHidden: entry.name.startsWith("."),
+    });
+  }
+
+  return items;
+}
+
+export async function readLocalFile(filePath: string): Promise<string> {
+  const content = await readFile(filePath);
+  return new TextDecoder().decode(content);
+}
+
+export async function readLocalFileBytes(
+  filePath: string,
+): Promise<Uint8Array> {
+  return readFile(filePath);
+}
+
+export async function writeLocalFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
+  await writeFile(filePath, new TextEncoder().encode(content));
+}
+
+export async function writeLocalFileBytes(
+  filePath: string,
+  data: Uint8Array,
+): Promise<void> {
+  await writeFile(filePath, data);
+}
+
+export async function createLocalDir(dirPath: string): Promise<void> {
+  await mkdir(dirPath, { recursive: true });
+}
+
+export async function removeLocalFile(filePath: string): Promise<void> {
+  await remove(filePath, { recursive: true });
+}
+
+export async function renameLocalFile(
+  oldPath: string,
+  newPath: string,
+): Promise<void> {
+  await rename(oldPath, newPath);
+}
+
+export async function copyLocalFile(
+  source: string,
+  destination: string,
+): Promise<void> {
+  await fsCopyFile(source, destination);
+}
+
+export async function moveLocalFile(
+  source: string,
+  destination: string,
+): Promise<void> {
+  await rename(source, destination);
+}
+
+export async function localFileExists(filePath: string): Promise<boolean> {
+  return exists(filePath);
+}
+
+export async function getLocalFileStat(filePath: string) {
+  return stat(filePath);
+}
+
+export async function openDirectoryPicker(): Promise<string | null> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: "Select Directory",
+  });
+  if (typeof selected === "string") return selected;
+  return null;
+}
+
+export async function openFilePicker(): Promise<string | null> {
+  const selected = await open({
+    multiple: false,
+    title: "Select File",
+  });
+  if (typeof selected === "string") return selected;
+  return null;
+}
+
+export async function saveFilePicker(
+  defaultName?: string,
+): Promise<string | null> {
+  return save({
+    defaultPath: defaultName,
+    title: "Save File",
+  });
+}
+
+export function isTauriAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
+  );
+}
+
+export async function isSameVolume(
+  path1: string,
+  path2: string,
+): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("is_same_volume", { path1, path2 });
+}

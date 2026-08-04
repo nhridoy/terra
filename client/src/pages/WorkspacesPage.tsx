@@ -1,9 +1,9 @@
 import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
-import WorkspaceForm from "../components/workspace/WorkspaceForm";
-import WorkspaceList from "../components/workspace/WorkspaceList";
-import { useModal } from "../hooks/useModal";
-import { useTerminalStore } from "../stores/terminalStore";
-import { useVaultStore } from "../stores/vaultStore";
+import WorkspaceForm from "@/components/workspaces/forms/WorkspaceForm";
+import WorkspaceList from "@/components/workspaces/lists/WorkspaceList";
+import { useModal } from "@/hooks/useModal";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 export default function WorkspacesPage() {
   const { currentVaultId } = useVaultStore();

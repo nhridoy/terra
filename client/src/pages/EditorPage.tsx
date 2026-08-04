@@ -1,4 +1,4 @@
-import EditorLayout from "../components/editor/EditorLayout";
+import EditorLayout from "@/components/editor/views/EditorLayout";
 
 export default function EditorPage() {
   return (

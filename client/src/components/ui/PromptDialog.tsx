@@ -5,9 +5,9 @@ import {
   type NameFormSchema,
   nameFormDefaultValues,
   nameFormSchema,
-} from "../../lib/schema/nameFormSchema";
-import ModalForm from "../shared/ModalForm";
-import { FormInput } from "../ui/forms/FormInput";
+} from "@/lib/schema/common/nameFormSchema";
+import ModalForm from "@/components/common/ModalForm";
+import { FormInput } from "@/components/ui/forms/FormInput";
 
 interface PromptDialogProps {
   open: boolean;

@@ -1,4 +1,4 @@
-import TerminalView from "../components/terminal/TerminalView";
+import TerminalView from "@/components/terminal/views/TerminalView";
 
 export default function TerminalPage() {
   return (

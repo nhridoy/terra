@@ -1,5 +1,5 @@
-import { getStatusColor } from "../../lib/connectionStatus";
-import { cn } from "../../lib/utils";
+import { getStatusColor } from "@/lib/common/connectionStatus";
+import { cn } from "@/lib/common/utils";
 
 interface StatusDotProps {
   status: string;

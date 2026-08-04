@@ -3,14 +3,14 @@ import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
-import { Alert } from "../components/ui/Alert";
-import { Button } from "../components/ui/Button";
-import { FormInput } from "../components/ui/forms/FormInput";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import {
   type ForgotPasswordFormSchema,
   forgotPasswordFormDefaultValues,
   forgotPasswordFormSchema,
-} from "../lib/schema/forgotPasswordFormSchema";
+} from "@/lib/schema/auth/forgotPasswordFormSchema";
 
 export default function ForgotPasswordPage() {
   const [submitted, setSubmitted] = useState(false);

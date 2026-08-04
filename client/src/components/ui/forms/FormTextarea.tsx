@@ -1,5 +1,5 @@
-import Textarea from "../Textarea";
-import { FormBase, type FormControlFunc } from "./FormBase";
+import Textarea from "@/components/ui/Textarea";
+import { FormBase, type FormControlFunc } from "@/components/ui/forms/FormBase";
 
 export const FormTextarea: FormControlFunc = (props) => {
   return <FormBase {...props}>{(field) => <Textarea {...field} />}</FormBase>;

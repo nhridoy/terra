@@ -1,6 +1,6 @@
 import { CheckIcon } from "@phosphor-icons/react";
 import { useId } from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/common/utils";
 
 interface CheckboxProps {
   checked?: boolean;

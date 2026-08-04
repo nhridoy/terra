@@ -1,7 +1,7 @@
 import { UploadSimpleIcon, XIcon } from "@phosphor-icons/react";
 import { useId } from "react";
 import { useDropzone } from "react-dropzone";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/common/utils";
 
 interface FileInputProps {
   value?: File | null;

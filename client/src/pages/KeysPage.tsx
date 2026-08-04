@@ -1,4 +1,4 @@
-import KeyList from "../components/keychain/KeyList";
+import KeyList from "@/components/keys/lists/KeyList";
 
 export default function KeysPage() {
   return (
