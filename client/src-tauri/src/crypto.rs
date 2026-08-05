@@ -78,7 +78,7 @@ impl EncryptedPayload {
 
 pub fn derive_kek_bytes(password: &str, salt_cl: &[u8; SALT_CL_LEN]) -> Result<[u8; DEK_LEN], String> {
     let mut kek = [0u8; DEK_LEN];
-    let params = argon2::Params::new(64 * 1024, 3, 1, Some(DEK_LEN))
+    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
         .map_err(|e| format!("Argon2 params error: {e}"))?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     argon2
@@ -142,7 +142,7 @@ pub fn compute_login_proof(
         .decode(server_salt_b64)
         .map_err(|e| format!("Invalid server_salt base64: {e}"))?;
 
-    let params = argon2::Params::new(64 * 1024, 3, 1, Some(DEK_LEN))
+    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
         .map_err(|e| format!("Argon2 params error: {e}"))?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut verifier = [0u8; DEK_LEN];
@@ -176,7 +176,7 @@ pub fn build_keyring_rows(
         .decode(recovery_code)
         .map_err(|e| format!("Invalid recovery code base64: {e}"))?;
     let mut recovery_kek = [0u8; DEK_LEN];
-    let params = argon2::Params::new(64 * 1024, 3, 1, Some(DEK_LEN))
+    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
         .map_err(|e| format!("Argon2 params error: {e}"))?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     argon2
@@ -239,7 +239,7 @@ pub fn recovery_unwrap_dek(
     salt_cl.copy_from_slice(&salt_cl_bytes);
 
     let mut recovery_kek = [0u8; DEK_LEN];
-    let params = argon2::Params::new(64 * 1024, 3, 1, Some(DEK_LEN))
+    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
         .map_err(|e| format!("Argon2 params error: {e}"))?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     argon2
