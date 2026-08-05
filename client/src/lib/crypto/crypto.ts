@@ -51,33 +51,33 @@ export async function encryptObject<T extends Record<string, unknown>>(
   obj: T,
   fields: readonly string[],
 ): Promise<T> {
-  const result = { ...obj };
+  const result = { ...obj } as Record<string, unknown>;
   for (const field of fields) {
     const value = result[field];
     if (typeof value === "string") {
-      result[field] = (await invoke<string>("encrypt_secret", {
+      result[field] = await invoke<string>("encrypt_secret", {
         plaintext: value,
         recordType: field,
-      })) as T[typeof field];
+      });
     }
   }
-  return result;
+  return result as T;
 }
 
 export async function decryptObject<T extends Record<string, unknown>>(
   obj: T,
   fields: readonly string[],
 ): Promise<T> {
-  const result = { ...obj };
+  const result = { ...obj } as Record<string, unknown>;
   for (const field of fields) {
     const value = result[field];
     if (typeof value === "string") {
-      result[field] = (await invoke<string>("decrypt_secret", {
+      result[field] = await invoke<string>("decrypt_secret", {
         payload: value,
-      })) as T[typeof field];
+      });
     }
   }
-  return result;
+  return result as T;
 }
 
 export async function generateAccountMaterial(): Promise<AccountMaterial> {

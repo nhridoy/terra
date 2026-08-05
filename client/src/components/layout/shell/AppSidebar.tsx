@@ -9,8 +9,8 @@ import {
   UserIcon,
 } from "@phosphor-icons/react";
 import { useLocation, useNavigate } from "react-router";
-import { useAuthStore } from "@/stores/auth/authStore";
 import { Button } from "@/components/ui/Button";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 const sidebarItems = [
   { path: "/hosts", label: "Hosts", icon: DesktopTowerIcon },
@@ -93,7 +93,7 @@ export default function AppSidebar({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">
-              {user?.username || "User"}
+              {user?.name || "User"}
             </p>
             <p className="text-xs truncate text-dark-400">{user?.email}</p>
           </div>

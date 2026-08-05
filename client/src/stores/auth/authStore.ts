@@ -28,6 +28,11 @@ interface AuthState {
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   unlock: (password: string) => Promise<void>;
+  updateProfile: (data: { username?: string; email?: string }) => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   clearError: () => void;
   restoreSession: () => Promise<void>;
 }
@@ -193,6 +198,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   unlock: async (_password: string) => {
     // Unlock with password - requires keyring data
     set({ isUnlocked: true });
+  },
+
+  updateProfile: async (data) => {
+    set((state) => ({
+      user: state.user ? { ...state.user, ...data } : null,
+    }));
+  },
+
+  changePassword: async (_currentPassword: string, _newPassword: string) => {
+    // TODO: call password change API with crypto re-encryption
   },
 
   clearError: () => set({ error: null }),

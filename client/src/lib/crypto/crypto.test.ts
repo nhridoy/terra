@@ -163,7 +163,7 @@ describe("encryptObject", () => {
 
   it("skips non-string fields", async () => {
     const obj = { port: 22, name: "test" };
-    const _result = await encryptObject(obj, ["port", "name"]);
+    await encryptObject(obj, ["port", "name"]);
 
     expect(mockInvoke).not.toHaveBeenCalledWith("encrypt_secret", {
       plaintext: 22,

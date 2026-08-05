@@ -1,6 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import { extractError } from "@/lib/common/extractError";
 import {
   type ChangePasswordFormSchema,
@@ -13,9 +16,6 @@ import {
   profileFormSchema,
 } from "@/lib/schema/settings/profileFormSchema";
 import { useAuthStore } from "@/stores/auth/authStore";
-import { Alert } from "@/components/ui/Alert";
-import { Button } from "@/components/ui/Button";
-import { FormInput } from "@/components/ui/forms/FormInput";
 import type { SecurityTabProps } from "@/types/settings/types";
 
 export default function SecurityTab({
@@ -35,7 +35,7 @@ export default function SecurityTab({
   const profileForm = useForm<ProfileFormSchema>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      username: user?.username || profileFormDefaultValues.username,
+      username: user?.name || profileFormDefaultValues.username,
       email: user?.email || profileFormDefaultValues.email,
     },
   });
