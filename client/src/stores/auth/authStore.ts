@@ -108,7 +108,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Registration failed";
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Registration failed";
       set({ error: message, isLoading: false });
       throw err;
     }
@@ -149,7 +153,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed";
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Login failed";
       set({ error: message, isLoading: false });
       throw err;
     }

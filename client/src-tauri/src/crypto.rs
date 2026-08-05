@@ -1,5 +1,5 @@
 use argon2::Argon2;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE64, Engine};
 use chacha20poly1305::{
     aead::{Aead, NewAead, Payload},
     XChaCha20Poly1305, XNonce,
