@@ -84,7 +84,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
 
       const res = await authApi.register({
-        user_id: material.public_key,
+        user_id: crypto.randomUUID(),
         email,
         password_hash: proof.verifier,
         encrypted_dek: material.private_key_wrapped_by_dek,
