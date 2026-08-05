@@ -1,6 +1,6 @@
 import { PauseIcon, PlayIcon, TrashIcon } from "@phosphor-icons/react";
-import type { PortForward } from "@/stores/portforwarding/portForwardingStore";
 import { Button } from "@/components/ui/Button";
+import type { PortForward } from "@/stores/portforwarding/portForwardingStore";
 
 interface ForwardCardProps {
   forward: PortForward;

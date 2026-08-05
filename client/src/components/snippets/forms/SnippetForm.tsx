@@ -1,17 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
-import { parseTags } from "@/lib/snippets/parseTags";
+import ModalForm from "@/components/common/ModalForm";
+import { FormInput } from "@/components/ui/forms/FormInput";
+import { FormTextarea } from "@/components/ui/forms/FormTextarea";
 import {
   type SnippetFormSchema,
   snippetFormDefaultValues,
   snippetFormSchema,
 } from "@/lib/schema/snippets/snippetFormSchema";
+import { parseTags } from "@/lib/snippets/parseTags";
 import { useSnippetStore } from "@/stores/snippets/snippetStore";
 import { useVaultStore } from "@/stores/vault/vaultStore";
-import ModalForm from "@/components/common/ModalForm";
-import { FormInput } from "@/components/ui/forms/FormInput";
-import { FormTextarea } from "@/components/ui/forms/FormTextarea";
 
 interface SnippetFormProps {
   snippet?: {

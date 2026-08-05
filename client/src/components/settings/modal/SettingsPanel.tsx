@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useModal } from "@/hooks/useModal";
-import { useSettingsStore } from "@/stores/settings/settingsStore";
-import { useTerminalStore } from "@/stores/terminal/terminalStore";
-import { type Theme, useThemeStore } from "@/stores/themeStore";
-import { Button } from "@/components/ui/Button";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import settingsTabs from "@/components/settings/modal/SettingsTabs";
 import AdvancedTab from "@/components/settings/tabs/AdvancedTab";
 import AppearanceTab from "@/components/settings/tabs/AppearanceTab";
 import SecurityTab from "@/components/settings/tabs/SecurityTab";
 import SshTab from "@/components/settings/tabs/SshTab";
 import TerminalTab from "@/components/settings/tabs/TerminalTab";
+import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import { useModal } from "@/hooks/useModal";
+import { useSettingsStore } from "@/stores/settings/settingsStore";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
+import { type Theme, useThemeStore } from "@/stores/themeStore";
 
 interface KnownHost {
   host: string;

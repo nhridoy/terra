@@ -7,10 +7,10 @@ import {
   PlusIcon,
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router";
-import { useTerminalStore } from "@/stores/terminal/terminalStore";
-import { Button } from "@/components/ui/Button";
 import SortableTab from "@/components/layout/tabs/SortableTab";
+import { Button } from "@/components/ui/Button";
 import VaultSelector from "@/components/vault/selector/VaultSelector";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
 
 interface HeaderProps {
   activeView: string;

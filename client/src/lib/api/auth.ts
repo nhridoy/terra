@@ -16,6 +16,19 @@ export function setApiUrl(url: string): void {
   }
 }
 
+let getRefreshTokenFn: (() => string | null) | null = null;
+let setRefreshTokenFn: ((token: string | null) => void) | null = null;
+
+export function setRefreshTokenGetter(fn: () => string | null): void {
+  getRefreshTokenFn = fn;
+}
+
+export function setRefreshTokenSetter(
+  fn: (token: string | null) => void,
+): void {
+  setRefreshTokenFn = fn;
+}
+
 export interface ApiError {
   code: string;
   message: string;
@@ -46,11 +59,47 @@ async function apiFetch<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // If 401 and we have a token, try refreshing and retrying once
+  if (res.status === 401 && token) {
+    try {
+      const storedRefresh = getRefreshTokenFn?.() ?? null;
+      if (storedRefresh) {
+        const refreshRes = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: storedRefresh }),
+        });
+
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          const newAccessToken = refreshData.data?.access_token;
+          const newRefreshToken = refreshData.data?.refresh_token;
+
+          if (newAccessToken) {
+            if (newRefreshToken) {
+              setRefreshTokenFn?.(newRefreshToken);
+            }
+
+            // Retry original request with new token
+            headers.Authorization = `Bearer ${newAccessToken}`;
+            res = await fetch(url, {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+          }
+        }
+      }
+    } catch {
+      // Refresh failed, fall through to error handling below
+    }
+  }
 
   if (res.status === 204) {
     return undefined as T;
@@ -81,7 +130,7 @@ export interface TokenPair {
 export interface User {
   id: string;
   email: string;
-  name?: string;
+  full_name?: string;
   initialized: boolean;
   auth_provider: string;
   created_at: string;
@@ -99,6 +148,7 @@ export interface LoginResponse extends TokenPair {
 export interface RegisterRequest {
   user_id: string;
   email: string;
+  full_name?: string;
   password_hash: string;
   encrypted_dek: string;
   encrypted_privkey: string;
@@ -147,17 +197,20 @@ export const authApi = {
     return apiFetch("GET", "/api/v1/me", undefined, token);
   },
 
-  async passwordChange(params: {
-    old_proof: string;
-    old_nonce: string;
-    new_verifier: string;
-    new_encrypted_dek: string;
-    new_nonce: string;
-    new_kdf: { m: number; t: number; p: number };
-    new_server_salt: string;
-    new_salt_cl: string;
-  }): Promise<void> {
-    return apiFetch("POST", "/api/v1/auth/password-change", params);
+  async passwordChange(
+    params: {
+      old_proof: string;
+      old_nonce: string;
+      new_verifier: string;
+      new_encrypted_dek: string;
+      new_nonce: string;
+      new_kdf: { m: number; t: number; p: number };
+      new_server_salt: string;
+      new_salt_cl: string;
+    },
+    token: string,
+  ): Promise<void> {
+    return apiFetch("POST", "/api/v1/auth/password-change", params, token);
   },
 
   async recovery(params: {

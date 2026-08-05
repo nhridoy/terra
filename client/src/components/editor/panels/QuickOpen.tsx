@@ -1,12 +1,12 @@
 import { CircleNotchIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getFileIcon } from "@/lib/sftp/fileHelpers";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   collectWorkspaceFiles,
   WORKSPACE_FILE_LIMIT,
 } from "@/lib/workspaces/workspaceFiles";
 import { useEditorStore } from "@/stores/editor/editorStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 const MAX_RESULTS = 50;
 const fileCache = new Map<string, Promise<FileItem[]>>();

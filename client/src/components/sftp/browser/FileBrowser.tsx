@@ -1,20 +1,6 @@
 import { pointerIntersection } from "@dnd-kit/collision";
 import { useDragDropMonitor, useDroppable } from "@dnd-kit/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FileItem } from "@/types/sftp/sftpTypes";
-import {
-  fileBrowserActions,
-  useFileBrowserStore,
-} from "@/stores/sftp/fileBrowserStore";
-import { useSftpStore } from "@/stores/sftp/sftpStore";
-import { Button } from "@/components/ui/Button";
-import Modal from "@/components/ui/Modal";
-import { useFileKeyboardShortcuts } from "@/hooks/sftp/useFileKeyboardShortcuts";
-import { useFileOperations } from "@/hooks/sftp/useFileOperations";
-import { useSortedFiles } from "@/hooks/sftp/useSortedFiles";
-import { useTauriDragDrop } from "@/hooks/sftp/useTauriDragDrop";
-import FileBrowserStatusBar from "@/components/sftp/browser/shared/FileBrowserStatusBar";
-import FileBrowserToolbar from "@/components/sftp/browser/shared/FileBrowserToolbar";
 import FileBrowserList from "@/components/sftp/browser/FileBrowserList";
 import {
   DragOverOverlay,
@@ -22,6 +8,20 @@ import {
   ErrorBar,
 } from "@/components/sftp/browser/FileBrowserOverlays";
 import PasteConflictDialog from "@/components/sftp/browser/PasteConflictDialog";
+import FileBrowserStatusBar from "@/components/sftp/browser/shared/FileBrowserStatusBar";
+import FileBrowserToolbar from "@/components/sftp/browser/shared/FileBrowserToolbar";
+import { Button } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import { useFileKeyboardShortcuts } from "@/hooks/sftp/useFileKeyboardShortcuts";
+import { useFileOperations } from "@/hooks/sftp/useFileOperations";
+import { useSortedFiles } from "@/hooks/sftp/useSortedFiles";
+import { useTauriDragDrop } from "@/hooks/sftp/useTauriDragDrop";
+import {
+  fileBrowserActions,
+  useFileBrowserStore,
+} from "@/stores/sftp/fileBrowserStore";
+import { useSftpStore } from "@/stores/sftp/sftpStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface FileBrowserProps {
   paneId?: string;

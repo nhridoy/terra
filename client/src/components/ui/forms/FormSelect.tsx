@@ -1,6 +1,6 @@
+import { FormBase, type FormControlFunc } from "@/components/ui/forms/FormBase";
 import type { SelectOption } from "@/components/ui/Select";
 import Select from "@/components/ui/Select";
-import { FormBase, type FormControlFunc } from "@/components/ui/forms/FormBase";
 
 export const FormSelect: FormControlFunc<{
   options: SelectOption[];

@@ -7,16 +7,16 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useModal } from "@/hooks/useModal";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { useVaultStore } from "@/stores/vault/vaultStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { EmptyActionState } from "@/components/ui/EmptyActionState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import Input from "@/components/ui/Input";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { useModal } from "@/hooks/useModal";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 interface Snippet {
   id: string;
@@ -45,7 +45,7 @@ export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
     } catch (e) {
       console.error("Failed to fetch snippets:", e);
     }
-  }, [currentVaultId]);
+  }, []);
 
   useEffect(() => {
     fetchSnippets();

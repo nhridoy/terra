@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const profileFormSchema = z.object({
-  username: z
+  full_name: z
     .string()
     .trim()
-    .min(1, { error: "Username is required" })
-    .max(255, { error: "Username must be at most 255 characters" }),
+    .min(1, { error: "Full name is required" })
+    .max(255, { error: "Full name must be at most 255 characters" }),
   email: z
     .email({ error: "Please enter a valid email address" })
     .trim()
@@ -16,6 +16,6 @@ export const profileFormSchema = z.object({
 export type ProfileFormSchema = z.infer<typeof profileFormSchema>;
 
 export const profileFormDefaultValues: ProfileFormSchema = {
-  username: "",
+  full_name: "",
   email: "",
 };

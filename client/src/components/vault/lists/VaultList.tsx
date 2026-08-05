@@ -1,8 +1,8 @@
 import { LockIcon } from "@phosphor-icons/react";
-import { useVaultStore } from "@/stores/vault/vaultStore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 export default function VaultList() {
   const { vaults, currentVaultId, switchVault } = useVaultStore();

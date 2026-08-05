@@ -1,7 +1,7 @@
-import { type Theme, themes } from "@/stores/themeStore";
 import { Button } from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import Slider from "@/components/ui/Slider";
+import { type Theme, themes } from "@/stores/themeStore";
 import type { AppearanceTabProps } from "@/types/settings/types";
 
 export default function AppearanceTab({

@@ -280,6 +280,11 @@ pub fn lock(session: &mut KeySession) {
     session.salt_cl.zeroize();
 }
 
+pub fn wrap_dek(session: &KeySession) -> Result<String, String> {
+    let kek = session.kek.ok_or("KEK not derived")?;
+    encrypt_bytes(&kek, &session.dek, b"dek")
+}
+
 pub fn unlock(
     password: &str,
     salt_cl_b64: &str,

@@ -31,7 +31,8 @@ function getPrimaryButton(container: HTMLElement): HTMLElement | null {
     }
   }
   const nonGhost = Array.from(all).filter(
-    (el) => !el.className.includes("ghost") && !el.className.includes("secondary"),
+    (el) =>
+      !el.className.includes("ghost") && !el.className.includes("secondary"),
   );
   if (nonGhost.length > 0) return nonGhost[nonGhost.length - 1];
   return all.length > 0 ? all[all.length - 1] : null;
@@ -55,8 +56,7 @@ export default function Modal({
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
 
-    const bodyEls =
-      bodyRef.current && getFocusableElements(bodyRef.current);
+    const bodyEls = bodyRef.current && getFocusableElements(bodyRef.current);
     if (bodyEls && bodyEls.length > 0) {
       bodyEls[0].focus();
     } else if (panelRef.current) {

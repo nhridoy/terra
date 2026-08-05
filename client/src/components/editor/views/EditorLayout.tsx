@@ -12,11 +12,11 @@ import {
 import { isSortable } from "@dnd-kit/react/sortable";
 import { FileTextIcon } from "@phosphor-icons/react";
 import { useEffect } from "react";
+import QuickOpen from "@/components/editor/panels/QuickOpen";
+import EditorPane from "@/components/editor/views/EditorPane";
 import type { DropSide } from "@/lib/common/paneLayout";
 import { useDragStore } from "@/stores/dragStore";
 import { useEditorStore } from "@/stores/editor/editorStore";
-import EditorPane from "@/components/editor/views/EditorPane";
-import QuickOpen from "@/components/editor/panels/QuickOpen";
 
 type Manager = ReturnType<typeof useDragDropManager>;
 

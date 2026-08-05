@@ -1,20 +1,20 @@
 import { FolderIcon } from "@phosphor-icons/react";
 import { useCallback, useMemo, useState } from "react";
+import { buildContextMenuItems } from "@/components/sftp/browser/shared/buildContextMenuItems";
+import FileBrowserListShared from "@/components/sftp/browser/shared/FileBrowserList";
+import FileGridItem from "@/components/sftp/browser/shared/FileGridItem";
+import FileListItem from "@/components/sftp/browser/shared/FileListItem";
+import ContextMenu from "@/components/ui/ContextMenu";
+import {
+  type ColumnDef,
+  useResizableColumns,
+} from "@/hooks/sftp/useResizableColumns";
 import type {
   FileItem,
   FileSortDirection,
   FileSortField,
   FileViewMode,
 } from "@/types/sftp/sftpTypes";
-import ContextMenu from "@/components/ui/ContextMenu";
-import {
-  type ColumnDef,
-  useResizableColumns,
-} from "@/hooks/sftp/useResizableColumns";
-import { buildContextMenuItems } from "@/components/sftp/browser/shared/buildContextMenuItems";
-import FileBrowserListShared from "@/components/sftp/browser/shared/FileBrowserList";
-import FileGridItem from "@/components/sftp/browser/shared/FileGridItem";
-import FileListItem from "@/components/sftp/browser/shared/FileListItem";
 
 const REMOTE_COLUMNS: ColumnDef[] = [
   { key: "icon", label: "", defaultWidth: 36, minWidth: 36 },

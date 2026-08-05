@@ -1,8 +1,8 @@
 import { TerminalIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { useSnippetStore } from "@/stores/snippets/snippetStore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { useSnippetStore } from "@/stores/snippets/snippetStore";
 
 interface CommandAutocompleteProps {
   isVisible: boolean;
@@ -120,7 +120,7 @@ export default function CommandAutocomplete({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {

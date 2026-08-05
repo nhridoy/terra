@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router";
-import { useAuthStore } from "@/stores/auth/authStore";
 import Spinner from "@/components/ui/Spinner";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 interface AuthGuardProps {
   requireAuth: boolean;

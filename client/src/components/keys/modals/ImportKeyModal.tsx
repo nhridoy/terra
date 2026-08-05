@@ -1,17 +1,17 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import { Button } from "@/components/ui/Button";
+import FileInput from "@/components/ui/FileInput";
+import { FormInput } from "@/components/ui/forms/FormInput";
+import Modal from "@/components/ui/Modal";
 import { extractError } from "@/lib/common/extractError";
+import { looksLikePrivateKey } from "@/lib/common/validate";
 import {
   type ImportKeyFormSchema,
   importKeyFormDefaultValues,
   importKeyFormSchema,
 } from "@/lib/schema/keys/importKeyFormSchema";
-import { looksLikePrivateKey } from "@/lib/common/validate";
-import { Button } from "@/components/ui/Button";
-import FileInput from "@/components/ui/FileInput";
-import { FormInput } from "@/components/ui/forms/FormInput";
-import Modal from "@/components/ui/Modal";
 
 export default function ImportKeyModal({
   onClose,

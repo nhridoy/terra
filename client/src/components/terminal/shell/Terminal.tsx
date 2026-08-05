@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react'
-import { useTerminalStore } from '@/stores/terminal/terminalStore'
+import { useEffect, useRef } from "react";
 import {
   attachSession,
   destroySession,
@@ -7,21 +6,22 @@ import {
   fitSession,
   getOrCreateSession,
   type Session,
-} from '@/lib/terminal/sessionManager'
+} from "@/lib/terminal/sessionManager";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
 
 interface TerminalProps {
-  hostId: string
-  hostName: string
-  tabId: string
-  paneId: string
-  hostAddress?: string
-  hostPort?: number
-  hostUsername?: string
-  authType?: 'password' | 'key'
-  keyId?: string
-  connectionType?: 'ssh' | 'local'
-  shell?: string
-  isActive?: boolean
+  hostId: string;
+  hostName: string;
+  tabId: string;
+  paneId: string;
+  hostAddress?: string;
+  hostPort?: number;
+  hostUsername?: string;
+  authType?: "password" | "key";
+  keyId?: string;
+  connectionType?: "ssh" | "local";
+  shell?: string;
+  isActive?: boolean;
 }
 
 export default function Terminal({
@@ -38,11 +38,11 @@ export default function Terminal({
   shell,
   isActive,
 }: TerminalProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    const el = containerRef.current;
+    if (!el) return;
 
     const session: Session = getOrCreateSession({
       paneId,
@@ -56,16 +56,16 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    })
-    attachSession(session, el)
+    });
+    attachSession(session, el);
 
     return () => {
-      detachSession(session, el)
+      detachSession(session, el);
       const exists = useTerminalStore
         .getState()
-        .tabs.some((t) => paneExistsInTree(t.root, paneId))
-      if (!exists) destroySession(paneId)
-    }
+        .tabs.some((t) => paneExistsInTree(t.root, paneId));
+      if (!exists) destroySession(paneId);
+    };
   }, [
     paneId,
     hostName,
@@ -78,7 +78,7 @@ export default function Terminal({
     keyId,
     connectionType,
     shell,
-  ])
+  ]);
 
   useEffect(() => {
     const session = getOrCreateSession({
@@ -93,11 +93,11 @@ export default function Terminal({
       keyId,
       connectionType,
       shell,
-    })
-    session.params.tabId = tabId
+    });
+    session.params.tabId = tabId;
     if (isActive) {
-      const timer = setTimeout(() => fitSession(paneId), 50)
-      return () => clearTimeout(timer)
+      const timer = setTimeout(() => fitSession(paneId), 50);
+      return () => clearTimeout(timer);
     }
   }, [
     isActive,
@@ -112,15 +112,15 @@ export default function Terminal({
     keyId,
     connectionType,
     shell,
-  ])
+  ]);
 
-  return <div ref={containerRef} className="w-full h-full" />
+  return <div ref={containerRef} className="w-full h-full" />;
 }
 
 function paneExistsInTree(
-  node: import('@/stores/terminal/terminalStore').PaneNode,
+  node: import("@/stores/terminal/terminalStore").PaneNode,
   paneId: string,
 ): boolean {
-  if (node.type === 'leaf') return node.id === paneId
-  return node.children.some((c) => paneExistsInTree(c, paneId))
+  if (node.type === "leaf") return node.id === paneId;
+  return node.children.some((c) => paneExistsInTree(c, paneId));
 }

@@ -1,11 +1,11 @@
+import { Button } from "@/components/ui/Button";
+import type { ColumnDef } from "@/hooks/sftp/useResizableColumns";
 import type {
   FileItem,
   FileSortDirection,
   FileSortField,
   FileViewMode,
 } from "@/types/sftp/sftpTypes";
-import { Button } from "@/components/ui/Button";
-import type { ColumnDef } from "@/hooks/sftp/useResizableColumns";
 
 export interface FileBrowserListProps {
   files: FileItem[];

@@ -1,6 +1,7 @@
 import { closestCenter } from "@dnd-kit/collision";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { FloppyDiskIcon, XIcon } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/Button";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
 import { getWorstStatus } from "@/lib/common/connectionStatus";
 import { countLeaves } from "@/lib/common/paneLayout";
@@ -9,7 +10,6 @@ import {
   type PaneNode,
   type TerminalTab,
 } from "@/stores/terminal/terminalStore";
-import { Button } from "@/components/ui/Button";
 
 function collectPaneStatuses(node: PaneNode): string[] {
   if (node.type === "leaf") return [node.connectionStatus];

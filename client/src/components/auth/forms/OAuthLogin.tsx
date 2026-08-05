@@ -3,7 +3,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 
 interface OAuthLoginProps {
-  onSuccess: (user: { id: string; email: string; username?: string }) => void;
+  onSuccess: (user: { id: string; email: string; full_name?: string }) => void;
 }
 
 export default function OAuthLogin({ onSuccess: _onSuccess }: OAuthLoginProps) {

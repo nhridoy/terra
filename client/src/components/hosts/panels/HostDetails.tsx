@@ -1,9 +1,9 @@
 import { FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
-import { useModal } from "@/hooks/useModal";
-import { type Host, useHostStore } from "@/stores/hosts/hostStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import { useModal } from "@/hooks/useModal";
+import { type Host, useHostStore } from "@/stores/hosts/hostStore";
 
 interface HostDetailsProps {
   host: Host;

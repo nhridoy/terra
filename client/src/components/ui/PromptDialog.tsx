@@ -1,13 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import ModalForm from "@/components/common/ModalForm";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import {
   type NameFormSchema,
   nameFormDefaultValues,
   nameFormSchema,
 } from "@/lib/schema/common/nameFormSchema";
-import ModalForm from "@/components/common/ModalForm";
-import { FormInput } from "@/components/ui/forms/FormInput";
 
 interface PromptDialogProps {
   open: boolean;

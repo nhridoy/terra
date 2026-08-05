@@ -10,6 +10,9 @@ import {
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import ContextMenu, { type ContextMenuItem } from "@/components/ui/ContextMenu";
+import PromptDialog from "@/components/ui/PromptDialog";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
 import { extractError } from "@/lib/common/extractError";
 import { getFileIcon } from "@/lib/sftp/fileHelpers";
@@ -21,15 +24,12 @@ import {
   renameLocalFile,
   writeLocalFile,
 } from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   type EditorDirState,
   useActiveViewId,
   useEditorStore,
 } from "@/stores/editor/editorStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
-import ContextMenu, { type ContextMenuItem } from "@/components/ui/ContextMenu";
-import PromptDialog from "@/components/ui/PromptDialog";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface EditorExplorerProps {
   rootPath: string;

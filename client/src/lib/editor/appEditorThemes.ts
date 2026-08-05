@@ -1,12 +1,12 @@
 import { tags as t } from "@lezer/highlight";
 import { createTheme } from "thememirror";
+import type { EditorThemeInfo } from "@/lib/editor/editorThemes";
 import {
   FALLBACK_ANSI,
   type Theme,
   terminalThemes,
   themes,
 } from "@/stores/themeStore";
-import type { EditorThemeInfo } from "@/lib/editor/editorThemes";
 
 const APP_ONLY_THEMES: Theme[] = [
   "dark",

@@ -1,17 +1,17 @@
 import { useDraggable } from "@dnd-kit/react";
 import { ArrowsLeftRightIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
+import { DropZone } from "@/components/common/DropZone";
+import PortForwarding from "@/components/portforwarding/panels/PortForwarding";
+import HostBrowser from "@/components/terminal/browser/HostBrowser";
+import Terminal from "@/components/terminal/shell/Terminal";
+import { Button } from "@/components/ui/Button";
+import PaneHeader from "@/components/ui/PaneHeader";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
 import { previewStyle } from "@/lib/common/paneLayout";
 import { type DropSide, useDragStore } from "@/stores/dragStore";
 import type { Host } from "@/stores/hosts/hostStore";
 import { useTerminalStore } from "@/stores/terminal/terminalStore";
-import PortForwarding from "@/components/portforwarding/panels/PortForwarding";
-import { DropZone } from "@/components/common/DropZone";
-import { Button } from "@/components/ui/Button";
-import PaneHeader from "@/components/ui/PaneHeader";
-import HostBrowser from "@/components/terminal/browser/HostBrowser";
-import Terminal from "@/components/terminal/shell/Terminal";
 
 interface PaneProps {
   tabId: string;

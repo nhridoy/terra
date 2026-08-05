@@ -1,4 +1,6 @@
 import { useRef } from "react";
+import { SplitDivider } from "@/components/common/SplitDivider";
+import SftpPane from "@/components/sftp/views/SftpPane";
 import {
   computeLayout,
   countLeaves,
@@ -10,8 +12,6 @@ import {
   type SftpPaneNode,
   useSftpStore,
 } from "@/stores/sftp/sftpStore";
-import { SplitDivider } from "@/components/common/SplitDivider";
-import SftpPane from "@/components/sftp/views/SftpPane";
 
 type DropSide = "left" | "right" | "top" | "bottom";
 

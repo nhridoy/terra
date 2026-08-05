@@ -3,12 +3,12 @@ import { toast } from "sonner";
 import { useModal } from "@/hooks/useModal";
 import { extractError } from "@/lib/common/extractError";
 import { nameFormSchema } from "@/lib/schema/common/nameFormSchema";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   fileBrowserActions,
   useFileBrowserStore,
 } from "@/stores/sftp/fileBrowserStore";
 import { useSftpStore } from "@/stores/sftp/sftpStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface UseFileOperationsParams {
   paneId: string;

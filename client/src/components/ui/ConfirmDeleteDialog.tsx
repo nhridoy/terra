@@ -1,5 +1,5 @@
-import Modal from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 
 interface ConfirmDeleteDialogProps {
   open: boolean;
@@ -15,7 +15,12 @@ export default function ConfirmDeleteDialog({
   onCancel,
 }: ConfirmDeleteDialogProps) {
   return (
-    <Modal open={open} onClose={onCancel} title="Confirm Delete" maxWidth="max-w-sm">
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title="Confirm Delete"
+      maxWidth="max-w-sm"
+    >
       <div className="space-y-4">
         <p className="text-sm text-dark-300">{message}</p>
         <div className="flex justify-end gap-2">

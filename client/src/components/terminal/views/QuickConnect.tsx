@@ -5,12 +5,12 @@ import {
   TerminalIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import type { ShellInfo } from "@/lib/terminal/shellDetection";
-import { type Host, useHostStore } from "@/stores/hosts/hostStore";
-import { useShellStore } from "@/stores/terminal/shellStore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import type { ShellInfo } from "@/lib/terminal/shellDetection";
+import { type Host, useHostStore } from "@/stores/hosts/hostStore";
+import { useShellStore } from "@/stores/terminal/shellStore";
 
 interface QuickConnectProps {
   onConnect: (host: Host) => void;
@@ -63,7 +63,7 @@ export default function QuickConnect({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   const noExactHost = !hosts.some(
     (h) =>

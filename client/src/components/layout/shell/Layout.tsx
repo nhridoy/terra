@@ -3,6 +3,12 @@ import { DragDropProvider, DragOverlay, KeyboardSensor } from "@dnd-kit/react";
 import { FolderIcon, TerminalIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
+import AppSidebar from "@/components/layout/shell/AppSidebar";
+import Header from "@/components/layout/shell/Header";
+import { TabPreview } from "@/components/layout/tabs/SortableTab";
+import SettingsModal from "@/components/settings/modal/SettingsModal";
+import WorkspaceForm from "@/components/workspaces/forms/WorkspaceForm";
+import { useLayoutDragDrop } from "@/hooks/layout/useLayoutDragDrop";
 import { useModal } from "@/hooks/useModal";
 import { getStatusColor } from "@/lib/common/connectionStatus";
 import { useHostStore } from "@/stores/hosts/hostStore";
@@ -13,12 +19,6 @@ import {
 } from "@/stores/terminal/terminalStore";
 import { useVaultStore } from "@/stores/vault/vaultStore";
 import { useWorkspaceStore } from "@/stores/workspaces/workspaceStore";
-import SettingsModal from "@/components/settings/modal/SettingsModal";
-import WorkspaceForm from "@/components/workspaces/forms/WorkspaceForm";
-import AppSidebar from "@/components/layout/shell/AppSidebar";
-import Header from "@/components/layout/shell/Header";
-import { TabPreview } from "@/components/layout/tabs/SortableTab";
-import { useLayoutDragDrop } from "@/hooks/layout/useLayoutDragDrop";
 
 export default function Layout() {
   const location = useLocation();
@@ -85,7 +85,9 @@ export default function Layout() {
         .getState()
         .tabs.find((t) => t.id === presetTargetTabId);
       if (tab) {
-        const { useTabGroupStore } = await import("@/stores/sessions/tabGroupStore");
+        const { useTabGroupStore } = await import(
+          "@/stores/sessions/tabGroupStore"
+        );
         const created = await useTabGroupStore
           .getState()
           .createTabGroup(name, tab.root, currentVaultId || undefined);

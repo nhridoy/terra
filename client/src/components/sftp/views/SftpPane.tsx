@@ -2,19 +2,19 @@ import { useDraggable } from "@dnd-kit/react";
 import { DesktopTowerIcon, FolderIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { extractError } from "@/lib/common/extractError";
-import { openDirectoryPicker } from "@/lib/sftp/localFs";
-import { type DropSide, previewStyle } from "@/lib/common/paneLayout";
-import type { Host } from "@/stores/hosts/hostStore";
-import { type SftpLeafNode, useSftpStore } from "@/stores/sftp/sftpStore";
 import { DropZone } from "@/components/common/DropZone";
-import { Button } from "@/components/ui/Button";
-import Modal from "@/components/ui/Modal";
-import PaneHeader from "@/components/ui/PaneHeader";
 import FileBrowser from "@/components/sftp/browser/FileBrowser";
 import LocalFileBrowser from "@/components/sftp/browser/LocalFileBrowser";
 import SftpHostPicker from "@/components/sftp/picker/SftpHostPicker";
+import { Button } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import PaneHeader from "@/components/ui/PaneHeader";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import { extractError } from "@/lib/common/extractError";
+import { type DropSide, previewStyle } from "@/lib/common/paneLayout";
+import { openDirectoryPicker } from "@/lib/sftp/localFs";
+import type { Host } from "@/stores/hosts/hostStore";
+import { type SftpLeafNode, useSftpStore } from "@/stores/sftp/sftpStore";
 
 interface SftpPaneProps {
   pane: SftpLeafNode;

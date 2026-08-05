@@ -1,10 +1,10 @@
 import { useDraggable, useDroppable } from "@dnd-kit/react";
 import { FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { useModal } from "@/hooks/useModal";
-import type { Group } from "@/stores/hosts/hostStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import { useModal } from "@/hooks/useModal";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import type { Group } from "@/stores/hosts/hostStore";
 
 export function DroppableGroupCard({
   group,

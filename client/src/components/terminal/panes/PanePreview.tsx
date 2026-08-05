@@ -1,5 +1,5 @@
-import type { LeafNode } from "@/stores/terminal/terminalStore";
 import { StatusDot } from "@/components/ui/StatusDot";
+import type { LeafNode } from "@/stores/terminal/terminalStore";
 
 export default function PanePreview({ pane }: { pane: LeafNode }) {
   return (

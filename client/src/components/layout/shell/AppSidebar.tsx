@@ -93,7 +93,7 @@ export default function AppSidebar({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">
-              {user?.name || "User"}
+              {user?.full_name || "User"}
             </p>
             <p className="text-xs truncate text-dark-400">{user?.email}</p>
           </div>

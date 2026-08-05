@@ -35,7 +35,7 @@ export default function SecurityTab({
   const profileForm = useForm<ProfileFormSchema>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      username: user?.name || profileFormDefaultValues.username,
+      full_name: user?.full_name || profileFormDefaultValues.full_name,
       email: user?.email || profileFormDefaultValues.email,
     },
   });
@@ -45,7 +45,7 @@ export default function SecurityTab({
     setError(null);
     setSuccess(null);
     try {
-      await updateProfile({ username: data.username, email: data.email });
+      await updateProfile({ full_name: data.full_name, email: data.email });
       setSuccess("Profile updated successfully");
     } catch (err: unknown) {
       setError(extractError(err, "Failed to update profile"));
@@ -114,8 +114,8 @@ export default function SecurityTab({
           className="space-y-4"
         >
           <FormInput
-            name="username"
-            label="Username"
+            name="full_name"
+            label="Full Name"
             control={profileForm.control}
           />
           <FormInput

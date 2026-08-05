@@ -1,8 +1,8 @@
 import { XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
-import { defaultShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import { defaultShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 interface KeyboardSettingsProps {
   onClose: () => void;

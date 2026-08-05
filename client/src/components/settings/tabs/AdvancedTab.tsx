@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
-import { useModal } from "@/hooks/useModal";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import { useModal } from "@/hooks/useModal";
 import type { AdvancedTabProps } from "@/types/settings/types";
 
 export default function AdvancedTab({

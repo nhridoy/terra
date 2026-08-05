@@ -15,10 +15,15 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { basicSetup } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DropZone } from "@/components/common/DropZone";
+import DiffEditor, { isDiffTab } from "@/components/editor/editors/DiffEditor";
+import MarkdownPreview from "@/components/editor/editors/MarkdownPreview";
+import { extractError } from "@/lib/common/extractError";
+import { type DropSide, previewStyle } from "@/lib/common/paneLayout";
+import { countLeaves } from "@/lib/common/treeUtils";
 import { languageFor } from "@/lib/editor/editorLanguage";
 import { lintExtensionsFor } from "@/lib/editor/editorLint";
 import { DEFAULT_EDITOR_THEME, editorThemes } from "@/lib/editor/editorThemes";
-import { extractError } from "@/lib/common/extractError";
 import { getFileIcon } from "@/lib/sftp/fileHelpers";
 import {
   classifyFilePath,
@@ -26,14 +31,9 @@ import {
   type FileKind,
 } from "@/lib/sftp/fileKind";
 import { readLocalFile, writeLocalFile } from "@/lib/sftp/localFs";
-import { type DropSide, previewStyle } from "@/lib/common/paneLayout";
-import { countLeaves } from "@/lib/common/treeUtils";
 import { useDragStore } from "@/stores/dragStore";
 import { useEditorStore } from "@/stores/editor/editorStore";
 import { useThemeStore } from "@/stores/themeStore";
-import { DropZone } from "@/components/common/DropZone";
-import DiffEditor, { isDiffTab } from "@/components/editor/editors/DiffEditor";
-import MarkdownPreview from "@/components/editor/editors/MarkdownPreview";
 
 interface EditorViewProps {
   viewId: string;

@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for the main window",
-  "windows": ["main", "splashscreen"],
+  "windows": [
+    "main",
+    "splashscreen"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -25,22 +28,41 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$HOME/**/*" },
-        { "path": "$HOME/*" },
-        { "path": "C:/**/*" },
-        { "path": "D:/**/*" },
-        { "path": "/**" }
+        {
+          "path": "$HOME/**/*"
+        },
+        {
+          "path": "$HOME/*"
+        },
+        {
+          "path": "C:/**/*"
+        },
+        {
+          "path": "D:/**/*"
+        },
+        {
+          "path": "/**"
+        }
       ]
     },
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
       "allow": [
-        { "path": "$HOME/**/*" },
-        { "path": "C:/**/*" },
-        { "path": "D:/**/*" },
-        { "path": "/**" }
+        {
+          "path": "$HOME/**/*"
+        },
+        {
+          "path": "C:/**/*"
+        },
+        {
+          "path": "D:/**/*"
+        },
+        {
+          "path": "/**"
+        }
       ]
-    }
+    },
+    "keyring-store:default"
   ]
 }

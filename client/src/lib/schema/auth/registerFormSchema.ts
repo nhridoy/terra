@@ -7,15 +7,15 @@ export const registerFormSchema = z
       .trim()
       .min(1, { error: "Email is required" })
       .max(254, { error: "Email must be at most 254 characters" }),
-    username: z
+    full_name: z
       .string()
       .trim()
-      .min(1, { error: "Username is required" })
-      .min(3, { error: "Username must be at least 3 characters" })
-      .max(32, { error: "Username must be at most 32 characters" })
+      .min(1, { error: "Full name is required" })
+      .min(3, { error: "Full name must be at least 3 characters" })
+      .max(32, { error: "Full name must be at most 32 characters" })
       .regex(/^[a-zA-Z0-9_-]+$/, {
         error:
-          "Username can only contain letters, numbers, underscores, and hyphens",
+          "Full name can only contain letters, numbers, underscores, and hyphens",
       }),
     password: z
       .string()
@@ -51,7 +51,7 @@ export const requiredFields = Object.entries(registerFormSchema.shape).reduce(
 
 export const registerFormDefaultValues: RegisterFormSchema = {
   email: "",
-  username: "",
+  full_name: "",
   password: "",
   confirmPassword: "",
 };

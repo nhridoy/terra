@@ -1,6 +1,8 @@
 import { useState } from "react";
 import SnippetForm from "@/components/snippets/forms/SnippetForm";
-import SnippetList, { type Snippet } from "@/components/snippets/lists/SnippetList";
+import SnippetList, {
+  type Snippet,
+} from "@/components/snippets/lists/SnippetList";
 import { useModal } from "@/hooks/useModal";
 
 export default function SnippetsPage() {

@@ -108,24 +108,24 @@ code {
 
 /* Sonner toast: follow app theme */
 [data-sonner-toaster] [data-sonner-toast] {
-  background: var(--color-dark-900) !important;
-  border-color: var(--color-dark-700) !important;
-  color: var(--color-white) !important;
-  overflow: hidden !important;
-  max-width: 380px !important;
-  word-break: break-word !important;
+  background: var(--color-dark-900);
+  border-color: var(--color-dark-700);
+  color: var(--color-white);
+  overflow: hidden;
+  max-width: 380px;
+  word-break: break-word;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: var(--color-dark-400) !important;
+  color: var(--color-dark-400);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-success] {
-  color: var(--color-primary-400) !important;
+  color: var(--color-primary-400);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-error] {
-  color: var(--color-danger-500) !important;
+  color: var(--color-danger-500);
 }
 
 /* Markdown preview */

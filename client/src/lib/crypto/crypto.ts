@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  deletePasswords,
+  getPasswords,
+  setPasswords,
+} from "tauri-plugin-keyring-store-api";
 
 export interface AccountMaterial {
   salt_cl: string;
@@ -119,8 +124,8 @@ export async function decryptSecret(payload: string): Promise<string> {
   return invoke<string>("decrypt_secret", { payload });
 }
 
-export async function unwrapDek(kek: string, wrapped: string): Promise<void> {
-  return invoke<void>("unwrap_dek", { kek, wrapped });
+export async function unwrapDek(wrapped: string): Promise<void> {
+  return invoke<void>("unwrap_dek", { wrapped });
 }
 
 export async function recoveryUnwrapDek(
@@ -145,4 +150,33 @@ export async function unlock(
   wrappedDek: string,
 ): Promise<void> {
   return invoke<void>("unlock", { password, saltCl, wrappedDek });
+}
+
+export async function wrapDek(): Promise<string> {
+  return invoke<string>("wrap_dek");
+}
+
+const REFRESH_TOKEN_ACCOUNT = "auth.refresh_token";
+
+export async function saveRefreshToken(token: string): Promise<void> {
+  await setPasswords([{ account: REFRESH_TOKEN_ACCOUNT, secret: token }]);
+}
+
+export async function loadRefreshToken(): Promise<string | null> {
+  const [value] = await getPasswords([REFRESH_TOKEN_ACCOUNT]);
+  return value;
+}
+
+export async function clearKeychain(): Promise<void> {
+  await deletePasswords([REFRESH_TOKEN_ACCOUNT]);
+}
+
+let inMemoryRefreshToken: string | null = null;
+
+export function setRefreshToken(token: string | null): void {
+  inMemoryRefreshToken = token;
+}
+
+export function getRefreshToken(): string | null {
+  return inMemoryRefreshToken;
 }

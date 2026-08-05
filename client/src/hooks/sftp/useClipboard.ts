@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { buildClipboardPaths } from "@/lib/sftp/buildClipboardPaths";
 import { extractError } from "@/lib/common/extractError";
+import { buildClipboardPaths } from "@/lib/sftp/buildClipboardPaths";
 import { generateAutoName } from "@/lib/sftp/fileHelpers";
 import { joinPath } from "@/lib/sftp/fileTransfer";
 import {
@@ -9,12 +9,12 @@ import {
   listLocalFiles,
   moveLocalFile,
 } from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   fileBrowserActions,
   useFileBrowserStore,
 } from "@/stores/sftp/fileBrowserStore";
 import { useSftpStore } from "@/stores/sftp/sftpStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface UseClipboardParams {
   paneId: string;

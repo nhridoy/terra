@@ -3,38 +3,21 @@ import { FolderIcon } from "@phosphor-icons/react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { extractError } from "@/lib/common/extractError";
-import {
-  joinPath,
-  LocalFileProvider,
-  transferFiles,
-} from "@/lib/sftp/fileTransfer";
-import {
-  isSameVolume,
-  isTauriAvailable,
-  listLocalFiles,
-} from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
-import {
-  showTransferError,
-  showTransferProgress,
-  showTransferStart,
-  showTransferSuccess,
-} from "@/lib/sftp/transferToast";
-import {
-  fileBrowserActions,
-  useFileBrowserStore,
-} from "@/stores/sftp/fileBrowserStore";
-import { useSftpStore } from "@/stores/sftp/sftpStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
-import ContextMenu, { type ContextMenuItem } from "@/components/ui/ContextMenu";
-import PromptDialog from "@/components/ui/PromptDialog";
 import {
   DragOverOverlay,
   DropTargetOverlay,
   ErrorBar,
 } from "@/components/sftp/browser/FileBrowserOverlays";
 import PasteConflictDialog from "@/components/sftp/browser/PasteConflictDialog";
+import { buildBaseContextMenuItems } from "@/components/sftp/browser/shared/buildBaseContextMenuItems";
+import FileBrowserListShared from "@/components/sftp/browser/shared/FileBrowserList";
+import FileBrowserStatusBar from "@/components/sftp/browser/shared/FileBrowserStatusBar";
+import FileBrowserToolbar from "@/components/sftp/browser/shared/FileBrowserToolbar";
+import FileGridItem from "@/components/sftp/browser/shared/FileGridItem";
+import FileListItem from "@/components/sftp/browser/shared/FileListItem";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import ContextMenu, { type ContextMenuItem } from "@/components/ui/ContextMenu";
+import PromptDialog from "@/components/ui/PromptDialog";
 import { useClipboard } from "@/hooks/sftp/useClipboard";
 import { useDesktopFileDrop } from "@/hooks/sftp/useDesktopFileDrop";
 import { useFileKeyboardShortcuts } from "@/hooks/sftp/useFileKeyboardShortcuts";
@@ -46,12 +29,29 @@ import {
 } from "@/hooks/sftp/useResizableColumns";
 import { useSortedFiles } from "@/hooks/sftp/useSortedFiles";
 import { useTauriDragDrop } from "@/hooks/sftp/useTauriDragDrop";
-import { buildBaseContextMenuItems } from "@/components/sftp/browser/shared/buildBaseContextMenuItems";
-import FileBrowserListShared from "@/components/sftp/browser/shared/FileBrowserList";
-import FileBrowserStatusBar from "@/components/sftp/browser/shared/FileBrowserStatusBar";
-import FileBrowserToolbar from "@/components/sftp/browser/shared/FileBrowserToolbar";
-import FileGridItem from "@/components/sftp/browser/shared/FileGridItem";
-import FileListItem from "@/components/sftp/browser/shared/FileListItem";
+import { extractError } from "@/lib/common/extractError";
+import {
+  joinPath,
+  LocalFileProvider,
+  transferFiles,
+} from "@/lib/sftp/fileTransfer";
+import {
+  isSameVolume,
+  isTauriAvailable,
+  listLocalFiles,
+} from "@/lib/sftp/localFs";
+import {
+  showTransferError,
+  showTransferProgress,
+  showTransferStart,
+  showTransferSuccess,
+} from "@/lib/sftp/transferToast";
+import {
+  fileBrowserActions,
+  useFileBrowserStore,
+} from "@/stores/sftp/fileBrowserStore";
+import { useSftpStore } from "@/stores/sftp/sftpStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface LocalFileBrowserProps {
   paneId: string;

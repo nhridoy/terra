@@ -1,14 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { Button } from "@/components/ui/Button";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import { setApiUrl } from "@/lib/api/auth";
 import {
   type ServerUrlSchema,
   serverUrlDefaultValues,
   serverUrlSchema,
 } from "@/lib/schema/auth/serverUrlSchema";
-import { Button } from "@/components/ui/Button";
-import { FormInput } from "@/components/ui/forms/FormInput";
 
 export default function ServerConfig() {
   const [isOpen, setIsOpen] = useState(false);

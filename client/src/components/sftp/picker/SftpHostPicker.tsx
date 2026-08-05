@@ -4,9 +4,9 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { type Host, useHostStore } from "@/stores/hosts/hostStore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { type Host, useHostStore } from "@/stores/hosts/hostStore";
 
 interface SftpHostPickerProps {
   onConnect: (host: Host) => void;
@@ -35,7 +35,7 @@ export default function SftpHostPicker({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {

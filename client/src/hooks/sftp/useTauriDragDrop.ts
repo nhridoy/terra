@@ -1,10 +1,9 @@
-import { listen, type Event } from "@tauri-apps/api/event";
+import { type Event, listen } from "@tauri-apps/api/event";
 import type { DragDropEvent } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { joinPath } from "@/lib/sftp/fileTransfer";
 import { listLocalFiles } from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   showTransferCancelled,
   showTransferError,
@@ -13,6 +12,7 @@ import {
   showTransferSuccess,
 } from "@/lib/sftp/transferToast";
 import { fileBrowserActions } from "@/stores/sftp/fileBrowserStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface UseTauriDragDropParams {
   paneId: string;

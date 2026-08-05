@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   type DropSide,
   findAllLeaves,
@@ -10,6 +9,7 @@ import {
   sideToDirection,
   sourceFirstFromSide,
 } from "@/lib/common/treeUtils";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 export const ROOT_VIEW_ID = "editor-view-root";
 

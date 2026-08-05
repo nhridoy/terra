@@ -1,5 +1,5 @@
-import Modal from "@/components/ui/Modal";
 import SettingsPanel from "@/components/settings/modal/SettingsPanel";
+import Modal from "@/components/ui/Modal";
 
 interface SettingsModalProps {
   onClose: () => void;

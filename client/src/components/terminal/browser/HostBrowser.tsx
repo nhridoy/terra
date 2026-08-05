@@ -8,18 +8,18 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { useModal } from "@/hooks/useModal";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { type Host, useHostStore } from "@/stores/hosts/hostStore";
-import { useShellStore } from "@/stores/terminal/shellStore";
-import type { ShellInfo } from "@/lib/terminal/shellDetection";
-import { useTabGroupStore } from "@/stores/sessions/tabGroupStore";
-import type { PaneNode } from "@/stores/terminal/terminalStore";
-import { useVaultStore } from "@/stores/vault/vaultStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import WorkspaceForm from "@/components/workspaces/forms/WorkspaceForm";
+import { useModal } from "@/hooks/useModal";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import type { ShellInfo } from "@/lib/terminal/shellDetection";
+import { type Host, useHostStore } from "@/stores/hosts/hostStore";
+import { useTabGroupStore } from "@/stores/sessions/tabGroupStore";
+import { useShellStore } from "@/stores/terminal/shellStore";
+import type { PaneNode } from "@/stores/terminal/terminalStore";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 interface HostBrowserProps {
   onConnect: (host: Host) => void;
@@ -93,7 +93,7 @@ export default function HostBrowser({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   const noExactHost = !hosts.some(
     (h) => h.name.toLowerCase() === q || h.address.toLowerCase() === q,

@@ -5,15 +5,18 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
-import { useModal } from "@/hooks/useModal";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { type PaneNode, useTerminalStore } from "@/stores/terminal/terminalStore";
-import { useWorkspaceStore } from "@/stores/workspaces/workspaceStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { EmptyActionState } from "@/components/ui/EmptyActionState";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import WorkspaceForm from "@/components/workspaces/forms/WorkspaceForm";
+import { useModal } from "@/hooks/useModal";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import {
+  type PaneNode,
+  useTerminalStore,
+} from "@/stores/terminal/terminalStore";
+import { useWorkspaceStore } from "@/stores/workspaces/workspaceStore";
 
 interface WorkspaceListProps {
   onLaunch: (tabId: string) => void;

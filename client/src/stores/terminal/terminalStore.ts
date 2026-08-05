@@ -343,8 +343,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
             root: re,
             activePaneId:
               t.activePaneId === paneId ? fallbackActive : t.activePaneId,
-            focusedPaneId:
-              t.focusedPaneId === paneId ? null : t.focusedPaneId,
+            focusedPaneId: t.focusedPaneId === paneId ? null : t.focusedPaneId,
           };
         }),
       };

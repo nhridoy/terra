@@ -197,6 +197,9 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      tauri-plugin-keyring-store-api:
+        specifier: ^0.2.0
+        version: 0.2.0
       tauri-pty:
         specifier: ^0.3.1
         version: 0.3.1
@@ -862,6 +865,9 @@ packages:
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tauri-apps/api@2.11.0':
+    resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
 
   '@tauri-apps/api@2.11.1':
     resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
@@ -1845,6 +1851,9 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
+  tauri-plugin-keyring-store-api@0.2.0:
+    resolution: {integrity: sha512-ZQYb6Xj75AD+YFBNDr4Zjc751TlVCQqvcB3GXx9Q85dRkss2FKrfU1Bu3kATQAzMQcvPYT3Ww+Fi+3I+OlMVZA==}
+
   tauri-pty@0.3.1:
     resolution: {integrity: sha512-/7fph+RsJ6w/LabaJEjIoa5kzc8a9soRUnjw2D/whBf5EaWQwA+iF0XdU6zdfpA7o4rXijALQRePQ/Fw6YYxzw==}
 
@@ -2693,6 +2702,8 @@ snapshots:
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
       vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)
+
+  '@tauri-apps/api@2.11.0': {}
 
   '@tauri-apps/api@2.11.1': {}
 
@@ -3813,6 +3824,10 @@ snapshots:
   tailwindcss@4.3.3: {}
 
   tapable@2.3.3: {}
+
+  tauri-plugin-keyring-store-api@0.2.0:
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   tauri-pty@0.3.1:
     dependencies:

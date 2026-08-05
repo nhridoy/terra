@@ -1,4 +1,6 @@
 import { useRef } from "react";
+import { SplitDivider } from "@/components/common/SplitDivider";
+import Pane from "@/components/terminal/panes/Pane";
 import {
   computeLayout,
   countLeaves,
@@ -10,8 +12,6 @@ import {
   type PaneNode,
   useTerminalStore,
 } from "@/stores/terminal/terminalStore";
-import { SplitDivider } from "@/components/common/SplitDivider";
-import Pane from "@/components/terminal/panes/Pane";
 
 interface PaneTreeProps {
   tabId: string;

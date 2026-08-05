@@ -33,7 +33,7 @@ export default function LoginPage() {
   const handleOAuthSuccess = (user: {
     id: string;
     email: string;
-    username?: string;
+    full_name?: string;
   }) => {
     console.log("OAuth success:", user);
   };

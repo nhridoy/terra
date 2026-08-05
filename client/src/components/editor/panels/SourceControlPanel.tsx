@@ -17,10 +17,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { diffTabPath } from "@/components/editor/editors/DiffEditor";
 import { extractError } from "@/lib/common/extractError";
 import { getFileIcon } from "@/lib/sftp/fileHelpers";
 import { useEditorStore } from "@/stores/editor/editorStore";
-import { diffTabPath } from "@/components/editor/editors/DiffEditor";
 
 interface GitChange {
   path: string;

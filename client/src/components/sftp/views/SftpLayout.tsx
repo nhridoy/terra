@@ -10,9 +10,9 @@ import {
 } from "@dnd-kit/react";
 import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { type FileDragState, useSftpStore } from "@/stores/sftp/sftpStore";
 import FileTransfer from "@/components/sftp/transfer/FileTransfer";
 import SftpPaneTree from "@/components/sftp/views/SftpPaneTree";
+import { type FileDragState, useSftpStore } from "@/stores/sftp/sftpStore";
 
 type Manager = ReturnType<typeof useDragDropManager>;
 

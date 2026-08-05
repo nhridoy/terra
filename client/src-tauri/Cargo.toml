@@ -36,8 +36,8 @@ sha2 = "0.10"
 hmac = "0.12"
 zeroize = { version = "1", features = ["derive"] }
 base64 = "0.22"
-keyring = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }
+tauri-plugin-keyring-store = "0.2.0"
 
 [features]
 default = ["custom-protocol"]

@@ -2,7 +2,6 @@
 
 mod git;
 mod crypto;
-mod keystore;
 mod db;
 
 use std::collections::{HashMap, BTreeMap};
@@ -809,18 +808,10 @@ fn decrypt_secret(payload: String, state: tauri::State<'_, CryptoState>) -> Resu
 }
 
 #[tauri::command]
-fn unwrap_dek(kek: String, wrapped: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
-    let kek_bytes = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &kek,
-    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
-    if kek_bytes.len() != 32 {
-        return Err("Invalid KEK length".to_string());
-    }
-    let mut kek_arr = [0u8; 32];
-    kek_arr.copy_from_slice(&kek_bytes);
+fn unwrap_dek(wrapped: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
     let mut session = state.session.lock().map_err(|e| e.to_string())?;
-    crypto::unwrap_dek(&kek_arr, &wrapped, &mut session)
+    let kek = session.kek.ok_or("KEK not derived - call derive_kek first")?;
+    crypto::unwrap_dek(&kek, &wrapped, &mut session)
 }
 
 #[tauri::command]
@@ -848,9 +839,16 @@ fn unlock(password: String, salt_cl: String, wrapped_dek: String, state: tauri::
     crypto::unlock(&password, &salt_cl, &wrapped_dek, &mut session)
 }
 
+#[tauri::command]
+fn wrap_dek(state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::wrap_dek(&session)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_keyring_store::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -953,6 +951,7 @@ pub fn run() {
             sign_challenge,
             lock_session,
             unlock,
+            wrap_dek,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

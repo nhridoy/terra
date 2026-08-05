@@ -23,13 +23,13 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterFormSchema) => {
     clearError();
-    await register(data.email, data.username, data.password);
+    await register(data.email, data.full_name, data.password);
   };
 
   const handleOAuthSuccess = (user: {
     id: string;
     email: string;
-    username?: string;
+    name?: string;
   }) => {
     console.log("OAuth success:", user);
   };
@@ -69,10 +69,10 @@ export default function RegisterPage() {
 
             <FormInput
               control={control}
-              name="username"
-              label="Username"
-              placeholder="johndoe"
-              required={requiredFields.includes("username")}
+              name="full_name"
+              label="Full Name"
+              placeholder="John Doe"
+              required={requiredFields.includes("full_name")}
             />
 
             <FormInput

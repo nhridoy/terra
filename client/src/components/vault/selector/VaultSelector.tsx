@@ -8,13 +8,13 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { useModal } from "@/hooks/useModal";
-import { useVaultStore } from "@/stores/vault/vaultStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
 import Input from "@/components/ui/Input";
 import VaultForm from "@/components/vault/forms/VaultForm";
+import { useModal } from "@/hooks/useModal";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 interface VaultItem {
   id: string;

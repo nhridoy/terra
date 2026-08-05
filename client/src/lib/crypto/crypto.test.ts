@@ -222,13 +222,12 @@ describe("buildKeyringRows", () => {
 });
 
 describe("unwrapDek", () => {
-  it("calls invoke with kek and wrapped", async () => {
+  it("calls invoke with wrapped", async () => {
     mockInvoke.mockResolvedValue(undefined);
 
-    await unwrapDek("kek-b64", "wrapped-b64");
+    await unwrapDek("wrapped-b64");
 
     expect(mockInvoke).toHaveBeenCalledWith("unwrap_dek", {
-      kek: "kek-b64",
       wrapped: "wrapped-b64",
     });
   });

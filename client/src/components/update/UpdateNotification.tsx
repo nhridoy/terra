@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
-import { useUpdateStore } from "@/stores/update/updateStore";
 import { Button } from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import { useUpdateStore } from "@/stores/update/updateStore";
 
 export default function UpdateNotification() {
   const {

@@ -1,4 +1,6 @@
 import { useRef } from "react";
+import { SplitDivider } from "@/components/common/SplitDivider";
+import EditorView from "@/components/editor/views/EditorView";
 import {
   computeLayout,
   type PlacedDivider,
@@ -10,8 +12,6 @@ import {
   ROOT_VIEW_ID,
   useEditorStore,
 } from "@/stores/editor/editorStore";
-import { SplitDivider } from "@/components/common/SplitDivider";
-import EditorView from "@/components/editor/views/EditorView";
 
 export default function EditorViewTree() {
   const containerRef = useRef<HTMLDivElement>(null);

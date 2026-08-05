@@ -1,14 +1,14 @@
 import { UsersIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import InviteMemberForm from "@/components/teams/forms/InviteMemberForm";
+import TeamForm from "@/components/teams/forms/TeamForm";
+import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import Select from "@/components/ui/Select";
 import { useModal } from "@/hooks/useModal";
 import type { CreateTeamFormSchema } from "@/lib/schema/teams/createTeamFormSchema";
 import type { InviteMemberFormSchema } from "@/lib/schema/teams/inviteMemberFormSchema";
 import { useTeamStore } from "@/stores/teams/teamStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
-import { Button } from "@/components/ui/Button";
-import Select from "@/components/ui/Select";
-import InviteMemberForm from "@/components/teams/forms/InviteMemberForm";
-import TeamForm from "@/components/teams/forms/TeamForm";
 
 export default function TeamManager() {
   const {
@@ -63,7 +63,9 @@ export default function TeamManager() {
 
   const handleRemoveMember = async (userId: string) => {
     if (!selectedTeam) return;
-    requestDelete("Remove this member?", () => removeMember(selectedTeam.id, userId));
+    requestDelete("Remove this member?", () =>
+      removeMember(selectedTeam.id, userId),
+    );
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -166,7 +168,9 @@ export default function TeamManager() {
                     type="button"
                     onClick={() => {
                       if (selectedTeam) {
-                        requestDelete("Delete this team?", () => deleteTeam(selectedTeam.id));
+                        requestDelete("Delete this team?", () =>
+                          deleteTeam(selectedTeam.id),
+                        );
                       }
                     }}
                     variant="destructive"

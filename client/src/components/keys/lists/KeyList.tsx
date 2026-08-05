@@ -1,15 +1,15 @@
 import { KeyIcon, PlusIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
+import GenerateKeyModal from "@/components/keys/modals/GenerateKeyModal";
+import ImportKeyModal from "@/components/keys/modals/ImportKeyModal";
+import { Button } from "@/components/ui/Button";
+import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 import { useModal } from "@/hooks/useModal";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
 import { useKeyStore } from "@/stores/keys/keyStore";
 import { useVaultStore } from "@/stores/vault/vaultStore";
-import ConfirmDeleteDialog from "@/components/ui/ConfirmDeleteDialog";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { SectionHeader } from "@/components/ui/SectionHeader";
-import GenerateKeyModal from "@/components/keys/modals/GenerateKeyModal";
-import ImportKeyModal from "@/components/keys/modals/ImportKeyModal";
 import type { KeyItem } from "@/types/keys/types";
 
 export default function KeyList({ onMutation }: { onMutation?: () => void }) {
@@ -27,7 +27,7 @@ export default function KeyList({ onMutation }: { onMutation?: () => void }) {
     } catch (error) {
       console.error("Failed to fetch keys:", error);
     }
-  }, [currentVaultId]);
+  }, []);
 
   useEffect(() => {
     fetchKeys();

@@ -5,8 +5,8 @@ import {
   UploadSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { useSftpStore } from "@/stores/sftp/sftpStore";
 import { Button } from "@/components/ui/Button";
+import { useSftpStore } from "@/stores/sftp/sftpStore";
 
 export default function FileTransfer() {
   const transfers = useSftpStore((s) => s.transfers);

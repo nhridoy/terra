@@ -1,60 +1,64 @@
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Terminal as XTerminal } from '@xterm/xterm'
-import '@xterm/xterm/css/xterm.css'
-import { confirm } from '@tauri-apps/plugin-dialog'
-import { useHostStore } from '@/stores/hosts/hostStore'
-import { useKeyStore } from '@/stores/keys/keyStore'
-import { useTerminalStore } from '@/stores/terminal/terminalStore'
-import { type TerminalTheme, terminalThemeFor, useThemeStore } from '@/stores/themeStore'
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Terminal as XTerminal } from "@xterm/xterm";
+import "@xterm/xterm/css/xterm.css";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { useHostStore } from "@/stores/hosts/hostStore";
+import { useKeyStore } from "@/stores/keys/keyStore";
+import { useTerminalStore } from "@/stores/terminal/terminalStore";
+import {
+  type TerminalTheme,
+  terminalThemeFor,
+  useThemeStore,
+} from "@/stores/themeStore";
 
 export interface SessionParams {
-  paneId: string
-  tabId: string
-  hostId: string
-  hostName: string
-  hostAddress?: string
-  hostPort?: number
-  hostUsername?: string
-  authType?: 'password' | 'key'
-  keyId?: string
-  connectionType?: 'ssh' | 'local'
-  shell?: string
+  paneId: string;
+  tabId: string;
+  hostId: string;
+  hostName: string;
+  hostAddress?: string;
+  hostPort?: number;
+  hostUsername?: string;
+  authType?: "password" | "key";
+  keyId?: string;
+  connectionType?: "ssh" | "local";
+  shell?: string;
 }
 
 export interface Session {
-  params: SessionParams
-  xterm: XTerminal
-  fitAddon: FitAddon
-  container: HTMLDivElement
-  opened: boolean
-  resizeObserver: ResizeObserver | null
-  resizeRaf: number
-  unlisten: (() => void) | null
-  unlistenHostKey: (() => void) | null
+  params: SessionParams;
+  xterm: XTerminal;
+  fitAddon: FitAddon;
+  container: HTMLDivElement;
+  opened: boolean;
+  resizeObserver: ResizeObserver | null;
+  resizeRaf: number;
+  unlisten: (() => void) | null;
+  unlistenHostKey: (() => void) | null;
 }
 
-const sessions = new Map<string, Session>()
+const sessions = new Map<string, Session>();
 
 function createSession(params: SessionParams): Session {
-  const container = document.createElement('div')
-  container.style.width = '100%'
-  container.style.height = '100%'
-  container.style.display = 'block'
+  const container = document.createElement("div");
+  container.style.width = "100%";
+  container.style.height = "100%";
+  container.style.display = "block";
 
   const xterm = new XTerminal({
     theme: terminalThemeFor(useThemeStore.getState().currentTheme),
     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
     fontSize: 14,
     cursorBlink: true,
-    cursorStyle: 'block',
+    cursorStyle: "block",
     allowTransparency: true,
     convertEol: true,
-  })
+  });
 
-  const fitAddon = new FitAddon()
-  xterm.loadAddon(fitAddon)
-  xterm.loadAddon(new WebLinksAddon())
+  const fitAddon = new FitAddon();
+  xterm.loadAddon(fitAddon);
+  xterm.loadAddon(new WebLinksAddon());
 
   const session: Session = {
     params,
@@ -66,67 +70,67 @@ function createSession(params: SessionParams): Session {
     resizeRaf: 0,
     unlisten: null,
     unlistenHostKey: null,
-  }
+  };
 
-  return session
+  return session;
 }
 
 async function connectViaTauri(session: Session) {
-  const { invoke } = await import('@tauri-apps/api/core')
-  const { listen } = await import('@tauri-apps/api/event')
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
 
-  const { params, xterm } = session
-  const cols = xterm.cols
-  const rows = xterm.rows
+  const { params, xterm } = session;
+  const cols = xterm.cols;
+  const rows = xterm.rows;
 
-  xterm.writeln('\x1b[1;36mTermVault\x1b[0m - Self-hosted SSH Client')
-  xterm.writeln('')
-  xterm.writeln(`\x1b[33mConnecting to ${params.hostName}...\x1b[0m`)
-  xterm.writeln('')
+  xterm.writeln("\x1b[1;36mTermVault\x1b[0m - Self-hosted SSH Client");
+  xterm.writeln("");
+  xterm.writeln(`\x1b[33mConnecting to ${params.hostName}...\x1b[0m`);
+  xterm.writeln("");
 
-  const update = useTerminalStore.getState().updatePaneConnectionStatus
-  update(params.tabId, params.paneId, 'connecting')
+  const update = useTerminalStore.getState().updatePaneConnectionStatus;
+  update(params.tabId, params.paneId, "connecting");
 
   try {
-    let password: string | null = null
-    let privateKey: string | null = null
-    let passphrase: string | null = null
+    let password: string | null = null;
+    let privateKey: string | null = null;
+    let passphrase: string | null = null;
 
-    if (params.authType === 'key' && params.keyId) {
+    if (params.authType === "key" && params.keyId) {
       const privKey = await useKeyStore
         .getState()
-        .getCredentialsForKey(params.keyId)
+        .getCredentialsForKey(params.keyId);
       if (privKey) {
-        privateKey = privKey
+        privateKey = privKey;
       }
     } else {
       const creds = await useHostStore
         .getState()
-        .getCredentialsForHost(params.hostId)
+        .getCredentialsForHost(params.hostId);
       if (creds.password) {
-        password = creds.password
+        password = creds.password;
       } else if (creds.privateKey) {
-        privateKey = creds.privateKey
-        passphrase = creds.passphrase || null
+        privateKey = creds.privateKey;
+        passphrase = creds.passphrase || null;
       }
     }
 
     const config = {
-      host: params.hostAddress || '',
+      host: params.hostAddress || "",
       port: params.hostPort || 22,
-      username: params.hostUsername || 'root',
+      username: params.hostUsername || "root",
       password,
       privateKey,
       passphrase,
-    }
+    };
 
     const unlistenHostKey = await listen<{
-      host: string
-      port: number
-      oldFingerprint: string
-      newFingerprint: string
-    }>('ssh-host-key-changed', async (event) => {
-      const { host, port, oldFingerprint, newFingerprint } = event.payload
+      host: string;
+      port: number;
+      oldFingerprint: string;
+      newFingerprint: string;
+    }>("ssh-host-key-changed", async (event) => {
+      const { host, port, oldFingerprint, newFingerprint } = event.payload;
 
       const confirmed = await confirm(
         `SSH Host Key Changed!\n\n` +
@@ -134,250 +138,252 @@ async function connectViaTauri(session: Session) {
           `Old fingerprint:\n${oldFingerprint}\n\n` +
           `New fingerprint:\n${newFingerprint}\n\n` +
           `This could indicate a MITM attack. Do you trust this new key?`,
-        { title: 'Security Warning', kind: 'warning' },
-      )
+        { title: "Security Warning", kind: "warning" },
+      );
 
-      await invoke('accept_host_key', { accepted: confirmed })
-    })
+      await invoke("accept_host_key", { accepted: confirmed });
+    });
 
-    session.unlistenHostKey = unlistenHostKey
+    session.unlistenHostKey = unlistenHostKey;
 
-    await invoke('connect', { sessionId: params.paneId, config })
+    await invoke("connect", { sessionId: params.paneId, config });
 
     const unlisten = await listen<{
-      sessionId: string
-      type: string
-      data: string
-    }>('ssh-output', (event) => {
-      const { sessionId, type, data } = event.payload
-      if (sessionId !== params.paneId) return
+      sessionId: string;
+      type: string;
+      data: string;
+    }>("ssh-output", (event) => {
+      const { sessionId, type, data } = event.payload;
+      if (sessionId !== params.paneId) return;
 
       switch (type) {
-        case 'connected':
-          update(params.tabId, params.paneId, 'connected')
-          break
-        case 'output':
-          xterm.write(data)
-          break
-        case 'disconnected':
-          xterm.writeln(`\r\n\x1b[33mConnection closed\x1b[0m`)
-          update(params.tabId, params.paneId, 'disconnected')
-          break
-        case 'error':
-          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`)
-          update(params.tabId, params.paneId, 'error')
-          break
+        case "connected":
+          update(params.tabId, params.paneId, "connected");
+          break;
+        case "output":
+          xterm.write(data);
+          break;
+        case "disconnected":
+          xterm.writeln(`\r\n\x1b[33mConnection closed\x1b[0m`);
+          update(params.tabId, params.paneId, "disconnected");
+          break;
+        case "error":
+          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`);
+          update(params.tabId, params.paneId, "error");
+          break;
       }
-    })
+    });
 
-    session.unlisten = unlisten
+    session.unlisten = unlisten;
 
     xterm.onData(async (data) => {
       try {
-        await invoke('send_input', { sessionId: params.paneId, data })
+        await invoke("send_input", { sessionId: params.paneId, data });
       } catch {
         // Session may have been closed
       }
-    })
+    });
 
-    let lastResize = { cols, rows }
+    let lastResize = { cols, rows };
     xterm.onResize(async ({ cols: newCols, rows: newRows }) => {
-      if (newCols === lastResize.cols && newRows === lastResize.rows) return
-      lastResize = { cols: newCols, rows: newRows }
+      if (newCols === lastResize.cols && newRows === lastResize.rows) return;
+      lastResize = { cols: newCols, rows: newRows };
       try {
-        await invoke('resize', {
+        await invoke("resize", {
           sessionId: params.paneId,
           cols: newCols,
           rows: newRows,
-        })
+        });
       } catch {
         // Session may have been closed
       }
-    })
+    });
   } catch (err) {
-    xterm.writeln(`\r\n\x1b[31mFailed to connect: ${err}\x1b[0m`)
-    update(params.tabId, params.paneId, 'error')
+    xterm.writeln(`\r\n\x1b[31mFailed to connect: ${err}\x1b[0m`);
+    update(params.tabId, params.paneId, "error");
   }
 }
 
 async function connectLocal(session: Session) {
-  const { invoke } = await import('@tauri-apps/api/core')
-  const { listen } = await import('@tauri-apps/api/event')
+  const { invoke } = await import("@tauri-apps/api/core");
+  const { listen } = await import("@tauri-apps/api/event");
 
-  const { params, xterm } = session
-  const cols = xterm.cols
-  const rows = xterm.rows
+  const { params, xterm } = session;
+  const cols = xterm.cols;
+  const rows = xterm.rows;
 
-  xterm.writeln('\x1b[1;36mTermVault\x1b[0m - Local Terminal')
-  xterm.writeln('')
-  xterm.writeln(`\x1b[33mStarting ${params.shell || 'default shell'}...\x1b[0m`)
-  xterm.writeln('')
+  xterm.writeln("\x1b[1;36mTermVault\x1b[0m - Local Terminal");
+  xterm.writeln("");
+  xterm.writeln(
+    `\x1b[33mStarting ${params.shell || "default shell"}...\x1b[0m`,
+  );
+  xterm.writeln("");
 
-  const update = useTerminalStore.getState().updatePaneConnectionStatus
-  update(params.tabId, params.paneId, 'connecting')
+  const update = useTerminalStore.getState().updatePaneConnectionStatus;
+  update(params.tabId, params.paneId, "connecting");
 
   try {
-    await invoke('connect_local', {
+    await invoke("connect_local", {
       sessionId: params.paneId,
       shell: params.shell || null,
       cols,
       rows,
-    })
+    });
 
     const unlisten = await listen<{
-      sessionId: string
-      type: string
-      data: string
-    }>('ssh-output', (event) => {
-      const { sessionId, type, data } = event.payload
-      if (sessionId !== params.paneId) return
+      sessionId: string;
+      type: string;
+      data: string;
+    }>("ssh-output", (event) => {
+      const { sessionId, type, data } = event.payload;
+      if (sessionId !== params.paneId) return;
 
       switch (type) {
-        case 'connected':
-          update(params.tabId, params.paneId, 'connected')
-          break
-        case 'output':
-          xterm.write(data)
-          break
-        case 'disconnected':
-          xterm.writeln(`\r\n\x1b[33mShell exited\x1b[0m`)
-          update(params.tabId, params.paneId, 'disconnected')
-          break
-        case 'error':
-          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`)
-          update(params.tabId, params.paneId, 'error')
-          break
+        case "connected":
+          update(params.tabId, params.paneId, "connected");
+          break;
+        case "output":
+          xterm.write(data);
+          break;
+        case "disconnected":
+          xterm.writeln(`\r\n\x1b[33mShell exited\x1b[0m`);
+          update(params.tabId, params.paneId, "disconnected");
+          break;
+        case "error":
+          xterm.writeln(`\r\n\x1b[31mError: ${data}\x1b[0m`);
+          update(params.tabId, params.paneId, "error");
+          break;
       }
-    })
+    });
 
-    session.unlisten = unlisten
+    session.unlisten = unlisten;
 
     xterm.onData(async (data) => {
       try {
-        await invoke('send_input_local', { sessionId: params.paneId, data })
+        await invoke("send_input_local", { sessionId: params.paneId, data });
       } catch {
         // Session may have been closed
       }
-    })
+    });
 
-    let lastResize = { cols, rows }
+    let lastResize = { cols, rows };
     xterm.onResize(async ({ cols: newCols, rows: newRows }) => {
-      if (newCols === lastResize.cols && newRows === lastResize.rows) return
-      lastResize = { cols: newCols, rows: newRows }
+      if (newCols === lastResize.cols && newRows === lastResize.rows) return;
+      lastResize = { cols: newCols, rows: newRows };
       try {
-        await invoke('resize_local', {
+        await invoke("resize_local", {
           sessionId: params.paneId,
           cols: newCols,
           rows: newRows,
-        })
+        });
       } catch {
         // Session may have been closed
       }
-    })
+    });
   } catch (err) {
-    xterm.writeln(`\r\n\x1b[31mFailed to start shell: ${err}\x1b[0m`)
-    update(params.tabId, params.paneId, 'error')
+    xterm.writeln(`\r\n\x1b[31mFailed to start shell: ${err}\x1b[0m`);
+    update(params.tabId, params.paneId, "error");
   }
 }
 
 export function attachSession(session: Session, reactEl: HTMLElement) {
-  reactEl.appendChild(session.container)
+  reactEl.appendChild(session.container);
   if (!session.opened) {
-    session.xterm.open(session.container)
-    session.opened = true
-    fitSessionSafe(session)
-    if (session.params.connectionType === 'local') {
-      connectLocal(session)
+    session.xterm.open(session.container);
+    session.opened = true;
+    fitSessionSafe(session);
+    if (session.params.connectionType === "local") {
+      connectLocal(session);
     } else {
-      connectViaTauri(session)
+      connectViaTauri(session);
     }
   }
 
   const ro = new ResizeObserver(() => {
-    if (session.resizeRaf) return
+    if (session.resizeRaf) return;
     session.resizeRaf = requestAnimationFrame(() => {
-      session.resizeRaf = 0
-      fitSessionSafe(session)
-    })
-  })
-  ro.observe(session.container)
-  session.resizeObserver = ro
+      session.resizeRaf = 0;
+      fitSessionSafe(session);
+    });
+  });
+  ro.observe(session.container);
+  session.resizeObserver = ro;
 }
 
 export function detachSession(session: Session, reactEl: HTMLElement) {
-  session.resizeObserver?.disconnect()
-  session.resizeObserver = null
+  session.resizeObserver?.disconnect();
+  session.resizeObserver = null;
   if (reactEl.contains(session.container)) {
-    reactEl.removeChild(session.container)
+    reactEl.removeChild(session.container);
   }
 }
 
 export function getOrCreateSession(params: SessionParams): Session {
-  const existing = sessions.get(params.paneId)
+  const existing = sessions.get(params.paneId);
   if (existing) {
-    existing.params.tabId = params.tabId
-    return existing
+    existing.params.tabId = params.tabId;
+    return existing;
   }
-  const session = createSession(params)
-  sessions.set(params.paneId, session)
-  return session
+  const session = createSession(params);
+  sessions.set(params.paneId, session);
+  return session;
 }
 
 export function fitSession(paneId: string) {
-  const session = sessions.get(paneId)
-  if (!session) return
-  fitSessionSafe(session)
+  const session = sessions.get(paneId);
+  if (!session) return;
+  fitSessionSafe(session);
 }
 
 function fitSessionSafe(session: Session) {
-  const el = session.container
-  if (el.clientWidth === 0 || el.clientHeight === 0) return
-  const { xterm, fitAddon } = session
-  const buffer = xterm.buffer.active
-  const wasAtBottom = buffer.baseY - buffer.viewportY <= 0
+  const el = session.container;
+  if (el.clientWidth === 0 || el.clientHeight === 0) return;
+  const { xterm, fitAddon } = session;
+  const buffer = xterm.buffer.active;
+  const wasAtBottom = buffer.baseY - buffer.viewportY <= 0;
   try {
-    fitAddon.fit()
+    fitAddon.fit();
   } catch {
     /* container may not be sized yet */
   }
-  if (wasAtBottom) xterm.scrollToBottom()
+  if (wasAtBottom) xterm.scrollToBottom();
 }
 
 export function applyTerminalTheme() {
   const theme: TerminalTheme = terminalThemeFor(
     useThemeStore.getState().currentTheme,
-  )
+  );
   for (const session of sessions.values()) {
-    session.xterm.options.theme = theme
+    session.xterm.options.theme = theme;
   }
 }
 
 useThemeStore.subscribe((state, prev) => {
   if (state.currentTheme !== prev.currentTheme) {
-    applyTerminalTheme()
+    applyTerminalTheme();
   }
-})
+});
 
 export async function destroySession(paneId: string) {
-  const session = sessions.get(paneId)
-  if (!session) return
-  session.resizeObserver?.disconnect()
-  if (session.resizeRaf) cancelAnimationFrame(session.resizeRaf)
+  const session = sessions.get(paneId);
+  if (!session) return;
+  session.resizeObserver?.disconnect();
+  if (session.resizeRaf) cancelAnimationFrame(session.resizeRaf);
 
-  session.unlisten?.()
-  session.unlistenHostKey?.()
+  session.unlisten?.();
+  session.unlistenHostKey?.();
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    if (session.params.connectionType === 'local') {
-      await invoke('disconnect_local', { sessionId: paneId })
+    const { invoke } = await import("@tauri-apps/api/core");
+    if (session.params.connectionType === "local") {
+      await invoke("disconnect_local", { sessionId: paneId });
     } else {
-      await invoke('disconnect', { sessionId: paneId })
+      await invoke("disconnect", { sessionId: paneId });
     }
   } catch {
     // Ignore — session may already be closed
   }
 
-  session.xterm.dispose()
-  sessions.delete(paneId)
+  session.xterm.dispose();
+  sessions.delete(paneId);
 }

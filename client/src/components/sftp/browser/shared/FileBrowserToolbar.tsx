@@ -9,8 +9,8 @@ import {
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
-import type { FileViewMode } from "@/types/sftp/sftpTypes";
 import { Button } from "@/components/ui/Button";
+import type { FileViewMode } from "@/types/sftp/sftpTypes";
 
 export interface FileBrowserToolbarProps {
   currentPath: string;

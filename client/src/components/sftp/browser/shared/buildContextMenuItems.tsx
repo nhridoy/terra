@@ -1,11 +1,11 @@
 import { ArrowDownIcon, CopyIcon, FolderOpenIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import type { FileItem } from "@/types/sftp/sftpTypes";
-import type { ContextMenuItem } from "@/components/ui/ContextMenu";
 import {
   type BaseContextMenuActions,
   buildBaseContextMenuItems,
 } from "@/components/sftp/browser/shared/buildBaseContextMenuItems";
+import type { ContextMenuItem } from "@/components/ui/ContextMenu";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface FileBrowserActions extends BaseContextMenuActions {
   handleDoubleClick: (file: FileItem) => void;

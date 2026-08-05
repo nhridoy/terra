@@ -3,14 +3,14 @@ import {
   DesktopTowerIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
-import { type Group, type Host, useHostStore } from "@/stores/hosts/hostStore";
+import { DraggableHostCard } from "@/components/hosts/cards/DraggableHostCard";
+import { DroppableGroupCard } from "@/components/hosts/cards/DroppableGroupCard";
+import { BreadcrumbDropTarget } from "@/components/hosts/panels/BreadcrumbDropTarget";
 import { Button } from "@/components/ui/Button";
 import { EmptyActionState } from "@/components/ui/EmptyActionState";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { BreadcrumbDropTarget } from "@/components/hosts/panels/BreadcrumbDropTarget";
-import { DraggableHostCard } from "@/components/hosts/cards/DraggableHostCard";
-import { DroppableGroupCard } from "@/components/hosts/cards/DroppableGroupCard";
 import { getAncestors, getChildren } from "@/lib/hosts/helpers";
+import { type Group, type Host, useHostStore } from "@/stores/hosts/hostStore";
 
 interface HostsPanelProps {
   selectedGroupId: string | null;

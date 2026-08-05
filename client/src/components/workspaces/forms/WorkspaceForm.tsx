@@ -1,13 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import ModalForm from "@/components/common/ModalForm";
+import { FormInput } from "@/components/ui/forms/FormInput";
 import {
   type WorkspaceFormSchema,
   workspaceFormDefaultValues,
   workspaceFormSchema,
 } from "@/lib/schema/workspaces/workspaceFormSchema";
-import ModalForm from "@/components/common/ModalForm";
-import { FormInput } from "@/components/ui/forms/FormInput";
 
 interface WorkspaceFormProps {
   title: string;

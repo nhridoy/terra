@@ -1,12 +1,12 @@
 import { FileTextIcon, TrashIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { formatDurationMs } from "@/lib/common/formatting";
-import { useSessionStore } from "@/stores/sessions/sessionStore";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import Input from "@/components/ui/Input";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
+import { formatDurationMs } from "@/lib/common/formatting";
+import { useSessionStore } from "@/stores/sessions/sessionStore";
 
 interface SessionLogProps {
   hostId?: string;

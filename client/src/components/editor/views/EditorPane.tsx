@@ -7,6 +7,15 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
+import ActivityBar from "@/components/editor/panels/ActivityBar";
+import EditorExplorer from "@/components/editor/panels/EditorExplorer";
+import EditorSearch from "@/components/editor/panels/EditorSearch";
+import SourceControlPanel from "@/components/editor/panels/SourceControlPanel";
+import EditorViewTree from "@/components/editor/views/EditorViewTree";
+import SftpHostPicker from "@/components/sftp/picker/SftpHostPicker";
+import { Button } from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import PaneHeader from "@/components/ui/PaneHeader";
 import { extractError } from "@/lib/common/extractError";
 import { openDirectoryPicker } from "@/lib/sftp/localFs";
 import {
@@ -15,15 +24,6 @@ import {
   useEditorStore,
 } from "@/stores/editor/editorStore";
 import type { Host } from "@/stores/hosts/hostStore";
-import SftpHostPicker from "@/components/sftp/picker/SftpHostPicker";
-import { Button } from "@/components/ui/Button";
-import Modal from "@/components/ui/Modal";
-import PaneHeader from "@/components/ui/PaneHeader";
-import ActivityBar from "@/components/editor/panels/ActivityBar";
-import EditorExplorer from "@/components/editor/panels/EditorExplorer";
-import EditorSearch from "@/components/editor/panels/EditorSearch";
-import EditorViewTree from "@/components/editor/views/EditorViewTree";
-import SourceControlPanel from "@/components/editor/panels/SourceControlPanel";
 
 const COLLAPSE_THRESHOLD = 48;
 

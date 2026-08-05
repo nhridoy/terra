@@ -1,12 +1,28 @@
 import { create } from "zustand";
-import { authApi, type TokenPair, type User } from "../../lib/api/auth";
 import {
+  authApi,
+  setRefreshTokenGetter,
+  setRefreshTokenSetter,
+  type TokenPair,
+  type User,
+} from "../../lib/api/auth";
+import {
+  clearKeychain,
   computeLoginProof,
   deriveKek,
   generateAccountMaterial,
+  getRefreshToken,
+  loadRefreshToken,
   lockSession,
+  saveRefreshToken,
+  setRefreshToken,
   unwrapDek,
+  wrapDek,
 } from "../../lib/crypto/crypto";
+
+// Wire up refresh token getter/setter for apiFetch auto-refresh
+setRefreshTokenGetter(getRefreshToken);
+setRefreshTokenSetter(setRefreshToken);
 
 interface AuthState {
   user: User | null;
@@ -28,7 +44,10 @@ interface AuthState {
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   unlock: (password: string) => Promise<void>;
-  updateProfile: (data: { username?: string; email?: string }) => Promise<void>;
+  updateProfile: (data: {
+    full_name?: string;
+    email?: string;
+  }) => Promise<void>;
   changePassword: (
     currentPassword: string,
     newPassword: string,
@@ -52,6 +71,22 @@ function getDeviceId(): string {
   }
 }
 
+async function persistTokens(tokens: TokenPair | null): Promise<void> {
+  // Set in-memory first so apiFetch auto-refresh has it immediately
+  setRefreshToken(tokens?.refresh_token ?? null);
+  try {
+    if (tokens?.refresh_token) {
+      await saveRefreshToken(tokens.refresh_token);
+    } else {
+      await clearKeychain();
+    }
+  } catch {
+    // ignore keychain errors
+  }
+}
+
+let _restoreSessionLock: Promise<void> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   tokens: null,
@@ -71,7 +106,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     };
   },
 
-  register: async (email: string, _name: string, password: string) => {
+  register: async (email: string, name: string, password: string) => {
     set({ isLoading: true, error: null });
     try {
       const prelogin = await authApi.prelogin(email);
@@ -86,6 +121,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const res = await authApi.register({
         user_id: crypto.randomUUID(),
         email,
+        full_name: name,
         password_hash: proof.verifier,
         encrypted_dek: material.private_key_wrapped_by_dek,
         encrypted_privkey: material.private_key_wrapped_by_dek,
@@ -104,6 +140,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isUnlocked: true,
         isLoading: false,
+      });
+      await persistTokens({
+        access_token: res.access_token,
+        refresh_token: res.refresh_token,
       });
     } catch (err) {
       const message =
@@ -137,19 +177,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (res.keyring) {
-        await unwrapDek("", res.keyring.dek_wrapped_by_kek);
+        await unwrapDek(res.keyring.dek_wrapped_by_kek);
       }
 
+      const newTokens = {
+        access_token: res.access_token,
+        refresh_token: res.refresh_token,
+      };
       set({
         user: res.user,
-        tokens: {
-          access_token: res.access_token,
-          refresh_token: res.refresh_token,
-        },
+        tokens: newTokens,
         isAuthenticated: true,
         isUnlocked: true,
         isLoading: false,
       });
+      await persistTokens(newTokens);
     } catch (err) {
       const message =
         typeof err === "string"
@@ -168,12 +210,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const newTokens = await authApi.refresh(tokens.refresh_token);
-      set({
-        tokens: {
-          access_token: newTokens.access_token,
-          refresh_token: newTokens.refresh_token,
-        },
-      });
+      const refreshedTokens = {
+        access_token: newTokens.access_token,
+        refresh_token: newTokens.refresh_token,
+      };
+      set({ tokens: refreshedTokens });
+      await persistTokens(refreshedTokens);
     } catch {
       set({
         user: null,
@@ -181,6 +223,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: false,
         isUnlocked: false,
       });
+      await persistTokens(null);
     }
   },
 
@@ -200,6 +243,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: false,
       isUnlocked: false,
     });
+    await persistTokens(null);
   },
 
   unlock: async (_password: string) => {
@@ -213,14 +257,98 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }));
   },
 
-  changePassword: async (_currentPassword: string, _newPassword: string) => {
-    // TODO: call password change API with crypto re-encryption
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const { user, tokens } = get();
+    if (!user || !tokens) throw new Error("Not authenticated");
+
+    // 1. Get fresh prelogin data
+    const prelogin = await authApi.prelogin(user.email);
+
+    // 2. Derive KEK from current password, compute old proof
+    await deriveKek(currentPassword, prelogin.salt_cl);
+    const oldProof = await computeLoginProof(
+      prelogin.server_salt,
+      prelogin.nonce,
+    );
+
+    // 3. Generate new KDF params + new salts
+    const newKdf = {
+      m: 67108864,
+      t: 3,
+      p: 1,
+    };
+    const rand16 = new Uint8Array(16);
+    crypto.getRandomValues(rand16);
+    const newSaltCl = btoa(String.fromCharCode(...rand16)).replace(/=+$/, "");
+    crypto.getRandomValues(rand16);
+    const newServerSalt = btoa(String.fromCharCode(...rand16)).replace(
+      /=+$/,
+      "",
+    );
+
+    // 4. Derive new KEK from new password, compute new verifier
+    await deriveKek(newPassword, newSaltCl);
+    const newVerifier = await computeLoginProof(newServerSalt, prelogin.nonce);
+
+    // 5. Re-wrap DEK with new KEK
+    const newEncryptedDek = await wrapDek();
+
+    // 6. Send to server
+    await authApi.passwordChange(
+      {
+        old_proof: oldProof.proof,
+        old_nonce: prelogin.nonce,
+        new_verifier: newVerifier.verifier,
+        new_encrypted_dek: newEncryptedDek,
+        new_nonce: prelogin.nonce,
+        new_kdf: newKdf,
+        new_server_salt: newServerSalt,
+        new_salt_cl: newSaltCl,
+      },
+      tokens.access_token,
+    );
   },
 
   clearError: () => set({ error: null }),
 
   restoreSession: async () => {
-    // TODO: load tokens from secure storage, call /me
-    set({ isLoading: false, isInitialized: true });
+    // Deduplicate concurrent calls (e.g., React.StrictMode double-mount)
+    if (_restoreSessionLock) return _restoreSessionLock;
+
+    _restoreSessionLock = (async () => {
+      try {
+        const refreshToken = await loadRefreshToken();
+
+        if (refreshToken) {
+          try {
+            const newTokens = await authApi.refresh(refreshToken);
+            const tokens = {
+              access_token: newTokens.access_token,
+              refresh_token: newTokens.refresh_token,
+            };
+            set({ tokens });
+            await persistTokens(tokens);
+
+            const user = await authApi.me(newTokens.access_token);
+            set({ user, isAuthenticated: true, isUnlocked: true });
+          } catch {
+            set({
+              user: null,
+              tokens: null,
+              isAuthenticated: false,
+              isUnlocked: false,
+            });
+            await persistTokens(null);
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        _restoreSessionLock = null;
+        set({ isLoading: false, isInitialized: true });
+      }
+    })();
+
+    return _restoreSessionLock;
   },
 }));

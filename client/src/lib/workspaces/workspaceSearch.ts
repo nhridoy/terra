@@ -1,6 +1,6 @@
 import { readLocalFileBytes } from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import { collectWorkspaceFiles } from "@/lib/workspaces/workspaceFiles";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 export interface SearchOptions {
   caseSensitive: boolean;

@@ -1,7 +1,6 @@
 import { type RefObject, useCallback } from "react";
 import { joinPath } from "@/lib/sftp/fileTransfer";
 import { listLocalFiles, writeLocalFileBytes } from "@/lib/sftp/localFs";
-import type { FileItem } from "@/types/sftp/sftpTypes";
 import {
   showTransferError,
   showTransferProgress,
@@ -9,6 +8,7 @@ import {
   showTransferSuccess,
 } from "@/lib/sftp/transferToast";
 import { fileBrowserActions } from "@/stores/sftp/fileBrowserStore";
+import type { FileItem } from "@/types/sftp/sftpTypes";
 
 interface UseDesktopFileDropParams {
   paneId: string;
