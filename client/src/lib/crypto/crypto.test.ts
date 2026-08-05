@@ -191,7 +191,7 @@ describe("computeLoginProof", () => {
     const proof = { verifier: "ver", proof: "prf" };
     mockInvoke.mockResolvedValue(proof);
 
-    const result = await computeLoginProof("kek-b64", "salt-b64", "nonce-b64");
+    const result = await computeLoginProof("salt-b64", "nonce-b64");
 
     expect(result).toEqual(proof);
     expect(mockInvoke).toHaveBeenCalledWith("compute_login_proof", {

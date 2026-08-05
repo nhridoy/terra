@@ -92,12 +92,10 @@ export async function deriveKek(
 }
 
 export async function computeLoginProof(
-  kek: string,
   serverSalt: string,
   nonce: string,
 ): Promise<LoginProof> {
   return invoke<LoginProof>("compute_login_proof", {
-    kek,
     serverSalt,
     nonce,
   });

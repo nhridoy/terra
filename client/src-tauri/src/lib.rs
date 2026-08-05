@@ -775,17 +775,10 @@ fn derive_kek(password: String, salt_cl: String, state: tauri::State<'_, CryptoS
 }
 
 #[tauri::command]
-fn compute_login_proof(kek: String, server_salt: String, nonce: String) -> Result<crypto::LoginProof, String> {
-    let kek_bytes = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &kek,
-    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
-    if kek_bytes.len() != 32 {
-        return Err("Invalid KEK length".to_string());
-    }
-    let mut kek_arr = [0u8; 32];
-    kek_arr.copy_from_slice(&kek_bytes);
-    crypto::compute_login_proof(&kek_arr, &server_salt, &nonce)
+fn compute_login_proof(server_salt: String, nonce: String, state: tauri::State<'_, CryptoState>) -> Result<crypto::LoginProof, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    let kek = session.kek.ok_or("KEK not derived - call derive_kek first")?;
+    crypto::compute_login_proof(&kek, &server_salt, &nonce)
 }
 
 #[tauri::command]

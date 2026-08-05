@@ -79,7 +79,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const material = await generateAccountMaterial();
       await deriveKek(password, material.salt_cl);
       const proof = await computeLoginProof(
-        "",
         prelogin.server_salt,
         prelogin.nonce,
       );
@@ -125,7 +124,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       await deriveKek(password, prelogin.salt_cl);
       const proof = await computeLoginProof(
-        "",
         prelogin.server_salt,
         prelogin.nonce,
       );
