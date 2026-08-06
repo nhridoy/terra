@@ -68,11 +68,13 @@ pub struct EncryptedPayload {
     pub alg: String,
     pub nonce: String,
     pub ct: String,
+    #[serde(default)]
+    pub aad: String,
 }
 
 impl EncryptedPayload {
-    fn new(v: u8, alg: String, nonce: String, ct: String) -> Self {
-        Self { v, alg, nonce, ct }
+    fn new(v: u8, alg: String, nonce: String, ct: String, aad: String) -> Self {
+        Self { v, alg, nonce, ct, aad }
     }
 }
 
@@ -85,6 +87,12 @@ pub fn derive_kek_bytes(password: &str, salt_cl: &[u8; SALT_CL_LEN]) -> Result<[
         .hash_password_into(password.as_bytes(), salt_cl, &mut kek)
         .map_err(|e| format!("Argon2 hash error: {e}"))?;
     Ok(kek)
+}
+
+pub fn generate_recovery_code() -> String {
+    let mut recovery_bytes = [0u8; RECOVERY_CODE_LEN];
+    rand::rngs::OsRng.fill_bytes(&mut recovery_bytes);
+    BASE64.encode(recovery_bytes)
 }
 
 pub fn generate_account_material(session: &mut KeySession) -> Result<AccountMaterial, String> {
@@ -102,9 +110,7 @@ pub fn generate_account_material(session: &mut KeySession) -> Result<AccountMate
     session.private_key = private_key;
     session.public_key = public_key;
 
-    let mut recovery_bytes = [0u8; RECOVERY_CODE_LEN];
-    rand::rngs::OsRng.fill_bytes(&mut recovery_bytes);
-    let recovery_code = BASE64.encode(recovery_bytes);
+    let recovery_code = generate_recovery_code();
 
     let private_key_bytes = session.private_key.to_bytes();
     let wrapped_private = encrypt_bytes(&dek, &private_key_bytes, b"private_key")?;
@@ -313,6 +319,7 @@ fn encrypt_bytes(key: &[u8; DEK_LEN], plaintext: &[u8], aad: &[u8]) -> Result<St
         alg: "xchacha20poly1305".to_string(),
         nonce: BASE64.encode(nonce_bytes),
         ct: BASE64.encode(&ct),
+        aad: BASE64.encode(aad),
     };
 
     serde_json::to_string(&payload).map_err(|e| format!("JSON error: {e}"))
@@ -341,9 +348,13 @@ fn decrypt_bytes(payload_b64: &str, key: &[u8; DEK_LEN]) -> Result<Vec<u8>, Stri
         .decode(&payload.ct)
         .map_err(|e| format!("Invalid ciphertext base64: {e}"))?;
 
+    let aad = BASE64
+        .decode(&payload.aad)
+        .map_err(|e| format!("Invalid aad base64: {e}"))?;
+
     let cipher = XChaCha20Poly1305::new(key.into());
     cipher
-        .decrypt(nonce, ct.as_ref())
+        .decrypt(nonce, Payload { msg: ct.as_ref(), aad: aad.as_ref() })
         .map_err(|e| format!("Decryption error: {e}"))
 }
 

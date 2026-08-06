@@ -6,6 +6,7 @@ import AuthGuard from "@/components/auth/guard/AuthGuard";
 import Layout from "@/components/layout/shell/Layout";
 import LoginPage from "@/pages/auth/LoginPage";
 import RecoveryPage from "@/pages/auth/RecoveryPage";
+import RecoveryRevealModal from "@/pages/auth/RecoveryRevealModal";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import SetupPage from "@/pages/auth/SetupPage";
 import EditorPage from "@/pages/EditorPage";
@@ -24,6 +25,9 @@ import { useThemeStore } from "@/stores/themeStore";
 
 function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
+  const pendingRecoveryCode = useAuthStore((s) => s.pendingRecoveryCode);
+  const pendingRecoveryContext = useAuthStore((s) => s.pendingRecoveryContext);
+  const clearRecoveryCode = useAuthStore((s) => s.clearRecoveryCode);
   const initSettings = useSettingsStore((s) => s.initSettings);
   const initTheme = useThemeStore((s) => s.initTheme);
   const detectShells = useShellStore((s) => s.detect);
@@ -65,6 +69,12 @@ function App() {
           </Route>
         </Route>
       </Routes>
+      <RecoveryRevealModal
+        open={!!pendingRecoveryCode}
+        recoveryCode={pendingRecoveryCode ?? ""}
+        onClose={clearRecoveryCode}
+        context={pendingRecoveryContext ?? "signup"}
+      />
       <Toaster richColors />
     </BrowserRouter>
   );

@@ -10,12 +10,10 @@ import {
   setupFormDefaultValues,
   setupFormSchema,
 } from "@/lib/schema/auth/setupFormSchema";
-import { useAuthStore } from "@/stores/auth/authStore";
 import RecoveryRevealModal from "./RecoveryRevealModal";
 
 export default function SetupPage() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -45,27 +43,6 @@ export default function SetupPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleRecoveryDownload = () => {
-    const content = [
-      "TermVault Recovery Kit",
-      "=====================",
-      "",
-      `Account: ${user?.email || "unknown"}`,
-      `Recovery Code: ${recoveryCode}`,
-      "",
-      "Keep this code safe. You will need it to recover your account if you forget your password.",
-      "This code provides access to your encrypted data.",
-    ].join("\n");
-
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "termvault-recovery-kit.txt";
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleRecoveryClose = () => {
@@ -134,7 +111,6 @@ export default function SetupPage() {
       <RecoveryRevealModal
         open={showRecoveryModal}
         recoveryCode={recoveryCode}
-        onDownload={handleRecoveryDownload}
         onClose={handleRecoveryClose}
       />
     </div>

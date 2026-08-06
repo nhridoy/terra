@@ -8,6 +8,7 @@ import {
   encryptObject,
   encryptSecret,
   generateAccountMaterial,
+  generateRecoveryCode,
   getCurrentUserId,
   getStoredSalt,
   isEncrypted,
@@ -187,7 +188,7 @@ describe("decryptObject", () => {
 });
 
 describe("computeLoginProof", () => {
-  it("calls invoke with kek, serverSalt, nonce", async () => {
+  it("calls invoke with serverSalt, nonce", async () => {
     const proof = { verifier: "ver", proof: "prf" };
     mockInvoke.mockResolvedValue(proof);
 
@@ -195,15 +196,25 @@ describe("computeLoginProof", () => {
 
     expect(result).toEqual(proof);
     expect(mockInvoke).toHaveBeenCalledWith("compute_login_proof", {
-      kek: "kek-b64",
       serverSalt: "salt-b64",
       nonce: "nonce-b64",
     });
   });
 });
 
+describe("generateRecoveryCode", () => {
+  it("calls invoke", async () => {
+    mockInvoke.mockResolvedValue("new-code-b64");
+
+    const result = await generateRecoveryCode();
+
+    expect(result).toBe("new-code-b64");
+    expect(mockInvoke).toHaveBeenCalledWith("generate_recovery_code");
+  });
+});
+
 describe("buildKeyringRows", () => {
-  it("calls invoke with kek and recoveryCode", async () => {
+  it("calls invoke with recoveryCode", async () => {
     const rows = {
       dek_wrapped_by_kek: "a",
       dek_wrapped_by_recovery: "b",
@@ -211,11 +222,10 @@ describe("buildKeyringRows", () => {
     };
     mockInvoke.mockResolvedValue(rows);
 
-    const result = await buildKeyringRows("kek-b64", "recovery-b64");
+    const result = await buildKeyringRows("recovery-b64");
 
     expect(result).toEqual(rows);
     expect(mockInvoke).toHaveBeenCalledWith("build_keyring_rows", {
-      kek: "kek-b64",
       recoveryCode: "recovery-b64",
     });
   });

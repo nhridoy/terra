@@ -16,7 +16,6 @@ import Input from "@/components/ui/Input";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { useModal } from "@/hooks/useModal";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
-import { useVaultStore } from "@/stores/vault/vaultStore";
 
 interface Snippet {
   id: string;
@@ -33,7 +32,6 @@ interface SnippetListProps {
 }
 
 export default function SnippetList({ onNew, onEdit }: SnippetListProps) {
-  const { currentVaultId } = useVaultStore();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const deleteDialog = useModal();

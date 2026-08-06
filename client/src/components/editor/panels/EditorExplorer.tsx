@@ -15,10 +15,10 @@ import ContextMenu, { type ContextMenuItem } from "@/components/ui/ContextMenu";
 import PromptDialog from "@/components/ui/PromptDialog";
 import { accessibleClickHandler } from "@/lib/common/accessibleClickHandler";
 import { extractError } from "@/lib/common/extractError";
+import { isTauriAvailable } from "@/lib/common/utils";
 import { getFileIcon } from "@/lib/sftp/fileHelpers";
 import {
   createLocalDir,
-  isTauriAvailable,
   listLocalFiles,
   removeLocalFile,
   renameLocalFile,

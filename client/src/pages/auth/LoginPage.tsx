@@ -80,7 +80,7 @@ export default function LoginPage() {
 
             <div className="text-right">
               <Link
-                to="/forgot-password"
+                to="/recovery"
                 className="text-primary-500 hover:text-primary-400 text-xs"
               >
                 Forgot password?

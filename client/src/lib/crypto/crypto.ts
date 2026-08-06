@@ -89,6 +89,10 @@ export async function generateAccountMaterial(): Promise<AccountMaterial> {
   return invoke<AccountMaterial>("generate_account_material");
 }
 
+export async function generateRecoveryCode(): Promise<string> {
+  return invoke<string>("generate_recovery_code");
+}
+
 export async function deriveKek(
   password: string,
   saltCl: string,
@@ -107,10 +111,9 @@ export async function computeLoginProof(
 }
 
 export async function buildKeyringRows(
-  kek: string,
   recoveryCode: string,
 ): Promise<KeyringRows> {
-  return invoke<KeyringRows>("build_keyring_rows", { kek, recoveryCode });
+  return invoke<KeyringRows>("build_keyring_rows", { recoveryCode });
 }
 
 export async function encryptSecret(

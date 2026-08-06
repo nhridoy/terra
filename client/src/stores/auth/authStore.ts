@@ -7,15 +7,19 @@ import {
   type User,
 } from "../../lib/api/auth";
 import {
+  buildKeyringRows,
   clearKeychain,
   computeLoginProof,
   deriveKek,
   generateAccountMaterial,
+  generateRecoveryCode,
   getRefreshToken,
   loadRefreshToken,
   lockSession,
+  recoveryUnwrapDek,
   saveRefreshToken,
   setRefreshToken,
+  signChallenge,
   unwrapDek,
   wrapDek,
 } from "../../lib/crypto/crypto";
@@ -52,6 +56,11 @@ interface AuthState {
     currentPassword: string,
     newPassword: string,
   ) => Promise<void>;
+  recovery: (recoveryCode: string, newPassword: string) => Promise<void>;
+  pendingRecoveryCode: string | null;
+  pendingRecoveryContext: "signup" | "recovery" | null;
+  pendingRecoveryEmail: string | null;
+  clearRecoveryCode: () => void;
   clearError: () => void;
   restoreSession: () => Promise<void>;
 }
@@ -95,6 +104,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isInitialized: false,
   isLoading: false,
   error: null,
+  pendingRecoveryCode: null,
+  pendingRecoveryContext: null,
+  pendingRecoveryEmail: null,
 
   prelogin: async (email: string) => {
     const res = await authApi.prelogin(email);
@@ -113,6 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const material = await generateAccountMaterial();
       await deriveKek(password, material.salt_cl);
+      const keyring = await buildKeyringRows(material.recovery_code);
       const proof = await computeLoginProof(
         prelogin.server_salt,
         prelogin.nonce,
@@ -125,6 +138,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         password_hash: proof.verifier,
         encrypted_dek: material.private_key_wrapped_by_dek,
         encrypted_privkey: material.private_key_wrapped_by_dek,
+        recovery_code: material.recovery_code,
+        public_key: material.public_key,
+        keyring,
         nonce: prelogin.nonce,
         kdf: prelogin.kdf,
         server_salt: prelogin.server_salt,
@@ -139,6 +155,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
         isAuthenticated: true,
         isUnlocked: true,
+        pendingRecoveryCode: material.recovery_code,
+        pendingRecoveryContext: "signup",
         isLoading: false,
       });
       await persistTokens({
@@ -310,6 +328,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  clearRecoveryCode: () =>
+    set({
+      pendingRecoveryCode: null,
+      pendingRecoveryContext: null,
+      pendingRecoveryEmail: null,
+    }),
+
+  recovery: async (recoveryCode: string, newPassword: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const prefetch = await authApi.recoveryPrefetch(recoveryCode);
+
+      // 1. Unwrap the DEK with the recovery code (recovery-KEK = Argon2id(code, salt_cl))
+      await recoveryUnwrapDek(
+        recoveryCode,
+        prefetch.salt_cl,
+        prefetch.dek_wrapped_by_recovery,
+      );
+
+      // 2. Derive the new KEK from the new password
+      await deriveKek(newPassword, prefetch.salt_cl);
+
+      // 3. Rotate the recovery code: fresh code + re-wrap the DEK under it and the new KEK
+      const newCode = await generateRecoveryCode();
+      const keyring = await buildKeyringRows(newCode);
+
+      // 4. Compute new verifier and sign the nonce (proof of possession)
+      const newProof = await computeLoginProof(
+        prefetch.server_salt,
+        prefetch.nonce,
+      );
+      const signature = await signChallenge(prefetch.nonce);
+
+      // 5. Send to server
+      await authApi.recovery({
+        recovery_code: recoveryCode,
+        signature,
+        new_recovery_code: newCode,
+        new_verifier: newProof.verifier,
+        new_encrypted_dek: keyring.dek_wrapped_by_kek,
+        new_dek_wrapped_by_recovery: keyring.dek_wrapped_by_recovery,
+        new_nonce: prefetch.nonce,
+        new_kdf: { m: 32768, t: 2, p: 1 },
+        new_server_salt: prefetch.server_salt,
+        new_salt_cl: prefetch.salt_cl,
+      });
+
+      set({
+        pendingRecoveryCode: newCode,
+        pendingRecoveryContext: "recovery",
+        pendingRecoveryEmail: prefetch.email,
+        error: null,
+      });
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Recovery failed";
+      set({ error: message, isLoading: false });
+      throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
   restoreSession: async () => {
     // Deduplicate concurrent calls (e.g., React.StrictMode double-mount)

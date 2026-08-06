@@ -145,6 +145,12 @@ export interface LoginResponse extends TokenPair {
   };
 }
 
+export interface KeyringRows {
+  dek_wrapped_by_kek: string;
+  dek_wrapped_by_recovery: string;
+  private_key_wrapped_by_dek: string;
+}
+
 export interface RegisterRequest {
   user_id: string;
   email: string;
@@ -152,6 +158,9 @@ export interface RegisterRequest {
   password_hash: string;
   encrypted_dek: string;
   encrypted_privkey: string;
+  recovery_code?: string;
+  public_key?: string;
+  keyring?: KeyringRows;
   nonce: string;
   kdf: { m: number; t: number; p: number };
   server_salt: string;
@@ -160,6 +169,15 @@ export interface RegisterRequest {
 
 export interface RegisterResponse extends TokenPair {
   user: User;
+}
+
+export interface RecoveryPrefetchResponse {
+  nonce: string;
+  email: string;
+  kdf: { m: number; t: number; p: number };
+  server_salt: string;
+  salt_cl: string;
+  dek_wrapped_by_recovery: string;
 }
 
 export const authApi = {
@@ -213,11 +231,21 @@ export const authApi = {
     return apiFetch("POST", "/api/v1/auth/password-change", params, token);
   },
 
+  async recoveryPrefetch(
+    recoveryCode: string,
+  ): Promise<RecoveryPrefetchResponse> {
+    return apiFetch("POST", "/api/v1/auth/recovery/prefetch", {
+      recovery_code: recoveryCode,
+    });
+  },
+
   async recovery(params: {
     recovery_code: string;
     signature: string;
+    new_recovery_code: string;
     new_verifier: string;
     new_encrypted_dek: string;
+    new_dek_wrapped_by_recovery: string;
     new_nonce: string;
     new_kdf: { m: number; t: number; p: number };
     new_server_salt: string;

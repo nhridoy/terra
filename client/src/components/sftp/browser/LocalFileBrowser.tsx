@@ -30,16 +30,13 @@ import {
 import { useSortedFiles } from "@/hooks/sftp/useSortedFiles";
 import { useTauriDragDrop } from "@/hooks/sftp/useTauriDragDrop";
 import { extractError } from "@/lib/common/extractError";
+import { isTauriAvailable } from "@/lib/common/utils";
 import {
   joinPath,
   LocalFileProvider,
   transferFiles,
 } from "@/lib/sftp/fileTransfer";
-import {
-  isSameVolume,
-  isTauriAvailable,
-  listLocalFiles,
-} from "@/lib/sftp/localFs";
+import { isSameVolume, listLocalFiles } from "@/lib/sftp/localFs";
 import {
   showTransferError,
   showTransferProgress,

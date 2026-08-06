@@ -768,6 +768,11 @@ fn generate_account_material(state: tauri::State<'_, CryptoState>) -> Result<cry
 }
 
 #[tauri::command]
+fn generate_recovery_code() -> String {
+    crypto::generate_recovery_code()
+}
+
+#[tauri::command]
 fn derive_kek(password: String, salt_cl: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
     let mut session = state.session.lock().map_err(|e| e.to_string())?;
     crypto::derive_kek(&password, &salt_cl, &mut session)
@@ -781,18 +786,10 @@ fn compute_login_proof(server_salt: String, nonce: String, state: tauri::State<'
 }
 
 #[tauri::command]
-fn build_keyring_rows(kek: String, recovery_code: String, state: tauri::State<'_, CryptoState>) -> Result<crypto::KeyringRows, String> {
-    let kek_bytes = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &kek,
-    ).map_err(|e| format!("Invalid KEK base64: {e}"))?;
-    if kek_bytes.len() != 32 {
-        return Err("Invalid KEK length".to_string());
-    }
-    let mut kek_arr = [0u8; 32];
-    kek_arr.copy_from_slice(&kek_bytes);
+fn build_keyring_rows(recovery_code: String, state: tauri::State<'_, CryptoState>) -> Result<crypto::KeyringRows, String> {
     let session = state.session.lock().map_err(|e| e.to_string())?;
-    crypto::build_keyring_rows(&kek_arr, &recovery_code, &session)
+    let kek = session.kek.ok_or("KEK not derived - call derive_kek first")?;
+    crypto::build_keyring_rows(&kek, &recovery_code, &session)
 }
 
 #[tauri::command]
@@ -941,6 +938,7 @@ pub fn run() {
             git::git_stash_apply,
             git::git_stash_drop,
             generate_account_material,
+            generate_recovery_code,
             derive_kek,
             compute_login_proof,
             build_keyring_rows,

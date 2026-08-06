@@ -11,11 +11,11 @@ import {
   recoveryFormDefaultValues,
   recoveryFormSchema,
 } from "@/lib/schema/auth/recoveryFormSchema";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function RecoveryPage() {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { recovery, isLoading, error, clearError } = useAuthStore();
   const [success, setSuccess] = useState(false);
 
   const { control, handleSubmit } = useForm<RecoveryFormSchema>({
@@ -23,19 +23,15 @@ export default function RecoveryPage() {
     resolver: zodResolver(recoveryFormSchema),
   });
 
-  const onSubmit = async (_data: RecoveryFormSchema) => {
-    setError("");
-    setIsLoading(true);
+  const onSubmit = async (data: RecoveryFormSchema) => {
+    setSuccess(false);
+    clearError();
 
     try {
-      // TODO: call authApi.recovery with recovery code and new password
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await recovery(data.recoveryCode, data.newPassword);
       setSuccess(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Recovery failed";
-      setError(message);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // error is shown via the store's error field
     }
   };
 
