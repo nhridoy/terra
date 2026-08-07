@@ -1,6 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
+import EmailVerification from "@/components/auth/forms/EmailVerification";
 import OAuthLogin from "@/components/auth/forms/OAuthLogin";
 import ServerConfig from "@/components/auth/forms/ServerConfig";
 import { Alert } from "@/components/ui/Alert";
@@ -15,7 +17,15 @@ import {
 import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function LoginPage() {
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const {
+    login,
+    isLoading,
+    error,
+    clearError,
+    pendingVerificationEmail,
+    clearPendingVerification,
+  } = useAuthStore();
+  const [password, setPassword] = useState("");
   const {
     control,
     handleSubmit,
@@ -27,6 +37,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginFormSchema) => {
     clearError();
+    setPassword(data.password);
     await login(data.email, data.password);
   };
 
@@ -42,65 +53,75 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
-          <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
-
-          {error && (
-            <div className="mb-4">
-              <Alert variant="error">{error}</Alert>
-            </div>
+          {pendingVerificationEmail && (
+            <EmailVerification
+              onBackToLogin={clearPendingVerification}
+              password={password}
+            />
           )}
+          {!pendingVerificationEmail && (
+            <>
+              <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
 
-          <OAuthLogin />
+              {error && (
+                <div className="mb-4">
+                  <Alert variant="error">{error}</Alert>
+                </div>
+              )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <FormInput
-              control={control}
-              name="email"
-              label="Email"
-              placeholder="you@example.com"
-              required={requiredFields.includes("email")}
-            />
+              <OAuthLogin />
 
-            <FormInput
-              control={control}
-              name="password"
-              label="Password"
-              type="password"
-              placeholder="••••••••"
-              required={requiredFields.includes("password")}
-            />
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                <FormInput
+                  control={control}
+                  name="email"
+                  label="Email"
+                  placeholder="you@example.com"
+                  required={requiredFields.includes("email")}
+                />
 
-            <div className="text-right">
-              <Link
-                to="/recovery"
-                className="text-primary-500 hover:text-primary-400 text-xs"
-              >
-                Forgot password?
-              </Link>
-            </div>
+                <FormInput
+                  control={control}
+                  name="password"
+                  label="Password"
+                  type="password"
+                  placeholder="••••••••"
+                  required={requiredFields.includes("password")}
+                />
 
-            <Button
-              type="submit"
-              disabled={isLoading || !isValid}
-              variant="default"
-              size="sm"
-              className="w-full"
-            >
-              {isLoading ? "Loading..." : "Sign In"}
-            </Button>
-          </form>
+                <div className="text-right">
+                  <Link
+                    to="/recovery"
+                    className="text-primary-500 hover:text-primary-400 text-xs"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
 
-          <div className="mt-6 text-center">
-            <Link
-              to="/register"
-              onClick={() => clearError()}
-              className="text-primary-500 hover:text-primary-400 text-sm"
-            >
-              Don't have an account? Create one
-            </Link>
-          </div>
+                <Button
+                  type="submit"
+                  disabled={isLoading || !isValid}
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                >
+                  {isLoading ? "Loading..." : "Sign In"}
+                </Button>
+              </form>
 
-          <ServerConfig />
+              <div className="mt-6 text-center">
+                <Link
+                  to="/register"
+                  onClick={() => clearError()}
+                  className="text-primary-500 hover:text-primary-400 text-sm"
+                >
+                  Don't have an account? Create one
+                </Link>
+              </div>
+
+              <ServerConfig />
+            </>
+          )}
         </div>
       </div>
     </div>
