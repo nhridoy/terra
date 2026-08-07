@@ -184,8 +184,14 @@ export interface RegisterRequest {
   salt_cl: string;
 }
 
-export interface RegisterResponse extends TokenPair {
+export interface RegisterResponse extends Partial<TokenPair> {
   user: User;
+  verification_required?: boolean;
+}
+
+export interface VerifyEmailResponse extends TokenPair {
+  user: User;
+  keyring?: KeyringRows;
 }
 
 export interface RecoveryPrefetchResponse {
@@ -204,6 +210,20 @@ export const authApi = {
 
   async register(req: RegisterRequest): Promise<RegisterResponse> {
     return apiFetch("POST", "/api/v1/auth/register", req);
+  },
+
+  async verifyEmail(params: {
+    email: string;
+    otp: string;
+    device_id: string;
+  }): Promise<VerifyEmailResponse> {
+    return apiFetch("POST", "/api/v1/auth/verify-email", params);
+  },
+
+  async resendVerification(email: string): Promise<{
+    verification_required: boolean;
+  }> {
+    return apiFetch("POST", "/api/v1/auth/resend-verification", { email });
   },
 
   async login(params: {
