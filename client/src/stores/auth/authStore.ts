@@ -1,6 +1,7 @@
 import { load } from "@tauri-apps/plugin-store";
 import { create } from "zustand";
 import {
+  AuthApiError,
   authApi,
   loadApiUrl,
   setRefreshTokenGetter,
@@ -58,6 +59,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   pendingOAuth: { provider: string; setupCode: string; userId: string } | null;
+  pendingVerificationEmail: string | null;
   alwaysAsk: boolean;
 
   prelogin: (email: string) => Promise<{
@@ -88,6 +90,9 @@ interface AuthState {
   restoreSession: () => Promise<void>;
   oauthStartFlow: (provider: string) => Promise<{ needsSetup: boolean }>;
   oauthSetup: (password: string) => Promise<void>;
+  verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
+  clearPendingVerification: () => void;
   setAlwaysAsk: (flag: boolean) => Promise<void>;
 }
 
@@ -163,6 +168,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingRecoveryContext: null,
   pendingRecoveryEmail: null,
   pendingOAuth: null,
+  pendingVerificationEmail: null,
   alwaysAsk: false,
 
   prelogin: async (email: string) => {
@@ -202,22 +208,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         salt_cl: material.salt_cl,
       });
 
+      if (res.verification_required) {
+        set({ pendingVerificationEmail: email, isLoading: false });
+        return;
+      }
+
+      // Verification not required: tokens are guaranteed by the server contract
+      const pair = res as TokenPair;
       set({
         user: res.user,
-        tokens: {
-          access_token: res.access_token,
-          refresh_token: res.refresh_token,
-        },
+        tokens: pair,
         isAuthenticated: true,
         isUnlocked: true,
         pendingRecoveryCode: material.recovery_code,
         pendingRecoveryContext: "signup",
         isLoading: false,
       });
-      await persistTokens({
-        access_token: res.access_token,
-        refresh_token: res.refresh_token,
-      });
+      await persistTokens(pair);
       if (!get().alwaysAsk) {
         await savePassword(password);
       }
@@ -232,6 +239,66 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       throw err;
     }
   },
+
+  verifyEmail: async (email: string, otp: string, password?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await authApi.verifyEmail({
+        email,
+        otp,
+        device_id: await getDeviceId(),
+      });
+
+      if (res.keyring) {
+        await unwrapDek(res.keyring.dek_wrapped_by_kek);
+      }
+
+      const newTokens = {
+        access_token: res.access_token,
+        refresh_token: res.refresh_token,
+      };
+      set({
+        user: res.user,
+        tokens: newTokens,
+        isAuthenticated: true,
+        isUnlocked: true,
+        pendingVerificationEmail: null,
+        isLoading: false,
+      });
+      await persistTokens(newTokens);
+      if (password && !get().alwaysAsk) {
+        await savePassword(password);
+      }
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Verification failed";
+      set({ error: message, isLoading: false });
+      throw err;
+    }
+  },
+
+  resendVerification: async (email: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await authApi.resendVerification(email);
+      set({ isLoading: false });
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Resend failed";
+      set({ error: message, isLoading: false });
+      throw err;
+    }
+  },
+
+  clearPendingVerification: () => set({ pendingVerificationEmail: null }),
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
@@ -272,6 +339,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await savePassword(password);
       }
     } catch (err) {
+      if (
+        err instanceof AuthApiError &&
+        err.apiError.code === "VERIFICATION_REQUIRED"
+      ) {
+        set({
+          pendingVerificationEmail: err.apiError.email ?? email,
+          isLoading: false,
+        });
+        return;
+      }
       const message =
         typeof err === "string"
           ? err

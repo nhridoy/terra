@@ -52,6 +52,7 @@ export interface ApiError {
   code: string;
   message: string;
   requestId?: string;
+  email?: string;
 }
 
 export class AuthApiError extends Error {
