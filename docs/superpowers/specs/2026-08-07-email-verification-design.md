@@ -66,7 +66,11 @@ Request: `{ "email": ..., "otp": ..., "device_id": ... }`
 - Server never sends tokens here; behavior identical for unknown emails.
 
 ### 403 body shape
-Use the existing error envelope: `{ "error": { "code": "VERIFICATION_REQUIRED", "message": "verify your email" }, "email": "<email>" }`. The 403 (not 401) distinguishes "gate this account" from "bad credentials".
+Use the existing error envelope with the email **inside** the error payload (the client's `apiFetch` only surfaces `json.error`, so a top-level `email` would be lost):
+```json
+{ "error": { "code": "VERIFICATION_REQUIRED", "message": "verify your email", "email": "<email>" } }
+```
+The 403 (not 401) distinguishes "gate this account" from "bad credentials".
 
 ## Client flow
 
