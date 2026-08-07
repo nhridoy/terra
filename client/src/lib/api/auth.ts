@@ -175,8 +175,6 @@ export interface RegisterRequest {
   email: string;
   full_name?: string;
   password_hash: string;
-  encrypted_dek: string;
-  encrypted_privkey: string;
   recovery_code?: string;
   public_key?: string;
   keyring?: KeyringRows;

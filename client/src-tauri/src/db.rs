@@ -1,5 +1,23 @@
 use rusqlite::{params, Connection};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+pub const DB_FILE_NAME: &str = "termvault.db";
+
+/// Reset the local database to a pristine, fresh-install state by removing the
+/// database file and any SQLite sidecars (write-ahead log, shared-memory file).
+/// A subsequent `open()` recreates all tables empty. No-op-safe: missing files
+/// are simply skipped.
+pub fn wipe_database(db_path: &Path) -> Result<(), String> {
+    for suffix in ["", "-wal", "-shm"] {
+        let candidate = PathBuf::from(format!("{}{}", db_path.display(), suffix));
+        if candidate.exists() {
+            std::fs::remove_file(&candidate)
+                .map_err(|e| format!("wipe_database: failed to remove {}: {e}", candidate.display()))?;
+        }
+    }
+    Ok(())
+}
 
 pub struct LocalDb {
     pub conn: Mutex<Connection>,
@@ -350,6 +368,31 @@ mod tests {
 
     fn test_db() -> LocalDb {
         open(":memory:").unwrap()
+    }
+
+    #[test]
+    fn test_wipe_database_removes_db_and_sidecars() {
+        let dir = std::env::temp_dir().join(format!("termvault-wipe-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join(DB_FILE_NAME);
+        std::fs::write(&db_path, b"db").unwrap();
+        std::fs::write(PathBuf::from(format!("{}-wal", db_path.display())), b"wal").unwrap();
+        std::fs::write(PathBuf::from(format!("{}-shm", db_path.display())), b"shm").unwrap();
+
+        wipe_database(&db_path).unwrap();
+
+        assert!(!db_path.exists());
+        assert!(!PathBuf::from(format!("{}-wal", db_path.display())).exists());
+        assert!(!PathBuf::from(format!("{}-shm", db_path.display())).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_wipe_database_is_noop_when_missing() {
+        let dir = std::env::temp_dir().join(format!("termvault-wipe-noop-{}", std::process::id()));
+        let db_path = dir.join(DB_FILE_NAME);
+        assert!(wipe_database(&db_path).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

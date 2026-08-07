@@ -26,6 +26,7 @@ import {
   unwrapDek,
   wrapDek,
 } from "../../lib/crypto/crypto";
+import { wipeLocalData } from "../../lib/db/db";
 import {
   deletePassword,
   loadPassword,
@@ -104,6 +105,31 @@ async function persistTokens(tokens: TokenPair | null): Promise<void> {
   }
 }
 
+// Fully tear down a session: zeroize in-memory keys, purge the saved
+// keychain password, clear the store, drop persisted tokens, and reset the
+// local cache. Best-effort end-to-end so no single failure blocks logout.
+async function teardownSession(): Promise<void> {
+  await lockSession();
+  try {
+    await deletePassword();
+  } catch {
+    // ignore keychain purge errors
+  }
+  useAuthStore.setState({
+    user: null,
+    tokens: null,
+    isAuthenticated: false,
+    isUnlocked: false,
+    pendingOAuth: null,
+  });
+  await persistTokens(null);
+  try {
+    await wipeLocalData();
+  } catch {
+    // ignore local cache wipe errors
+  }
+}
+
 let _restoreSessionLock: Promise<void> | null = null;
 
 function randomHex(bytes: number): string {
@@ -167,13 +193,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         full_name: name,
         password_hash: proof.verifier,
-        encrypted_dek: material.private_key_wrapped_by_dek,
-        encrypted_privkey: material.private_key_wrapped_by_dek,
         recovery_code: material.recovery_code,
         public_key: material.public_key,
         keyring,
         nonce: prelogin.nonce,
-        kdf: prelogin.kdf,
+        kdf: { m: 32768, t: 2, p: 1 },
         server_salt: prelogin.server_salt,
         salt_cl: material.salt_cl,
       });
@@ -272,20 +296,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ tokens: refreshedTokens });
       await persistTokens(refreshedTokens);
     } catch {
-      set({
-        user: null,
-        tokens: null,
-        isAuthenticated: false,
-        isUnlocked: false,
-      });
-      await persistTokens(null);
-      // Match manual logout: a forced logout must also forget the saved
-      // password, otherwise the next login auto-unlocks without asking.
-      try {
-        await deletePassword();
-      } catch {
-        // ignore keychain purge errors
-      }
+      await teardownSession();
     }
   },
 
@@ -298,20 +309,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // ignore logout errors
       }
     }
-    await lockSession();
-    try {
-      await deletePassword();
-    } catch {
-      // ignore keychain purge errors
-    }
-    set({
-      user: null,
-      tokens: null,
-      isAuthenticated: false,
-      isUnlocked: false,
-      pendingOAuth: null,
-    });
-    await persistTokens(null);
+    await teardownSession();
   },
 
   unlock: async (password: string) => {
@@ -368,8 +366,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // 3. Generate new KDF params + new salts
     const newKdf = {
-      m: 67108864,
-      t: 3,
+      m: 32768,
+      t: 2,
       p: 1,
     };
     const rand16 = new Uint8Array(16);
@@ -527,19 +525,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               }
             }
           } catch {
-            set({
-              user: null,
-              tokens: null,
-              isAuthenticated: false,
-              isUnlocked: false,
-            });
-            await persistTokens(null);
-            // Forced logout forgets the saved password too (see refresh()).
-            try {
-              await deletePassword();
-            } catch {
-              // ignore keychain purge errors
-            }
+            await teardownSession();
           }
         }
       } catch {
@@ -641,7 +627,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         keyring,
         server_salt: serverSalt,
         salt_cl: material.salt_cl,
-        kdf: { m: 67108864, t: 3, p: 1 },
+        kdf: { m: 32768, t: 2, p: 1 },
       });
 
       const newTokens = {

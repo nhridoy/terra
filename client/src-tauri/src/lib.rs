@@ -38,10 +38,16 @@ fn set_api_url(url: String, state: tauri::State<'_, AppState>) -> Result<(), Str
 
 #[tauri::command]
 fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    let guard = state.api_url.lock().map_err(|e| e.to_string())?;
-    Ok(guard
+	let guard = state.api_url.lock().map_err(|e| e.to_string())?;
+	Ok(guard
         .clone()
         .unwrap_or_else(|| "http://localhost:8080".to_string()))
+}
+
+#[tauri::command]
+fn wipe_local_data(app: tauri::AppHandle) -> Result<(), String> {
+	let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+	db::wipe_database(&dir.join(db::DB_FILE_NAME))
 }
 
 #[tauri::command]
@@ -901,6 +907,7 @@ pub fn run() {
             get_device_id,
             set_api_url,
             get_api_url,
+            wipe_local_data,
             write_file,
             detect_shells,
             is_same_volume,
