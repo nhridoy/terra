@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { FormInput } from "@/components/ui/forms/FormInput";
@@ -10,44 +10,42 @@ import {
   setupFormDefaultValues,
   setupFormSchema,
 } from "@/lib/schema/auth/setupFormSchema";
-import RecoveryRevealModal from "./RecoveryRevealModal";
+import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function SetupPage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-  const [recoveryCode, setRecoveryCode] = useState("");
+  const pendingOAuth = useAuthStore((s) => s.pendingOAuth);
+  const oauthSetup = useAuthStore((s) => s.oauthSetup);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const { control, handleSubmit } = useForm<SetupFormSchema>({
     defaultValues: setupFormDefaultValues,
     resolver: zodResolver(setupFormSchema),
   });
 
-  const onSubmit = async (_data: SetupFormSchema) => {
+  if (isAuthenticated) {
+    return <Navigate to="/hosts" replace />;
+  }
+
+  if (!pendingOAuth) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const onSubmit = async (data: SetupFormSchema) => {
     setError("");
     setIsLoading(true);
 
     try {
-      // TODO: call oauthSetup API with encryption password
-      // For now, simulate the setup and show recovery code
-      const mockRecoveryCode = crypto
-        .randomUUID()
-        .replace(/-/g, "")
-        .slice(0, 24);
-      setRecoveryCode(mockRecoveryCode);
-      setShowRecoveryModal(true);
+      await oauthSetup(data.password);
+      navigate("/hosts");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Setup failed";
       setError(message);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleRecoveryClose = () => {
-    setShowRecoveryModal(false);
-    navigate("/hosts");
   };
 
   return (
@@ -63,11 +61,11 @@ export default function SetupPage() {
 
         <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
           <h2 className="text-xl font-semibold text-white mb-2">
-            Set Encryption Password
+            Set Your Password
           </h2>
           <p className="text-dark-400 text-sm mb-6">
-            Create a password to encrypt your SSH keys and secrets. This
-            password never leaves your device.
+            This password signs you in and encrypts your SSH keys and secrets.
+            It never leaves your device.
           </p>
 
           {error && (
@@ -80,7 +78,7 @@ export default function SetupPage() {
             <FormInput
               control={control}
               name="password"
-              label="Encryption Password"
+              label="Password"
               type="password"
               placeholder="••••••••"
               required
@@ -107,12 +105,6 @@ export default function SetupPage() {
           </form>
         </div>
       </div>
-
-      <RecoveryRevealModal
-        open={showRecoveryModal}
-        recoveryCode={recoveryCode}
-        onClose={handleRecoveryClose}
-      />
     </div>
   );
 }

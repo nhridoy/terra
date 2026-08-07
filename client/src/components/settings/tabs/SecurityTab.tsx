@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import Checkbox from "@/components/ui/Checkbox";
 import { FormInput } from "@/components/ui/forms/FormInput";
 import { extractError } from "@/lib/common/extractError";
 import {
@@ -22,7 +23,8 @@ export default function SecurityTab({
   tabs,
   onClearAllSessions,
 }: SecurityTabProps) {
-  const { user, updateProfile, changePassword } = useAuthStore();
+  const { user, updateProfile, changePassword, alwaysAsk, setAlwaysAsk } =
+    useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -105,6 +107,34 @@ export default function SecurityTab({
             {isLoading ? "Changing..." : "Change Password"}
           </Button>
         </form>
+      </div>
+
+      <div className="border-t border-dark-700 pt-6">
+        <h3 className="text-sm font-medium text-white mb-3">Auto-Unlock</h3>
+        <label
+          htmlFor="always-ask-password"
+          className="flex items-start gap-3 cursor-pointer"
+        >
+          <Checkbox
+            id="always-ask-password"
+            name="alwaysAsk"
+            checked={alwaysAsk}
+            onCheckedChange={setAlwaysAsk}
+            className="mt-0.5"
+          />
+          <div>
+            <span className="text-sm text-white block">
+              Ask for password every time
+            </span>
+            <span className="text-xs text-dark-400 mt-1 block">
+              When off, TermVault securely remembers your password on this
+              device and unlocks automatically when you open the app (entry
+              expires after 14 days of inactivity or 90 days). When on,
+              you&apos;ll enter your password on every launch and after logout,
+              and any saved password is removed from this device.
+            </span>
+          </div>
+        </label>
       </div>
 
       <div className="border-t border-dark-700 pt-6">

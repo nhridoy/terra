@@ -59,7 +59,7 @@ export default function RecoveryRevealModal({
           <p className="text-dark-300 text-xs">
             {isRecovery
               ? "This is your new recovery code. The previous code has been permanently invalidated and will no longer work."
-              : "This code is the only way to recover your account if you forget your encryption password. Store it somewhere safe."}
+              : "This code is the only way to recover your account if you forget your password. Store it somewhere safe."}
           </p>
         </div>
 

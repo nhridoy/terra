@@ -1,26 +1,29 @@
 import { useState } from "react";
-import { Alert } from "@/components/ui/Alert";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/Button";
+import { useAuthStore } from "@/stores/auth/authStore";
 
-interface OAuthLoginProps {
-  onSuccess: (user: { id: string; email: string; full_name?: string }) => void;
-}
-
-export default function OAuthLogin({ onSuccess: _onSuccess }: OAuthLoginProps) {
+export default function OAuthLogin() {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const oauthStartFlow = useAuthStore((s) => s.oauthStartFlow);
+  const navigate = useNavigate();
 
   const handleOAuthLogin = async (provider: "github" | "google") => {
     setIsLoading(true);
-    setError(null);
-    setError(`OAuth with ${provider} is not yet available`);
-    setIsLoading(false);
+    try {
+      const { needsSetup } = await oauthStartFlow(provider);
+      if (needsSetup) {
+        navigate("/setup");
+      }
+    } catch {
+      // error is shown via the store's error field (LoginPage renders it)
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="space-y-3">
-      {error && <Alert variant="error">{error}</Alert>}
-
       <Button
         type="button"
         onClick={() => handleOAuthLogin("github")}

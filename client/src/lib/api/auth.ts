@@ -1,18 +1,37 @@
-const API_URL_KEY = "termvault:api_url";
+import { load } from "@tauri-apps/plugin-store";
 
-export function getApiUrl(): string {
+const AUTH_SETTINGS_FILE = "auth.json";
+const API_URL_KEY = "apiUrl";
+const DEFAULT_API_URL = "http://localhost:8080";
+
+// API URL lives in the tauri store (auth.json) so Rust/other processes could
+// read it too; a memory cache keeps per-request reads synchronous.
+let cachedApiUrl: string | null = null;
+
+export async function loadApiUrl(): Promise<void> {
   try {
-    return localStorage.getItem(API_URL_KEY) || "http://localhost:8080";
+    const store = await load(AUTH_SETTINGS_FILE, { autoSave: false });
+    const saved = await store.get<string>(API_URL_KEY);
+    cachedApiUrl = saved && saved.trim() !== "" ? saved : null;
   } catch {
-    return "http://localhost:8080";
+    cachedApiUrl = null;
   }
 }
 
-export function setApiUrl(url: string): void {
+export function getApiUrl(): string {
+  if (cachedApiUrl !== null) return cachedApiUrl;
+  const env = import.meta.env.VITE_API_URL;
+  return typeof env === "string" && env.trim() !== "" ? env : DEFAULT_API_URL;
+}
+
+export async function setApiUrl(url: string): Promise<void> {
+  cachedApiUrl = url;
   try {
-    localStorage.setItem(API_URL_KEY, url);
+    const store = await load(AUTH_SETTINGS_FILE, { autoSave: false });
+    await store.set(API_URL_KEY, url);
+    await store.save();
   } catch {
-    // ignore
+    // best-effort: the in-memory value still applies for this session
   }
 }
 
@@ -261,12 +280,39 @@ export const authApi = {
     return apiFetch("POST", "/api/v1/auth/oauth/exchange", params);
   },
 
+  async oauthStart(params: {
+    provider: string;
+    device_id: string;
+    app_callback: string;
+  }): Promise<{ auth_url: string }> {
+    const qs = new URLSearchParams({
+      device_id: params.device_id,
+      app_callback: params.app_callback,
+      format: "json",
+    });
+    return apiFetch(
+      "GET",
+      `/api/v1/auth/oauth/start/${params.provider}?${qs.toString()}`,
+    );
+  },
+
   async oauthSetup(params: {
     setup_token: string;
-    encrypted_dek: string;
-    encrypted_privkey: string;
     auth_verifier: string;
+    recovery_code: string;
+    public_key: string;
+    keyring: KeyringRows;
+    server_salt: string;
+    salt_cl: string;
+    kdf: { m: number; t: number; p: number };
   }): Promise<TokenPair & { user: User }> {
     return apiFetch("POST", "/api/v1/auth/oauth/setup", params);
+  },
+
+  async fetchKeyring(token: string): Promise<{
+    keyring: KeyringRows;
+    salt_cl: string;
+  }> {
+    return apiFetch("GET", "/api/v1/auth/keyring", undefined, token);
   },
 };

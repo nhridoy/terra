@@ -30,14 +30,6 @@ export default function LoginPage() {
     await login(data.email, data.password);
   };
 
-  const handleOAuthSuccess = (user: {
-    id: string;
-    email: string;
-    full_name?: string;
-  }) => {
-    console.log("OAuth success:", user);
-  };
-
   return (
     <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -58,7 +50,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <OAuthLogin onSuccess={handleOAuthSuccess} />
+          <OAuthLogin />
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <FormInput

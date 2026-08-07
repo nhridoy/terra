@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import AuthGuard from "@/components/auth/guard/AuthGuard";
+import UnlockDialog from "@/components/auth/UnlockDialog";
 import Layout from "@/components/layout/shell/Layout";
 import LoginPage from "@/pages/auth/LoginPage";
 import RecoveryPage from "@/pages/auth/RecoveryPage";
@@ -75,6 +76,7 @@ function App() {
         onClose={clearRecoveryCode}
         context={pendingRecoveryContext ?? "signup"}
       />
+      <UnlockDialog />
       <Toaster richColors />
     </BrowserRouter>
   );

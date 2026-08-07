@@ -216,7 +216,8 @@ pub fn decrypt_secret(payload_b64: &str, session: &KeySession) -> Result<String,
 }
 
 pub fn unwrap_dek(kek: &[u8; DEK_LEN], wrapped_b64: &str, session: &mut KeySession) -> Result<(), String> {
-    let dek_bytes = decrypt_bytes(wrapped_b64, kek)?;
+    let dek_bytes = decrypt_bytes(wrapped_b64, kek)
+        .map_err(|_| "Incorrect password".to_string())?;
     if dek_bytes.len() != DEK_LEN {
         return Err("Invalid DEK length".to_string());
     }
@@ -252,7 +253,8 @@ pub fn recovery_unwrap_dek(
         .hash_password_into(&recovery_bytes, &salt_cl, &mut recovery_kek)
         .map_err(|e| format!("Argon2 recovery KDF error: {e}"))?;
 
-    let dek_bytes = decrypt_bytes(wrapped_b64, &recovery_kek)?;
+    let dek_bytes = decrypt_bytes(wrapped_b64, &recovery_kek)
+        .map_err(|_| "Incorrect recovery code".to_string())?;
     if dek_bytes.len() != DEK_LEN {
         return Err("Invalid DEK length".to_string());
     }

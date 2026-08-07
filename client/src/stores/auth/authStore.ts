@@ -1,6 +1,9 @@
+import { load } from "@tauri-apps/plugin-store";
 import { create } from "zustand";
+import { getDeviceId } from "../../lib/common/device";
 import {
   authApi,
+  loadApiUrl,
   setRefreshTokenGetter,
   setRefreshTokenSetter,
   type TokenPair,
@@ -23,19 +26,38 @@ import {
   unwrapDek,
   wrapDek,
 } from "../../lib/crypto/crypto";
+import {
+  deletePassword,
+  loadPassword,
+  savePassword,
+} from "../../lib/keychain/keychain";
+import { startOAuthFlow } from "../../lib/oauth/oauth";
 
-// Wire up refresh token getter/setter for apiFetch auto-refresh
+// Wire up refresh token getter/setter for apiFetch auto-refresh.
+// The setter also persists rotated tokens to the OS keychain, otherwise
+// the server's rotation revokes the copy we stored and the next launch
+// would be logged out (see HandleRefresh reuse detection).
 setRefreshTokenGetter(getRefreshToken);
-setRefreshTokenSetter(setRefreshToken);
+setRefreshTokenSetter((token) => {
+  setRefreshToken(token ?? null);
+  if (token) {
+    void saveRefreshToken(token).catch(() => {
+      // keychain write failures are non-fatal; the next explicit persist retries
+    });
+  }
+});
 
 interface AuthState {
   user: User | null;
   tokens: TokenPair | null;
   isAuthenticated: boolean;
   isUnlocked: boolean;
+  unlockPending: boolean;
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
+  pendingOAuth: { provider: string; setupCode: string; userId: string } | null;
+  alwaysAsk: boolean;
 
   prelogin: (email: string) => Promise<{
     nonce: string;
@@ -63,21 +85,9 @@ interface AuthState {
   clearRecoveryCode: () => void;
   clearError: () => void;
   restoreSession: () => Promise<void>;
-}
-
-const DEVICE_ID_KEY = "termvault:device_id";
-
-function getDeviceId(): string {
-  try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(DEVICE_ID_KEY, id);
-    }
-    return id;
-  } catch {
-    return "default-device";
-  }
+  oauthStartFlow: (provider: string) => Promise<{ needsSetup: boolean }>;
+  oauthSetup: (password: string) => Promise<void>;
+  setAlwaysAsk: (flag: boolean) => Promise<void>;
 }
 
 async function persistTokens(tokens: TokenPair | null): Promise<void> {
@@ -96,17 +106,38 @@ async function persistTokens(tokens: TokenPair | null): Promise<void> {
 
 let _restoreSessionLock: Promise<void> | null = null;
 
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const ALWAYS_ASK_KEY = "alwaysAsk";
+const AUTH_SETTINGS_FILE = "auth.json";
+
+async function loadAlwaysAsk(): Promise<boolean> {
+  try {
+    const store = await load(AUTH_SETTINGS_FILE, { autoSave: false });
+    return (await store.get<boolean>(ALWAYS_ASK_KEY)) === true;
+  } catch {
+    return false;
+  }
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   tokens: null,
   isAuthenticated: false,
   isUnlocked: false,
+  unlockPending: false,
   isInitialized: false,
   isLoading: false,
   error: null,
   pendingRecoveryCode: null,
   pendingRecoveryContext: null,
   pendingRecoveryEmail: null,
+  pendingOAuth: null,
+  alwaysAsk: false,
 
   prelogin: async (email: string) => {
     const res = await authApi.prelogin(email);
@@ -163,6 +194,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         access_token: res.access_token,
         refresh_token: res.refresh_token,
       });
+      if (!get().alwaysAsk) {
+        await savePassword(password);
+      }
     } catch (err) {
       const message =
         typeof err === "string"
@@ -190,7 +224,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         proof: proof.proof,
         nonce: prelogin.nonce,
-        device_id: getDeviceId(),
+        device_id: await getDeviceId(),
         client_pubkey: "",
       });
 
@@ -210,6 +244,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
       await persistTokens(newTokens);
+      if (!get().alwaysAsk) {
+        await savePassword(password);
+      }
     } catch (err) {
       const message =
         typeof err === "string"
@@ -255,18 +292,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
     await lockSession();
+    try {
+      await deletePassword();
+    } catch {
+      // ignore keychain purge errors
+    }
     set({
       user: null,
       tokens: null,
       isAuthenticated: false,
       isUnlocked: false,
+      pendingOAuth: null,
     });
     await persistTokens(null);
   },
 
-  unlock: async (_password: string) => {
-    // Unlock with password - requires keyring data
-    set({ isUnlocked: true });
+  unlock: async (password: string) => {
+    set({ error: null });
+    try {
+      const { user, tokens } = get();
+      if (!user || !tokens) {
+        throw new Error("Not authenticated");
+      }
+      const { keyring, salt_cl } = await authApi.fetchKeyring(
+        tokens.access_token,
+      );
+      await deriveKek(password, salt_cl);
+      await unwrapDek(keyring.dek_wrapped_by_kek);
+      set({ isUnlocked: true });
+      if (!get().alwaysAsk) {
+        try {
+          await savePassword(password);
+        } catch {
+          // best-effort keychain refresh
+        }
+      }
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Unlock failed";
+      set({ error: message });
+      throw err;
+    }
   },
 
   updateProfile: async (data) => {
@@ -325,6 +395,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       },
       tokens.access_token,
     );
+
+    // 7. Refresh the OS keychain entry with the new password
+    if (!get().alwaysAsk) {
+      try {
+        await savePassword(newPassword);
+      } catch {
+        // best-effort keychain refresh
+      }
+    }
   },
 
   clearError: () => set({ error: null }),
@@ -402,6 +481,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     _restoreSessionLock = (async () => {
       try {
+        await loadApiUrl();
+        const alwaysAsk = await loadAlwaysAsk();
+        set({ alwaysAsk });
+
         const refreshToken = await loadRefreshToken();
 
         if (refreshToken) {
@@ -411,11 +494,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               access_token: newTokens.access_token,
               refresh_token: newTokens.refresh_token,
             };
-            set({ tokens });
+            set({ tokens, isAuthenticated: true });
             await persistTokens(tokens);
 
             const user = await authApi.me(newTokens.access_token);
-            set({ user, isAuthenticated: true, isUnlocked: true });
+            set({ user });
+
+            // D6: auto-unlock via OS keychain unless the user opted out
+            if (!alwaysAsk) {
+              set({ unlockPending: true });
+              try {
+                const { keyring, salt_cl } = await authApi.fetchKeyring(
+                  newTokens.access_token,
+                );
+                const savedPassword = await loadPassword();
+                if (savedPassword) {
+                  await deriveKek(savedPassword, salt_cl);
+                  await unwrapDek(keyring.dek_wrapped_by_kek);
+                  set({ isUnlocked: true });
+                }
+              } catch {
+                // stale or wrong entry — user unlocks manually; self-heal on next ask
+              } finally {
+                set({ unlockPending: false });
+              }
+            }
           } catch {
             set({
               user: null,
@@ -435,5 +538,146 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     })();
 
     return _restoreSessionLock;
+  },
+
+  oauthStartFlow: async (provider: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await startOAuthFlow(provider, await getDeviceId());
+
+      if (result.dest === "error") {
+        throw new Error(result.message ?? "OAuth sign-in failed");
+      }
+
+      if (result.dest === "setup") {
+        set({
+          pendingOAuth: {
+            provider,
+            setupCode: result.setupCode ?? "",
+            userId: result.userId ?? "",
+          },
+          isLoading: false,
+        });
+        return { needsSetup: true };
+      }
+
+      // Existing user: tokens come back in the callback URL
+      const newTokens = {
+        access_token: result.accessToken ?? "",
+        refresh_token: result.refreshToken ?? "",
+      };
+      set({
+        tokens: newTokens,
+        isAuthenticated: true,
+        isUnlocked: false,
+        user: null,
+        isLoading: false,
+      });
+      await persistTokens(newTokens);
+      const user = await authApi.me(newTokens.access_token);
+      set({ user });
+
+      // If this device has the account's password, auto-unlock.
+      if (!get().alwaysAsk) {
+        try {
+          const { keyring, salt_cl } = await authApi.fetchKeyring(
+            newTokens.access_token,
+          );
+          const savedPassword = await loadPassword();
+          if (savedPassword) {
+            await deriveKek(savedPassword, salt_cl);
+            await unwrapDek(keyring.dek_wrapped_by_kek);
+            set({ isUnlocked: true });
+          }
+        } catch {
+          // wrong password for this account — user unlocks manually
+        }
+      }
+      return { needsSetup: false };
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "OAuth sign-in failed";
+      set({ error: message, isLoading: false });
+      throw err;
+    }
+  },
+
+  oauthSetup: async (password: string) => {
+    const pending = get().pendingOAuth;
+    if (!pending) {
+      throw new Error("No pending OAuth setup");
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const material = await generateAccountMaterial();
+      await deriveKek(password, material.salt_cl);
+      const keyring = await buildKeyringRows(material.recovery_code);
+      const serverSalt = randomHex(32);
+      const nonce = randomHex(32);
+      const proof = await computeLoginProof(serverSalt, nonce);
+
+      const res = await authApi.oauthSetup({
+        setup_token: pending.setupCode,
+        auth_verifier: proof.verifier,
+        recovery_code: material.recovery_code,
+        public_key: material.public_key,
+        keyring,
+        server_salt: serverSalt,
+        salt_cl: material.salt_cl,
+        kdf: { m: 67108864, t: 3, p: 1 },
+      });
+
+      const newTokens = {
+        access_token: res.access_token,
+        refresh_token: res.refresh_token,
+      };
+      set({
+        user: res.user,
+        tokens: newTokens,
+        isAuthenticated: true,
+        isUnlocked: true,
+        pendingRecoveryCode: material.recovery_code,
+        pendingRecoveryContext: "signup",
+        pendingOAuth: null,
+        isLoading: false,
+      });
+      await persistTokens(newTokens);
+      if (!get().alwaysAsk) {
+        await savePassword(password);
+      }
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "OAuth setup failed";
+      set({ error: message, isLoading: false });
+      throw err;
+    }
+  },
+
+  setAlwaysAsk: async (flag: boolean) => {
+    set({ alwaysAsk: flag });
+    try {
+      const store = await load(AUTH_SETTINGS_FILE, { autoSave: false });
+      await store.set(ALWAYS_ASK_KEY, flag);
+      await store.save();
+    } catch {
+      // best-effort persist
+    }
+    if (flag) {
+      // "never remember" should forget: purge the saved entry so a later
+      // toggle-off can't silently auto-unlock. Next unlock re-saves it.
+      try {
+        await deletePassword();
+      } catch {
+        // best-effort purge; entry stays ignored while the flag is on
+      }
+    }
   },
 }));

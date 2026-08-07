@@ -10,7 +10,7 @@ Scope: User signup/login (email + Google/GitHub OAuth), end-to-end encryption (e
 - Zero-knowledge: the server stores only ciphertext, key-wrapping blobs, and auth verifiers. It never receives the password, the KEK, the DEK, or plaintext vault data.
 - Local-first: all data lives in an encrypted local SQLite DB; the app is fully usable offline (login trust + decryption are local).
 - Professional-grade REST API (structured JSON, correct status codes) and schema (PKs, FKs, indexes) on the server; local schema mirrors the server schema.
-- Offline unlock: master password by default, optional "remember on this device" (OS keychain).
+- Offline unlock: password by default, optional "remember on this device" (OS keychain).
 - Lost password is recoverable via a recovery code (recovery kit), unlike Termius which has no recovery.
 
 ## 2. Non-goals (later slices)

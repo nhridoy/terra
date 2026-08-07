@@ -3,6 +3,7 @@
 mod git;
 mod crypto;
 mod db;
+mod oauth;
 
 use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsString;
@@ -895,6 +896,7 @@ pub fn run() {
             killers: Mutex::new(HashMap::new()),
             children: Mutex::new(HashMap::new()),
         })
+        .manage(oauth::OAuthListener::default())
         .invoke_handler(tauri::generate_handler![
             get_device_id,
             set_api_url,
@@ -914,6 +916,9 @@ pub fn run() {
             send_input,
             resize,
             accept_host_key,
+            oauth::bind_oauth_listener,
+            oauth::await_oauth_callback,
+            oauth::cancel_oauth_listener,
             git::git_status,
             git::git_stage,
             git::git_stage_all,

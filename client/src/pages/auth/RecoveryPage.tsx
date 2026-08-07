@@ -95,7 +95,7 @@ export default function RecoveryPage() {
             Recover Account
           </h2>
           <p className="text-dark-400 text-sm mb-6">
-            Enter your recovery code and set a new encryption password.
+            Enter your recovery code and set a new password.
           </p>
 
           {error && (
@@ -115,7 +115,7 @@ export default function RecoveryPage() {
 
             <FormInput
               name="newPassword"
-              label="New Encryption Password"
+              label="New Password"
               control={control}
               type="password"
               placeholder="••••••••"

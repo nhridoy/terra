@@ -26,25 +26,6 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const STORE_KEY = "settings.json";
 
-function migrateLegacyKeys(): Partial<AppSettings> {
-  const migrated: Partial<AppSettings> = {};
-  const theme = localStorage.getItem("termvault.theme");
-  if (theme) migrated.theme = theme;
-  const fontFamily = localStorage.getItem("termvault.fontFamily");
-  if (fontFamily) migrated.fontFamily = fontFamily;
-  const fontSize = localStorage.getItem("termvault.fontSize");
-  if (fontSize) migrated.fontSize = Number.parseInt(fontSize, 10);
-  const cursorStyle = localStorage.getItem("termvault.cursorStyle");
-  if (cursorStyle) migrated.cursorStyle = cursorStyle as CursorStyle;
-  const cursorBlink = localStorage.getItem("termvault.cursorBlink");
-  if (cursorBlink !== null) migrated.cursorBlink = cursorBlink === "true";
-  const scrollback = localStorage.getItem("termvault.scrollback");
-  if (scrollback) migrated.scrollback = Number.parseInt(scrollback, 10);
-  const bellStyle = localStorage.getItem("termvault.bellStyle");
-  if (bellStyle) migrated.bellStyle = bellStyle as BellStyle;
-  return migrated;
-}
-
 function mergeSettings(saved: Partial<AppSettings> | null): AppSettings {
   const merged: AppSettings = { ...DEFAULT_SETTINGS };
   if (saved) {
@@ -104,7 +85,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         }
       }
     } catch {
-      saved = migrateLegacyKeys();
+      saved = null;
     }
     set({
       settings: mergeSettings(saved),
@@ -122,7 +103,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       await store.set(key, value);
       await store.save();
     } catch {
-      localStorage.setItem(`termvault.${key}`, String(value));
+      // best-effort: the in-memory value still applies for this session
     }
   },
 }));

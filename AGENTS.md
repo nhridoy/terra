@@ -56,16 +56,16 @@ cd server && go test ./...
 
 1. Register → server creates user + default vaults (Personal, Team)
 2. Login → server returns access token (15min) + refresh token (30d)
-3. Client stores tokens via `tauri-plugin-store` (OS keychain-backed)
+3. Client stores secrets (refresh token, saved password) via `tauri-plugin-keyring-store` (OS keychain); settings/state JSON via `tauri-plugin-store`
 4. Auto-refresh: check expiry before API calls, refresh if needed
 5. On 401 → attempt refresh → retry → if refresh fails → login screen
 
 ## Encryption
 
-- Master password set during signup → derive key via Argon2id
+- Password set during signup → derive key via Argon2id
 - All sensitive data encrypted client-side before storage/server
 - Server receives only encrypted blobs (zero-knowledge)
-- Recovery kit: downloadable encrypted file for master password recovery
+- Recovery kit: downloadable encrypted file for password recovery
 
 ## Env Vars
 
@@ -84,9 +84,19 @@ cd server && go test ./...
 | `RATE_LIMIT_AUTH` | Requests/min for register/login | `10` |
 | `RATE_LIMIT_API` | Requests/min for sync/refresh | `30` |
 | `TRUSTED_PROXIES` | Comma-separated CIDRs of reverse proxies | empty (no proxy) |
+| `OAUTH_REDIRECT_BASE` | Public base URL for provider callbacks | `BASE_URL` |
+| `OAUTH_GOOGLE_CLIENT_ID` | Google OAuth client ID | empty (Google login disabled) |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
+| `OAUTH_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty (GitHub login disabled) |
+| `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
+| `TERMVAULT_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
 
 ### Client
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VITE_API_URL` | Default server URL | `http://localhost:8080` |
+| `VITE_KEYCHAIN_INACTIVE_DAYS` | Keychain purge after N days unused | `14` |
+| `VITE_KEYCHAIN_MAX_AGE_DAYS` | Keychain purge after N days since save | `90` |
+
+Client keychain policy (auto-unlock renewal): 14-day inactivity / 90-day absolute cap, constants in `src/lib/keychain/keychain.ts`. Debug overrides: `inactive_days` / `max_age_days` keys in the `keychain-meta.json` store file (app data dir; `0` = always prompt, no rebuild needed). `alwaysAsk` toggle persisted in the `auth.json` store file (`alwaysAsk`, `apiUrl`, `deviceId`); turning it ON purges the saved keychain entry (toggle-off then requires a manual unlock before auto-unlock resumes). API URL override is also in `auth.json` (`apiUrl`, memory-cached for sync reads). Refresh-token rotation: the client persists rotated refresh tokens to the OS keychain immediately (auto-refresh setter), otherwise the server's reuse detection would revoke the stored copy and log the user out on next launch.

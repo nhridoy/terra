@@ -1800,7 +1800,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
       await store.set("theme", theme);
       await store.save();
     } catch {
-      localStorage.setItem("termvault.theme", theme);
+      // best-effort: theme still applies for this session
     }
   },
   initTheme: async () => {
@@ -1810,8 +1810,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
       const saved = await store.get<Theme>("theme");
       if (saved && themes[saved]) theme = saved;
     } catch {
-      const saved = localStorage.getItem("termvault.theme") as Theme | null;
-      if (saved && themes[saved]) theme = saved;
+      // keep default dark
     }
     set({ currentTheme: theme });
     applyTheme(theme);

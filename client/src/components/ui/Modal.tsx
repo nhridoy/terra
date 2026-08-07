@@ -8,6 +8,7 @@ interface ModalProps {
   children: React.ReactNode;
   maxWidth?: string;
   closeOnBackdrop?: boolean;
+  hideClose?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -45,12 +46,15 @@ export default function Modal({
   children,
   maxWidth = "max-w-lg",
   closeOnBackdrop = false,
+  hideClose = false,
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const hideCloseRef = useRef(hideClose);
+  hideCloseRef.current = hideClose;
 
   useEffect(() => {
     if (!open) return;
@@ -71,7 +75,7 @@ export default function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onCloseRef.current();
+        if (!hideCloseRef.current) onCloseRef.current();
         return;
       }
       if (e.key === "Enter") {
@@ -130,15 +134,17 @@ export default function Modal({
         {title && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700 shrink-0">
             <h2 className="text-lg font-semibold text-white">{title}</h2>
-            <Button
-              type="button"
-              onClick={() => onCloseRef.current()}
-              variant="ghost"
-              size="icon"
-              className="text-xl leading-none"
-            >
-              &times;
-            </Button>
+            {!hideClose && (
+              <Button
+                type="button"
+                onClick={() => onCloseRef.current()}
+                variant="ghost"
+                size="icon"
+                className="text-xl leading-none"
+              >
+                &times;
+              </Button>
+            )}
           </div>
         )}
         <div ref={bodyRef} className="overflow-y-auto p-6">

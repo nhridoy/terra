@@ -11,7 +11,7 @@ TermVault has a solid foundation — the UI is comprehensive, the encryption arc
 
 **What works well:**
 - UI/UX is polished with 30+ themes, drag-and-drop panes, split terminals
-- End-to-end encryption with master password + recovery kit
+- End-to-end encryption with password + recovery kit
 - Local-first architecture with sync
 - SSH, SFTP, port forwarding all implemented
 - Team/vault system with shared access
@@ -45,7 +45,7 @@ TermVault has a solid foundation — the UI is comprehensive, the encryption arc
 | Split panes | Full | Full | ✅ Working |
 | Themes | 30+ | 30 | ✅ Working |
 | End-to-end encryption | Full | Full | ✅ Working |
-| Master password + recovery | Full | Full | ✅ Working |
+| Password + recovery | Full | Full | ✅ Working |
 | Known hosts (TOFU) | Full | Basic | 🔶 Partial |
 | Session logs | Full | Stub | 🔶 Partial |
 | Team collaboration | Full | Basic | 🔶 Partial |
@@ -172,7 +172,7 @@ TermVault has a solid foundation — the UI is comprehensive, the encryption arc
 **Issues:**
 - Key is derived on every unlock (correct)
 - But the derived key is stored in `AppState.encryption_key` as a string — not zeroized automatically
-- Recovery kit is an encrypted file — good, but no way to rotate the master key
+- Recovery kit is an encrypted file — good, but no way to rotate the key
 
 ### 3.4 Server Environment
 
