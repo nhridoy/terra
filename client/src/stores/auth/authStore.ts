@@ -126,6 +126,7 @@ async function teardownSession(): Promise<void> {
     isAuthenticated: false,
     isUnlocked: false,
     pendingOAuth: null,
+    pendingVerificationEmail: null,
   });
   await persistTokens(null);
   try {
@@ -332,6 +333,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         tokens: newTokens,
         isAuthenticated: true,
         isUnlocked: true,
+        pendingVerificationEmail: null,
         isLoading: false,
       });
       await persistTokens(newTokens);
