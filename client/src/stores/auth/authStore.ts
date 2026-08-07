@@ -1,6 +1,5 @@
 import { load } from "@tauri-apps/plugin-store";
 import { create } from "zustand";
-import { getDeviceId } from "../../lib/common/device";
 import {
   authApi,
   loadApiUrl,
@@ -9,6 +8,7 @@ import {
   type TokenPair,
   type User,
 } from "../../lib/api/auth";
+import { getDeviceId } from "../../lib/common/device";
 import {
   buildKeyringRows,
   clearKeychain,
@@ -279,6 +279,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isUnlocked: false,
       });
       await persistTokens(null);
+      // Match manual logout: a forced logout must also forget the saved
+      // password, otherwise the next login auto-unlocks without asking.
+      try {
+        await deletePassword();
+      } catch {
+        // ignore keychain purge errors
+      }
     }
   },
 
@@ -527,6 +534,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               isUnlocked: false,
             });
             await persistTokens(null);
+            // Forced logout forgets the saved password too (see refresh()).
+            try {
+              await deletePassword();
+            } catch {
+              // ignore keychain purge errors
+            }
           }
         }
       } catch {
