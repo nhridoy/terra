@@ -28,8 +28,7 @@ Require new email/password signups to verify their email address before the acco
 - Verification codes reuse the existing `auth_codes` table with `Purpose = "email_verify"`:
   - `CodeHash` = `sha256(hex(code))` — OTP is never stored in plaintext.
   - `UserID`, `ExpiresAt` (15 min), `UsedAt` (single-use), `CreatedAt`.
-  - One active code per user: issuing a new code (register retry / resend) sets the previous unused `email_verify` codes for that user to `UsedAt` (revoked).
-  - `DeviceID` is empty for verification codes.
+  - **One live row per user, never more.** Re-issue (resend / register retry) does `DELETE FROM auth_codes WHERE user_id = ? AND purpose = 'email_verify'` then inserts a fresh row. Successful verification deletes the row. The table therefore holds at most one `email_verify` row per user at any time — no revocation accumulation, bounded lookups, no cleanup jobs.
 
 ## Server behavior
 
@@ -51,9 +50,9 @@ Require new email/password signups to verify their email address before the acco
 
 ### Verify (POST /api/verify-email) — new, unauthenticated
 Request: `{ "email": ..., "otp": ..., "device_id": ... }`
-- Look up the active `email_verify` code by user + purpose + `UsedAt IS NULL` + `ExpiresAt > now`.
-- Constant-time compare (deliberately not revealed-length-risk-friendly: reject on mismatch), cap at **5 attempts** per code — on the 5th failed attempt the code is revoked (`UsedAt` set), client asked to resend.
-- Success: set `users.email_verified_at = now`, mark code used, then issue tokens exactly like register today:
+- Look up the user's live `email_verify` code (`UsedAt IS NULL` + `ExpiresAt > now`).
+- Constant-time compare (deliberately not revealed-length-risk-friendly: reject on mismatch), cap at **5 attempts** per code — on the 5th failed attempt the code is deleted, client asked to resend.
+- Success: set `users.email_verified_at = now`, **delete** the code row (consumed — deletion is the single-use enforcement), then issue tokens exactly like register today:
   ```json
   { "access_token": ..., "refresh_token": ..., "user": ... }
   ```
@@ -63,7 +62,7 @@ Request: `{ "email": ..., "otp": ..., "device_id": ... }`
 ### Resend (POST /resend-verification) — unauthenticated
 - Request: `{ "email": ... }`, Response: `{ "verification_required": true }`.
 - Rate limited with the auth bucket (`RATE_LIMIT_AUTH`). Enforces a per-user 60s cooldown; within window returns `429 TOO_MANY_REQUESTS`.
-- Revokes the previous active code and mints a fresh 15-minute OTP. Does **not** leak whether the email exists (uniform success), but keeps the unauthorized perf cost identical to a normal unsolicited request.
+- Deletes any existing `email_verify` row for the user and inserts a fresh 15-minute OTP (in-place replacement — old code becomes invalid immediately, no dead rows). Does **not** leak whether the email exists (uniform success).
 - Server never sends tokens here; behavior identical for unknown emails.
 
 ### 403 body shape
@@ -99,9 +98,9 @@ Server (`go test`):
 - Login unverified → 403, `VERIFICATION_REQUIRED`, no tokens, no `last_login_at` write.
 - Login verified → 200 tokens.
 - Verify success → verified, code `UsedAt`, tokens; refresh usable.
-- Verify wrong code → attempts decrement; 5th attempt revokes code.
-- Verify expired → 400; verify reused code → 400; verify wrong email → 400.
-- Resend → old code revoked, new active; resend within 60s → 429; resend unknown email → generic success + 200.
+- Verify wrong code → attempts decrement; 5th attempt deletes code.
+- Verify expired → 400; verify after resend (old code) → 400; verify wrong email → 400.
+- Resend → old row deleted, single fresh row; resend within 60s → 429; resend unknown email → generic success + 200; at most one `email_verify` row per user after repeated resends.
 - OAuth register → verified by default.
 
 Client (`vitest`):
