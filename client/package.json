@@ -61,6 +61,7 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "input-otp": "^1.4.2",
     "libsodium-wrappers": "^0.8.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

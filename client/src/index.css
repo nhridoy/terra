@@ -34,6 +34,20 @@
   --color-dark-950: #020617;
 
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  --animate-caret-blink: caret-blink 1s ease-in-out infinite;
+
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 .cm-scroller {

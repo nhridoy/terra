@@ -4,8 +4,7 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
-import { FormBase } from "@/components/ui/forms/FormBase";
-import Input from "@/components/ui/Input";
+import { FormOTPInput } from "@/components/ui/forms/FormOTPInput";
 import {
   type EmailVerificationFormSchema,
   emailVerificationFormDefaultValues,
@@ -98,24 +97,13 @@ export default function EmailVerification({ password }: { password?: string }) {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <FormBase
+        <FormOTPInput
           control={control}
           name="otp"
           label="Verification code"
-          placeholder="123456"
           required
-        >
-          {(field) => (
-            <Input
-              {...field}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(e) =>
-                field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-            />
-          )}
-        </FormBase>
+          otpLength={6}
+        />
 
         <Button
           type="submit"
