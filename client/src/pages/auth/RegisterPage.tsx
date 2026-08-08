@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import EmailVerification from "@/components/auth/forms/EmailVerification";
 import OAuthLogin from "@/components/auth/forms/OAuthLogin";
 import ServerConfig from "@/components/auth/forms/ServerConfig";
@@ -17,16 +17,9 @@ import {
 import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function RegisterPage() {
-  const {
-    register,
-    isLoading,
-    error,
-    clearError,
-    pendingVerificationEmail,
-    clearPendingVerification,
-  } = useAuthStore();
+  const { register, isLoading, error, clearError, pendingVerificationEmail } =
+    useAuthStore();
   const [password, setPassword] = useState("");
-  const navigate = useNavigate();
   const { control, handleSubmit } = useForm<RegisterFormSchema>({
     defaultValues: registerFormDefaultValues,
     resolver: zodResolver(registerFormSchema),
@@ -50,13 +43,7 @@ export default function RegisterPage() {
         </div>
 
         {pendingVerificationEmail ? (
-          <EmailVerification
-            onBackToLogin={() => {
-              clearPendingVerification();
-              navigate("/login");
-            }}
-            password={password}
-          />
+          <EmailVerification password={password} />
         ) : (
           <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
             <h2 className="text-xl font-semibold text-white mb-6">

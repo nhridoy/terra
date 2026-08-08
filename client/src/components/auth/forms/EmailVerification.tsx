@@ -1,21 +1,18 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
 import Input from "@/components/ui/Input";
 import { useAuthStore } from "@/stores/auth/authStore";
 
-export default function EmailVerification({
-  onBackToLogin,
-  password,
-}: {
-  onBackToLogin: () => void;
-  password?: string;
-}) {
+export default function EmailVerification({ password }: { password?: string }) {
+  const navigate = useNavigate();
   const {
     pendingVerificationEmail,
     verifyEmail,
     resendVerification,
+    clearPendingVerification,
     isLoading,
     error,
     clearError,
@@ -62,6 +59,11 @@ export default function EmailVerification({
   const handleVerify = async () => {
     clearError();
     await verifyEmail(email, otp.trim(), password);
+  };
+
+  const handleBackToLogin = () => {
+    clearPendingVerification();
+    navigate("/login");
   };
 
   return (
@@ -120,13 +122,15 @@ export default function EmailVerification({
           {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
         </Button>
 
-        <button
+        <Button
           type="button"
-          onClick={onBackToLogin}
-          className="w-full text-center text-primary-500 hover:text-primary-400 text-sm cursor-pointer"
+          variant="link"
+          size="sm"
+          className="w-full"
+          onClick={handleBackToLogin}
         >
           Back to sign in
-        </button>
+        </Button>
       </div>
     </div>
   );

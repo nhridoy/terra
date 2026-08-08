@@ -17,14 +17,8 @@ import {
 import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function LoginPage() {
-  const {
-    login,
-    isLoading,
-    error,
-    clearError,
-    pendingVerificationEmail,
-    clearPendingVerification,
-  } = useAuthStore();
+  const { login, isLoading, error, clearError, pendingVerificationEmail } =
+    useAuthStore();
   const [password, setPassword] = useState("");
   const {
     control,
@@ -53,10 +47,7 @@ export default function LoginPage() {
         </div>
 
         {pendingVerificationEmail ? (
-          <EmailVerification
-            onBackToLogin={clearPendingVerification}
-            password={password}
-          />
+          <EmailVerification password={password} />
         ) : (
           <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
             <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
