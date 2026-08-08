@@ -95,6 +95,20 @@ pub fn generate_recovery_code() -> String {
     BASE64.encode(recovery_bytes)
 }
 
+fn derive_recovery_kek(recovery_code: &str, salt_cl: &[u8; SALT_CL_LEN]) -> Result<[u8; DEK_LEN], String> {
+    let recovery_bytes = BASE64
+        .decode(recovery_code)
+        .map_err(|e| format!("Invalid recovery code base64: {e}"))?;
+    let mut recovery_kek = [0u8; DEK_LEN];
+    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
+        .map_err(|e| format!("Argon2 params error: {e}"))?;
+    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    argon2
+        .hash_password_into(&recovery_bytes, salt_cl, &mut recovery_kek)
+        .map_err(|e| format!("Argon2 recovery KDF error: {e}"))?;
+    Ok(recovery_kek)
+}
+
 pub fn generate_account_material(session: &mut KeySession) -> Result<AccountMaterial, String> {
     use rand::RngCore;
     let mut salt_cl = [0u8; SALT_CL_LEN];
@@ -178,17 +192,7 @@ pub fn build_keyring_rows(
 ) -> Result<KeyringRows, String> {
     let dek_wrapped_by_kek = encrypt_bytes(kek, &session.dek, b"dek")?;
 
-    let recovery_bytes = BASE64
-        .decode(recovery_code)
-        .map_err(|e| format!("Invalid recovery code base64: {e}"))?;
-    let mut recovery_kek = [0u8; DEK_LEN];
-    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
-        .map_err(|e| format!("Argon2 params error: {e}"))?;
-    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
-    argon2
-        .hash_password_into(&recovery_bytes, &session.salt_cl, &mut recovery_kek)
-        .map_err(|e| format!("Argon2 recovery KDF error: {e}"))?;
-
+    let recovery_kek = derive_recovery_kek(recovery_code, &session.salt_cl)?;
     let dek_wrapped_by_recovery = encrypt_bytes(&recovery_kek, &session.dek, b"dek")?;
 
     let private_key_bytes = session.private_key.to_bytes();
@@ -199,6 +203,24 @@ pub fn build_keyring_rows(
         dek_wrapped_by_recovery,
         private_key_wrapped_by_dek,
     })
+}
+
+pub fn wrap_dek_with_recovery(
+    recovery_code: &str,
+    salt_cl_b64: &str,
+    session: &KeySession,
+) -> Result<String, String> {
+    let salt_cl_bytes = BASE64
+        .decode(salt_cl_b64)
+        .map_err(|e| format!("Invalid salt_cl base64: {e}"))?;
+    if salt_cl_bytes.len() != SALT_CL_LEN {
+        return Err("Invalid salt_cl length".to_string());
+    }
+    let mut salt_cl = [0u8; SALT_CL_LEN];
+    salt_cl.copy_from_slice(&salt_cl_bytes);
+
+    let recovery_kek = derive_recovery_kek(recovery_code, &salt_cl)?;
+    encrypt_bytes(&recovery_kek, &session.dek, b"dek")
 }
 
 pub fn encrypt_secret(
@@ -233,9 +255,6 @@ pub fn recovery_unwrap_dek(
     wrapped_b64: &str,
     session: &mut KeySession,
 ) -> Result<(), String> {
-    let recovery_bytes = BASE64
-        .decode(recovery_code)
-        .map_err(|e| format!("Invalid recovery code base64: {e}"))?;
     let salt_cl_bytes = BASE64
         .decode(salt_cl_b64)
         .map_err(|e| format!("Invalid salt_cl base64: {e}"))?;
@@ -245,13 +264,7 @@ pub fn recovery_unwrap_dek(
     let mut salt_cl = [0u8; SALT_CL_LEN];
     salt_cl.copy_from_slice(&salt_cl_bytes);
 
-    let mut recovery_kek = [0u8; DEK_LEN];
-    let params = argon2::Params::new(32 * 1024, 2, 1, Some(DEK_LEN))
-        .map_err(|e| format!("Argon2 params error: {e}"))?;
-    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
-    argon2
-        .hash_password_into(&recovery_bytes, &salt_cl, &mut recovery_kek)
-        .map_err(|e| format!("Argon2 recovery KDF error: {e}"))?;
+    let recovery_kek = derive_recovery_kek(recovery_code, &salt_cl)?;
 
     let dek_bytes = decrypt_bytes(wrapped_b64, &recovery_kek)
         .map_err(|_| "Incorrect recovery code".to_string())?;
@@ -466,6 +479,32 @@ mod tests {
         lock(&mut session);
         recovery_unwrap_dek(&material.recovery_code, &salt_cl_b64, &keyring.dek_wrapped_by_recovery, &mut session).unwrap();
         assert_eq!(session.dek, original_dek);
+    }
+
+    #[test]
+    fn test_wrap_dek_with_recovery_roundtrip() {
+        let mut session = KeySession::new();
+        let material = generate_account_material(&mut session).unwrap();
+
+        let wrapped = wrap_dek_with_recovery(&material.recovery_code, &material.salt_cl, &session).unwrap();
+        let original_dek = session.dek;
+
+        lock(&mut session);
+        recovery_unwrap_dek(&material.recovery_code, &material.salt_cl, &wrapped, &mut session).unwrap();
+        assert_eq!(session.dek, original_dek);
+    }
+
+    #[test]
+    fn test_wrap_dek_with_recovery_wrong_code() {
+        let mut session = KeySession::new();
+        let material = generate_account_material(&mut session).unwrap();
+
+        let wrapped = wrap_dek_with_recovery(&material.recovery_code, &material.salt_cl, &session).unwrap();
+        let wrong_code = generate_recovery_code();
+
+        lock(&mut session);
+        let result = recovery_unwrap_dek(&wrong_code, &material.salt_cl, &wrapped, &mut session);
+        assert!(result.is_err());
     }
 
     #[test]

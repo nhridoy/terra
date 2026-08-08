@@ -825,6 +825,12 @@ fn recovery_unwrap_dek(recovery_code: String, salt_cl: String, wrapped: String, 
 }
 
 #[tauri::command]
+fn wrap_dek_with_recovery(recovery_code: String, salt_cl: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    crypto::wrap_dek_with_recovery(&recovery_code, &salt_cl, &session)
+}
+
+#[tauri::command]
 fn sign_challenge(nonce: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
     let session = state.session.lock().map_err(|e| e.to_string())?;
     crypto::sign_challenge(&nonce, &session)
@@ -958,6 +964,7 @@ pub fn run() {
             decrypt_secret,
             unwrap_dek,
             recovery_unwrap_dek,
+            wrap_dek_with_recovery,
             sign_challenge,
             lock_session,
             unlock,

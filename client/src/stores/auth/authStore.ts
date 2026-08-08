@@ -26,6 +26,7 @@ import {
   signChallenge,
   unwrapDek,
   wrapDek,
+  wrapDekWithRecovery,
 } from "../../lib/crypto/crypto";
 import { wipeLocalData } from "../../lib/db/db";
 import {
@@ -93,7 +94,7 @@ interface AuthState {
   verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   clearPendingVerification: () => void;
-  pendingRecoveryStash: string | null;
+  ensureRecoveryKit: () => Promise<string | null>;
   setAlwaysAsk: (flag: boolean) => Promise<void>;
 }
 
@@ -128,7 +129,6 @@ async function teardownSession(): Promise<void> {
     isUnlocked: false,
     pendingOAuth: null,
     pendingVerificationEmail: null,
-    pendingRecoveryStash: null,
   });
   await persistTokens(null);
   try {
@@ -172,7 +172,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingRecoveryEmail: null,
   pendingOAuth: null,
   pendingVerificationEmail: null,
-  pendingRecoveryStash: null,
   alwaysAsk: false,
 
   prelogin: async (email: string) => {
@@ -192,7 +191,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const material = await generateAccountMaterial();
       await deriveKek(password, material.salt_cl);
-      const keyring = await buildKeyringRows(material.recovery_code);
+      // Recovery material is deferred: the kit attaches (and is shown) on the
+      // first authenticated moment — right after signup when verification is
+      // not required, or after OTP verification when it is.
+      const fullKeyring = await buildKeyringRows(material.recovery_code);
+      const keyring = {
+        dek_wrapped_by_kek: fullKeyring.dek_wrapped_by_kek,
+        dek_wrapped_by_recovery: "",
+        private_key_wrapped_by_dek: fullKeyring.private_key_wrapped_by_dek,
+      };
       const proof = await computeLoginProof(
         prelogin.server_salt,
         prelogin.nonce,
@@ -203,7 +210,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         full_name: name,
         password_hash: proof.verifier,
-        recovery_code: material.recovery_code,
+        recovery_code: "",
         public_key: material.public_key,
         keyring,
         nonce: prelogin.nonce,
@@ -215,7 +222,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (res.verification_required) {
         set({
           pendingVerificationEmail: email,
-          pendingRecoveryStash: material.recovery_code,
           isLoading: false,
         });
         return;
@@ -228,13 +234,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         tokens: pair,
         isAuthenticated: true,
         isUnlocked: true,
-        pendingRecoveryCode: material.recovery_code,
-        pendingRecoveryContext: "signup",
         isLoading: false,
       });
       await persistTokens(pair);
       if (!get().alwaysAsk) {
         await savePassword(password);
+      }
+      const recoveryCode = await get().ensureRecoveryKit();
+      if (recoveryCode) {
+        set({
+          pendingRecoveryCode: recoveryCode,
+          pendingRecoveryContext: "signup",
+        });
       }
     } catch (err) {
       const message =
@@ -271,14 +282,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isUnlocked: true,
         pendingVerificationEmail: null,
-        pendingRecoveryCode: get().pendingRecoveryStash,
-        pendingRecoveryContext: get().pendingRecoveryStash ? "signup" : null,
-        pendingRecoveryStash: null,
         isLoading: false,
       });
       await persistTokens(newTokens);
       if (password && !get().alwaysAsk) {
         await savePassword(password);
+      }
+      const recoveryCode = await get().ensureRecoveryKit();
+      if (recoveryCode) {
+        set({
+          pendingRecoveryCode: recoveryCode,
+          pendingRecoveryContext: "signup",
+        });
       }
     } catch (err) {
       const message =
@@ -309,8 +324,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  clearPendingVerification: () =>
-    set({ pendingVerificationEmail: null, pendingRecoveryStash: null }),
+  clearPendingVerification: () => set({ pendingVerificationEmail: null }),
+
+  // Recovery kits are created at the first authenticated moment (see
+  // register): this attaches one if the account has none yet. Best-effort —
+  // failures self-heal on the next successful auth, and a kit that already
+  // exists on the server is never re-created.
+  ensureRecoveryKit: async () => {
+    const { user, tokens } = get();
+    if (!user || !tokens) return null;
+    try {
+      const { keyring, salt_cl } = await authApi.fetchKeyring(
+        tokens.access_token,
+      );
+      if (keyring?.dek_wrapped_by_recovery) return null;
+      const recoveryCode = await generateRecoveryCode();
+      const dekWrappedByRecovery = await wrapDekWithRecovery(
+        recoveryCode,
+        salt_cl,
+      );
+      await authApi.attachRecoveryMaterial(
+        {
+          recovery_code: recoveryCode,
+          dek_wrapped_by_recovery: dekWrappedByRecovery,
+        },
+        tokens.access_token,
+      );
+      return recoveryCode;
+    } catch {
+      return null;
+    }
+  },
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
@@ -350,6 +394,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await persistTokens(newTokens);
       if (!get().alwaysAsk) {
         await savePassword(password);
+      }
+      const recoveryCode = await get().ensureRecoveryKit();
+      if (recoveryCode) {
+        set({
+          pendingRecoveryCode: recoveryCode,
+          pendingRecoveryContext: "signup",
+        });
       }
     } catch (err) {
       if (
@@ -421,6 +472,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } catch {
           // best-effort keychain refresh
         }
+      }
+      const recoveryCode = await get().ensureRecoveryKit();
+      if (recoveryCode) {
+        set({
+          pendingRecoveryCode: recoveryCode,
+          pendingRecoveryContext: "signup",
+        });
       }
     } catch (err) {
       const message =
@@ -612,6 +670,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 // stale or wrong entry — user unlocks manually; self-heal on next ask
               } finally {
                 set({ unlockPending: false });
+              }
+            }
+
+            // Self-heal a missing recovery kit (e.g. verify-time attach failed).
+            // Needs a live session; otherwise the manual unlock covers it.
+            if (get().isUnlocked) {
+              const recoveryCode = await get().ensureRecoveryKit();
+              if (recoveryCode) {
+                set({
+                  pendingRecoveryCode: recoveryCode,
+                  pendingRecoveryContext: "signup",
+                });
               }
             }
           } catch {

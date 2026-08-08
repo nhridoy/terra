@@ -334,4 +334,14 @@ export const authApi = {
   }> {
     return apiFetch("GET", "/api/v1/auth/keyring", undefined, token);
   },
+
+  async attachRecoveryMaterial(
+    params: {
+      recovery_code: string;
+      dek_wrapped_by_recovery: string;
+    },
+    token: string,
+  ): Promise<{ recovery_attached: boolean }> {
+    return apiFetch("POST", "/api/v1/auth/recovery-material", params, token);
+  },
 };

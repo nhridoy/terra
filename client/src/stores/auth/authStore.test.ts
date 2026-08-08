@@ -21,6 +21,8 @@ vi.mock("../../lib/api/auth", () => ({
     verifyEmail: vi.fn(),
     resendVerification: vi.fn(),
     logout: vi.fn(),
+    fetchKeyring: vi.fn(),
+    attachRecoveryMaterial: vi.fn(),
   },
   loadApiUrl: vi.fn(async () => {}),
   setRefreshTokenGetter: vi.fn(),
@@ -59,6 +61,8 @@ vi.mock("../../lib/crypto/crypto", () => ({
   saveRefreshToken: vi.fn(async () => {}),
   loadRefreshToken: vi.fn(async () => null),
   signChallenge: vi.fn(async () => "sig"),
+  generateRecoveryCode: vi.fn(async () => "new-recovery-code"),
+  wrapDekWithRecovery: vi.fn(async () => "wrapped-recovery"),
 }));
 
 vi.mock("../../lib/db/db", () => ({
@@ -102,6 +106,8 @@ describe("authStore email verification", () => {
       isAuthenticated: false,
       isUnlocked: false,
       pendingVerificationEmail: null,
+      pendingRecoveryCode: null,
+      pendingRecoveryContext: null,
       error: null,
       isLoading: false,
     });
@@ -121,6 +127,46 @@ describe("authStore email verification", () => {
     expect(s.pendingVerificationEmail).toBe("new@example.com");
     expect(s.isAuthenticated).toBe(false);
     expect(s.tokens).toBeNull();
+  });
+
+  it("register omits recovery material and attaches the kit after signup", async () => {
+    vi.mocked(authApi.prelogin).mockResolvedValue(preloginResponse);
+    vi.mocked(authApi.register).mockResolvedValue({
+      access_token: "at",
+      refresh_token: "rt",
+      user,
+    });
+    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "",
+        private_key_wrapped_by_dek: "pk",
+      },
+      salt_cl: "sc",
+    });
+    vi.mocked(authApi.attachRecoveryMaterial).mockResolvedValue({
+      recovery_attached: true,
+    });
+
+    await useAuthStore.getState().register("new@example.com", "New User", "pw");
+
+    expect(authApi.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recovery_code: "",
+        keyring: expect.objectContaining({ dek_wrapped_by_recovery: "" }),
+      }),
+    );
+    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith(
+      {
+        recovery_code: "new-recovery-code",
+        dek_wrapped_by_recovery: "wrapped-recovery",
+      },
+      "at",
+    );
+    const s = useAuthStore.getState();
+    expect(s.isAuthenticated).toBe(true);
+    expect(s.pendingRecoveryCode).toBe("new-recovery-code");
+    expect(s.pendingRecoveryContext).toBe("signup");
   });
 
   it("login with VERIFICATION_REQUIRED sets pending email", async () => {
@@ -189,10 +235,7 @@ describe("authStore email verification", () => {
     });
   });
 
-  it("verifyEmail surfaces the stashed recovery code after gated signup", async () => {
-    useAuthStore.setState({
-      pendingRecoveryStash: "stashed-recovery-code",
-    });
+  it("verifyEmail attaches a recovery kit when the account has none", async () => {
     vi.mocked(authApi.verifyEmail).mockResolvedValue({
       access_token: "at",
       refresh_token: "rt",
@@ -203,27 +246,93 @@ describe("authStore email verification", () => {
         private_key_wrapped_by_dek: "pk",
       },
     });
+    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "",
+        private_key_wrapped_by_dek: "pk",
+      },
+      salt_cl: "sc",
+    });
+    vi.mocked(authApi.attachRecoveryMaterial).mockResolvedValue({
+      recovery_attached: true,
+    });
 
-    await useAuthStore.getState().verifyEmail("new@example.com", "123456");
+    await useAuthStore
+      .getState()
+      .verifyEmail("new@example.com", "123456", "pw");
 
+    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith(
+      {
+        recovery_code: "new-recovery-code",
+        dek_wrapped_by_recovery: "wrapped-recovery",
+      },
+      "at",
+    );
     const s = useAuthStore.getState();
-    expect(s.pendingRecoveryCode).toBe("stashed-recovery-code");
+    expect(s.pendingRecoveryCode).toBe("new-recovery-code");
     expect(s.pendingRecoveryContext).toBe("signup");
-    expect(s.pendingRecoveryStash).toBeNull();
     expect(s.pendingVerificationEmail).toBeNull();
   });
 
-  it("clearPendingVerification drops the recovery stash", () => {
-    useAuthStore.setState({
-      pendingVerificationEmail: "gate@example.com",
-      pendingRecoveryStash: "stashed-recovery-code",
+  it("verifyEmail does not attach when a recovery kit already exists", async () => {
+    vi.mocked(authApi.verifyEmail).mockResolvedValue({
+      access_token: "at",
+      refresh_token: "rt",
+      user,
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "rec",
+        private_key_wrapped_by_dek: "pk",
+      },
+    });
+    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "rec",
+        private_key_wrapped_by_dek: "pk",
+      },
+      salt_cl: "sc",
     });
 
-    useAuthStore.getState().clearPendingVerification();
+    await useAuthStore.getState().verifyEmail("new@example.com", "123456");
 
+    expect(authApi.attachRecoveryMaterial).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
-    expect(s.pendingVerificationEmail).toBeNull();
-    expect(s.pendingRecoveryStash).toBeNull();
+    expect(s.pendingRecoveryCode).toBeNull();
+    expect(s.pendingRecoveryContext).toBeNull();
+  });
+
+  it("ensureRecoveryKit is a no-op without an authenticated session", async () => {
+    const code = await useAuthStore.getState().ensureRecoveryKit();
+    expect(code).toBeNull();
+    expect(authApi.fetchKeyring).not.toHaveBeenCalled();
+  });
+
+  it("ensureRecoveryKit survives an attach failure without surfacing an error", async () => {
+    useAuthStore.setState({
+      user,
+      tokens: { access_token: "at", refresh_token: "rt" },
+      isAuthenticated: true,
+      isUnlocked: true,
+    });
+    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "",
+        private_key_wrapped_by_dek: "pk",
+      },
+      salt_cl: "sc",
+    });
+    vi.mocked(authApi.attachRecoveryMaterial).mockRejectedValue(
+      new AuthApiError(500, { code: "INTERNAL_ERROR", message: "boom" }),
+    );
+
+    const code = await useAuthStore.getState().ensureRecoveryKit();
+
+    expect(code).toBeNull();
+    const s = useAuthStore.getState();
+    expect(s.error).toBeNull();
   });
 
   it("verifyEmail failure sets error and rethrows", async () => {
