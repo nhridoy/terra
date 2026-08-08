@@ -20,6 +20,7 @@ vi.mock("../../lib/api/auth", () => ({
     prelogin: vi.fn(),
     verifyEmail: vi.fn(),
     resendVerification: vi.fn(),
+    logout: vi.fn(),
   },
   loadApiUrl: vi.fn(async () => {}),
   setRefreshTokenGetter: vi.fn(),
@@ -75,6 +76,7 @@ vi.mock("../../lib/common/device", () => ({
 }));
 
 import { AuthApiError, authApi } from "../../lib/api/auth";
+import { savePassword } from "../../lib/keychain/keychain";
 import { useAuthStore } from "./authStore";
 
 const preloginResponse = {
@@ -176,6 +178,7 @@ describe("authStore email verification", () => {
       .getState()
       .verifyEmail("new@example.com", "123456", "pw");
 
+    expect(savePassword).toHaveBeenCalledWith("pw");
     const s = useAuthStore.getState();
     expect(s.isAuthenticated).toBe(true);
     expect(s.isUnlocked).toBe(true);
@@ -202,6 +205,26 @@ describe("authStore email verification", () => {
     expect(s.error).toBe("bad otp");
     expect(s.isLoading).toBe(false);
     expect(s.pendingVerificationEmail).toBeNull();
+  });
+
+  it("logout clears a pending verification session", async () => {
+    useAuthStore.setState({
+      user,
+      tokens: { access_token: "at", refresh_token: "rt" },
+      isAuthenticated: true,
+      isUnlocked: true,
+      pendingVerificationEmail: "new@example.com",
+    });
+
+    await useAuthStore.getState().logout();
+
+    expect(authApi.logout).toHaveBeenCalledWith("rt");
+    const s = useAuthStore.getState();
+    expect(s.pendingVerificationEmail).toBeNull();
+    expect(s.isAuthenticated).toBe(false);
+    expect(s.isUnlocked).toBe(false);
+    expect(s.user).toBeNull();
+    expect(s.tokens).toBeNull();
   });
 
   it("resendVerification calls the API and keeps the pending email", async () => {
