@@ -24,21 +24,11 @@ export default function EmailVerification({
   const [cooldown, setCooldown] = useState(0);
   const timerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    },
-    [],
-  );
-
-  const email = pendingVerificationEmail ?? "";
-
-  const handleResend = async () => {
-    clearError();
+  const startCooldown = () => {
     setCooldown(60);
+    if (timerRef.current !== null) {
+      clearInterval(timerRef.current);
+    }
     timerRef.current = window.setInterval(() => {
       setCooldown((s) => {
         if (s <= 1) {
@@ -49,6 +39,23 @@ export default function EmailVerification({
         return s - 1;
       });
     }, 1000);
+  };
+
+  useEffect(() => {
+    startCooldown();
+    return () => {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  const email = pendingVerificationEmail ?? "";
+
+  const handleResend = async () => {
+    clearError();
+    startCooldown();
     await resendVerification(email);
   };
 
