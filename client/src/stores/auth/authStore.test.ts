@@ -135,14 +135,11 @@ describe("authStore email verification", () => {
       access_token: "at",
       refresh_token: "rt",
       user,
-    });
-    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
       keyring: {
         dek_wrapped_by_kek: "kek",
         dek_wrapped_by_recovery: "",
         private_key_wrapped_by_dek: "pk",
       },
-      salt_cl: "sc",
     });
     vi.mocked(authApi.attachRecoveryMaterial).mockResolvedValue({
       recovery_attached: true,
@@ -163,6 +160,8 @@ describe("authStore email verification", () => {
       },
       "at",
     );
+    // the keyring from the register response is reused — no extra fetch
+    expect(authApi.fetchKeyring).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
     expect(s.isAuthenticated).toBe(true);
     expect(s.pendingRecoveryCode).toBe("new-recovery-code");
@@ -242,17 +241,9 @@ describe("authStore email verification", () => {
       user,
       keyring: {
         dek_wrapped_by_kek: "kek",
-        dek_wrapped_by_recovery: "rec",
-        private_key_wrapped_by_dek: "pk",
-      },
-    });
-    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
-      keyring: {
-        dek_wrapped_by_kek: "kek",
         dek_wrapped_by_recovery: "",
         private_key_wrapped_by_dek: "pk",
       },
-      salt_cl: "sc",
     });
     vi.mocked(authApi.attachRecoveryMaterial).mockResolvedValue({
       recovery_attached: true,
@@ -269,6 +260,8 @@ describe("authStore email verification", () => {
       },
       "at",
     );
+    // the keyring from the verify response is reused — no extra fetch
+    expect(authApi.fetchKeyring).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
     expect(s.pendingRecoveryCode).toBe("new-recovery-code");
     expect(s.pendingRecoveryContext).toBe("signup");
@@ -286,18 +279,11 @@ describe("authStore email verification", () => {
         private_key_wrapped_by_dek: "pk",
       },
     });
-    vi.mocked(authApi.fetchKeyring).mockResolvedValue({
-      keyring: {
-        dek_wrapped_by_kek: "kek",
-        dek_wrapped_by_recovery: "rec",
-        private_key_wrapped_by_dek: "pk",
-      },
-      salt_cl: "sc",
-    });
 
     await useAuthStore.getState().verifyEmail("new@example.com", "123456");
 
     expect(authApi.attachRecoveryMaterial).not.toHaveBeenCalled();
+    expect(authApi.fetchKeyring).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
     expect(s.pendingRecoveryCode).toBeNull();
     expect(s.pendingRecoveryContext).toBeNull();

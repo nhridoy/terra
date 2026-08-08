@@ -188,6 +188,7 @@ export interface RegisterRequest {
 export interface RegisterResponse extends Partial<TokenPair> {
   user: User;
   verification_required?: boolean;
+  keyring?: KeyringRows;
 }
 
 export interface VerifyEmailResponse extends TokenPair {

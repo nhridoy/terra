@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   AuthApiError,
   authApi,
+  type KeyringRows,
   loadApiUrl,
   setRefreshTokenGetter,
   setRefreshTokenSetter,
@@ -94,7 +95,9 @@ interface AuthState {
   verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   clearPendingVerification: () => void;
-  ensureRecoveryKit: () => Promise<string | null>;
+  ensureRecoveryKit: (
+    existingKeyring?: KeyringRows | null,
+  ) => Promise<string | null>;
   setAlwaysAsk: (flag: boolean) => Promise<void>;
 }
 
@@ -240,7 +243,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!get().alwaysAsk) {
         await savePassword(password);
       }
-      const recoveryCode = await get().ensureRecoveryKit();
+      const recoveryCode = await get().ensureRecoveryKit(res.keyring ?? null);
       if (recoveryCode) {
         set({
           pendingRecoveryCode: recoveryCode,
@@ -288,7 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (password && !get().alwaysAsk) {
         await savePassword(password);
       }
-      const recoveryCode = await get().ensureRecoveryKit();
+      const recoveryCode = await get().ensureRecoveryKit(res.keyring ?? null);
       if (recoveryCode) {
         set({
           pendingRecoveryCode: recoveryCode,
@@ -329,20 +332,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Recovery kits are created at the first authenticated moment (see
   // register): this attaches one if the account has none yet. Best-effort —
   // failures self-heal on the next successful auth, and a kit that already
-  // exists on the server is never re-created.
-  ensureRecoveryKit: async () => {
+  // exists on the server is never re-created. Callers that already hold the
+  // keyring (login/verify responses) pass it in to skip a round trip.
+  ensureRecoveryKit: async (existingKeyring?: KeyringRows | null) => {
     const { user, tokens } = get();
     if (!user || !tokens) return null;
     try {
-      const { keyring, salt_cl } = await authApi.fetchKeyring(
-        tokens.access_token,
-      );
+      let keyring = existingKeyring ?? null;
+      if (!keyring) {
+        const res = await authApi.fetchKeyring(tokens.access_token);
+        keyring = res.keyring;
+      }
       if (keyring?.dek_wrapped_by_recovery) return null;
       const recoveryCode = await generateRecoveryCode();
-      const dekWrappedByRecovery = await wrapDekWithRecovery(
-        recoveryCode,
-        salt_cl,
-      );
+      const dekWrappedByRecovery = await wrapDekWithRecovery(recoveryCode);
       await authApi.attachRecoveryMaterial(
         {
           recovery_code: recoveryCode,
@@ -395,7 +398,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!get().alwaysAsk) {
         await savePassword(password);
       }
-      const recoveryCode = await get().ensureRecoveryKit();
+      const recoveryCode = await get().ensureRecoveryKit(res.keyring ?? null);
       if (recoveryCode) {
         set({
           pendingRecoveryCode: recoveryCode,
@@ -473,7 +476,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // best-effort keychain refresh
         }
       }
-      const recoveryCode = await get().ensureRecoveryKit();
+      const recoveryCode = await get().ensureRecoveryKit(keyring);
       if (recoveryCode) {
         set({
           pendingRecoveryCode: recoveryCode,
@@ -654,12 +657,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             set({ user });
 
             // D6: auto-unlock via OS keychain unless the user opted out
+            let autoKeyring: KeyringRows | null = null;
             if (!alwaysAsk) {
               set({ unlockPending: true });
               try {
                 const { keyring, salt_cl } = await authApi.fetchKeyring(
                   newTokens.access_token,
                 );
+                autoKeyring = keyring;
                 const savedPassword = await loadPassword();
                 if (savedPassword) {
                   await deriveKek(savedPassword, salt_cl);
@@ -676,7 +681,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             // Self-heal a missing recovery kit (e.g. verify-time attach failed).
             // Needs a live session; otherwise the manual unlock covers it.
             if (get().isUnlocked) {
-              const recoveryCode = await get().ensureRecoveryKit();
+              const recoveryCode = await get().ensureRecoveryKit(autoKeyring);
               if (recoveryCode) {
                 set({
                   pendingRecoveryCode: recoveryCode,

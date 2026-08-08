@@ -141,9 +141,8 @@ export async function recoveryUnwrapDek(
 
 export async function wrapDekWithRecovery(
   recoveryCode: string,
-  saltCl: string,
 ): Promise<string> {
-  return invoke<string>("wrap_dek_with_recovery", { recoveryCode, saltCl });
+  return invoke<string>("wrap_dek_with_recovery", { recoveryCode });
 }
 
 export async function signChallenge(nonce: string): Promise<string> {

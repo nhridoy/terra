@@ -216,6 +216,9 @@ pub fn wrap_dek_with_recovery(
     if salt_cl_bytes.len() != SALT_CL_LEN {
         return Err("Invalid salt_cl length".to_string());
     }
+    if salt_cl_bytes.iter().all(|&b| b == 0) {
+        return Err("salt_cl not derived".to_string());
+    }
     let mut salt_cl = [0u8; SALT_CL_LEN];
     salt_cl.copy_from_slice(&salt_cl_bytes);
 
@@ -504,6 +507,16 @@ mod tests {
 
         lock(&mut session);
         let result = recovery_unwrap_dek(&wrong_code, &material.salt_cl, &wrapped, &mut session);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_wrap_dek_with_recovery_rejects_underved_salt() {
+        let mut session = KeySession::new();
+        let material = generate_account_material(&mut session).unwrap();
+
+        let zero_salt = BASE64.encode([0u8; SALT_CL_LEN]);
+        let result = wrap_dek_with_recovery(&material.recovery_code, &zero_salt, &session);
         assert!(result.is_err());
     }
 

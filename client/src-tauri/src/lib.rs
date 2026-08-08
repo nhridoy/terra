@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use base64::{engine::general_purpose::STANDARD_NO_PAD as BASE64, Engine};
 use portable_pty::{native_pty_system, Child as PtyChild, ChildKiller, CommandBuilder, PtyPair, PtySize};
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_prevent_default::PlatformOptions;
@@ -825,8 +826,11 @@ fn recovery_unwrap_dek(recovery_code: String, salt_cl: String, wrapped: String, 
 }
 
 #[tauri::command]
-fn wrap_dek_with_recovery(recovery_code: String, salt_cl: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
+fn wrap_dek_with_recovery(recovery_code: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
     let session = state.session.lock().map_err(|e| e.to_string())?;
+    // The account salt lives in the session (derived at auth); wrapping under
+    // it guarantees the kit is recoverable via the server-stored salt_cl.
+    let salt_cl = BASE64.encode(session.salt_cl);
     crypto::wrap_dek_with_recovery(&recovery_code, &salt_cl, &session)
 }
 
