@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
@@ -22,16 +22,28 @@ export default function EmailVerification({
   } = useAuthStore();
   const [otp, setOtp] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const email = pendingVerificationEmail ?? "";
 
   const handleResend = async () => {
     clearError();
     setCooldown(60);
-    const timer = setInterval(() => {
+    timerRef.current = window.setInterval(() => {
       setCooldown((s) => {
         if (s <= 1) {
-          clearInterval(timer);
+          clearInterval(timerRef.current ?? undefined);
+          timerRef.current = null;
           return 0;
         }
         return s - 1;

@@ -48,87 +48,84 @@ export default function RegisterPage() {
           <p className="text-dark-400 mt-2">Self-hosted SSH client</p>
         </div>
 
-        <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
-          {pendingVerificationEmail && (
-            <EmailVerification
-              onBackToLogin={clearPendingVerification}
-              password={password}
-            />
-          )}
-          {!pendingVerificationEmail && (
-            <>
-              <h2 className="text-xl font-semibold text-white mb-6">
-                Create Account
-              </h2>
+        {pendingVerificationEmail ? (
+          <EmailVerification
+            onBackToLogin={clearPendingVerification}
+            password={password}
+          />
+        ) : (
+          <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-white mb-6">
+              Create Account
+            </h2>
 
-              {error && (
-                <div className="mb-4">
-                  <Alert variant="error">{error}</Alert>
-                </div>
-              )}
-
-              <OAuthLogin />
-
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <FormInput
-                  control={control}
-                  name="email"
-                  label="Email"
-                  placeholder="you@example.com"
-                  required={requiredFields.includes("email")}
-                />
-
-                <FormInput
-                  control={control}
-                  name="full_name"
-                  label="Full Name"
-                  placeholder="John Doe"
-                  required={requiredFields.includes("full_name")}
-                />
-
-                <FormInput
-                  control={control}
-                  name="password"
-                  label="Password"
-                  type="password"
-                  placeholder="••••••••"
-                  required={requiredFields.includes("password")}
-                />
-
-                <FormInput
-                  control={control}
-                  name="confirmPassword"
-                  label="Confirm Password"
-                  type="password"
-                  placeholder="••••••••"
-                  required={requiredFields.includes("confirmPassword")}
-                />
-
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                >
-                  {isLoading ? "Loading..." : "Create Account"}
-                </Button>
-              </form>
-
-              <div className="mt-6 text-center">
-                <Link
-                  to="/login"
-                  onClick={() => clearError()}
-                  className="text-primary-500 hover:text-primary-400 text-sm"
-                >
-                  Already have an account? Sign in
-                </Link>
+            {error && (
+              <div className="mb-4">
+                <Alert variant="error">{error}</Alert>
               </div>
+            )}
 
-              <ServerConfig />
-            </>
-          )}
-        </div>
+            <OAuthLogin />
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <FormInput
+                control={control}
+                name="email"
+                label="Email"
+                placeholder="you@example.com"
+                required={requiredFields.includes("email")}
+              />
+
+              <FormInput
+                control={control}
+                name="full_name"
+                label="Full Name"
+                placeholder="John Doe"
+                required={requiredFields.includes("full_name")}
+              />
+
+              <FormInput
+                control={control}
+                name="password"
+                label="Password"
+                type="password"
+                placeholder="••••••••"
+                required={requiredFields.includes("password")}
+              />
+
+              <FormInput
+                control={control}
+                name="confirmPassword"
+                label="Confirm Password"
+                type="password"
+                placeholder="••••••••"
+                required={requiredFields.includes("confirmPassword")}
+              />
+
+              <Button
+                type="submit"
+                disabled={isLoading}
+                variant="default"
+                size="sm"
+                className="w-full"
+              >
+                {isLoading ? "Loading..." : "Create Account"}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link
+                to="/login"
+                onClick={() => clearError()}
+                className="text-primary-500 hover:text-primary-400 text-sm"
+              >
+                Already have an account? Sign in
+              </Link>
+            </div>
+
+            <ServerConfig />
+          </div>
+        )}
       </div>
     </div>
   );

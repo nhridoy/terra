@@ -52,77 +52,74 @@ export default function LoginPage() {
           <p className="text-dark-400 mt-2">Self-hosted SSH client</p>
         </div>
 
-        <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
-          {pendingVerificationEmail && (
-            <EmailVerification
-              onBackToLogin={clearPendingVerification}
-              password={password}
-            />
-          )}
-          {!pendingVerificationEmail && (
-            <>
-              <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
+        {pendingVerificationEmail ? (
+          <EmailVerification
+            onBackToLogin={clearPendingVerification}
+            password={password}
+          />
+        ) : (
+          <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
 
-              {error && (
-                <div className="mb-4">
-                  <Alert variant="error">{error}</Alert>
-                </div>
-              )}
+            {error && (
+              <div className="mb-4">
+                <Alert variant="error">{error}</Alert>
+              </div>
+            )}
 
-              <OAuthLogin />
+            <OAuthLogin />
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <FormInput
-                  control={control}
-                  name="email"
-                  label="Email"
-                  placeholder="you@example.com"
-                  required={requiredFields.includes("email")}
-                />
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <FormInput
+                control={control}
+                name="email"
+                label="Email"
+                placeholder="you@example.com"
+                required={requiredFields.includes("email")}
+              />
 
-                <FormInput
-                  control={control}
-                  name="password"
-                  label="Password"
-                  type="password"
-                  placeholder="••••••••"
-                  required={requiredFields.includes("password")}
-                />
+              <FormInput
+                control={control}
+                name="password"
+                label="Password"
+                type="password"
+                placeholder="••••••••"
+                required={requiredFields.includes("password")}
+              />
 
-                <div className="text-right">
-                  <Link
-                    to="/recovery"
-                    className="text-primary-500 hover:text-primary-400 text-xs"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={isLoading || !isValid}
-                  variant="default"
-                  size="sm"
-                  className="w-full"
-                >
-                  {isLoading ? "Loading..." : "Sign In"}
-                </Button>
-              </form>
-
-              <div className="mt-6 text-center">
+              <div className="text-right">
                 <Link
-                  to="/register"
-                  onClick={() => clearError()}
-                  className="text-primary-500 hover:text-primary-400 text-sm"
+                  to="/recovery"
+                  className="text-primary-500 hover:text-primary-400 text-xs"
                 >
-                  Don't have an account? Create one
+                  Forgot password?
                 </Link>
               </div>
 
-              <ServerConfig />
-            </>
-          )}
-        </div>
+              <Button
+                type="submit"
+                disabled={isLoading || !isValid}
+                variant="default"
+                size="sm"
+                className="w-full"
+              >
+                {isLoading ? "Loading..." : "Sign In"}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link
+                to="/register"
+                onClick={() => clearError()}
+                className="text-primary-500 hover:text-primary-400 text-sm"
+              >
+                Don't have an account? Create one
+              </Link>
+            </div>
+
+            <ServerConfig />
+          </div>
+        )}
       </div>
     </div>
   );
