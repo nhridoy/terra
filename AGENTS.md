@@ -90,6 +90,12 @@ cd server && go test ./...
 | `OAUTH_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty (GitHub login disabled) |
 | `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
 | `TERMVAULT_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
+| `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
+| `SMTP_HOST` | SMTP server hostname for verification emails (empty = OTP logged to console) | empty |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_USERNAME` | SMTP auth username | empty |
+| `SMTP_PASSWORD` | SMTP auth password | empty |
+| `SMTP_FROM` | From address for verification emails | empty |
 
 ### Client
 
