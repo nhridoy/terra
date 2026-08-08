@@ -123,7 +123,7 @@ export default function EmailVerification({
         <button
           type="button"
           onClick={onBackToLogin}
-          className="w-full text-center text-primary-500 hover:text-primary-400 text-sm"
+          className="w-full text-center text-primary-500 hover:text-primary-400 text-sm cursor-pointer"
         >
           Back to sign in
         </button>
