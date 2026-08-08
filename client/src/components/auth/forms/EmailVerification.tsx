@@ -1,9 +1,16 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
-import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
+import { FormBase } from "@/components/ui/forms/FormBase";
 import Input from "@/components/ui/Input";
+import {
+  type EmailVerificationFormSchema,
+  emailVerificationFormDefaultValues,
+  emailVerificationFormSchema,
+} from "@/lib/schema/auth/emailVerificationFormSchema";
 import { useAuthStore } from "@/stores/auth/authStore";
 
 export default function EmailVerification({ password }: { password?: string }) {
@@ -17,9 +24,16 @@ export default function EmailVerification({ password }: { password?: string }) {
     error,
     clearError,
   } = useAuthStore();
-  const [otp, setOtp] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const timerRef = useRef<number | null>(null);
+
+  const { control, handleSubmit, watch } = useForm<EmailVerificationFormSchema>(
+    {
+      defaultValues: emailVerificationFormDefaultValues,
+      resolver: zodResolver(emailVerificationFormSchema),
+    },
+  );
+  const otp = watch("otp") ?? "";
 
   const startCooldown = () => {
     setCooldown(60);
@@ -38,6 +52,7 @@ export default function EmailVerification({ password }: { password?: string }) {
     }, 1000);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cooldown starts once on mount
   useEffect(() => {
     startCooldown();
     return () => {
@@ -50,15 +65,15 @@ export default function EmailVerification({ password }: { password?: string }) {
 
   const email = pendingVerificationEmail ?? "";
 
+  const onSubmit = async (data: EmailVerificationFormSchema) => {
+    clearError();
+    await verifyEmail(email, data.otp, password);
+  };
+
   const handleResend = async () => {
     clearError();
     startCooldown();
     await resendVerification(email);
-  };
-
-  const handleVerify = async () => {
-    clearError();
-    await verifyEmail(email, otp.trim(), password);
   };
 
   const handleBackToLogin = () => {
@@ -82,35 +97,38 @@ export default function EmailVerification({ password }: { password?: string }) {
         </div>
       )}
 
-      <div className="space-y-4">
-        <Field>
-          <FieldContent>
-            <FieldLabel htmlFor="otp">Verification code</FieldLabel>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <FormBase
+          control={control}
+          name="otp"
+          label="Verification code"
+          placeholder="123456"
+          required
+        >
+          {(field) => (
             <Input
-              id="otp"
-              name="otp"
-              placeholder="123456"
+              {...field}
               inputMode="numeric"
               maxLength={6}
-              value={otp}
               onChange={(e) =>
-                setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))
               }
             />
-          </FieldContent>
-        </Field>
+          )}
+        </FormBase>
 
         <Button
-          type="button"
+          type="submit"
           disabled={isLoading || otp.length !== 6}
           variant="default"
           size="sm"
           className="w-full"
-          onClick={handleVerify}
         >
           {isLoading ? "Verifying..." : "Verify"}
         </Button>
+      </form>
 
+      <div className="mt-4 space-y-4 mb-0">
         <Button
           type="button"
           disabled={cooldown > 0}
