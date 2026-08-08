@@ -189,6 +189,43 @@ describe("authStore email verification", () => {
     });
   });
 
+  it("verifyEmail surfaces the stashed recovery code after gated signup", async () => {
+    useAuthStore.setState({
+      pendingRecoveryStash: "stashed-recovery-code",
+    });
+    vi.mocked(authApi.verifyEmail).mockResolvedValue({
+      access_token: "at",
+      refresh_token: "rt",
+      user,
+      keyring: {
+        dek_wrapped_by_kek: "kek",
+        dek_wrapped_by_recovery: "rec",
+        private_key_wrapped_by_dek: "pk",
+      },
+    });
+
+    await useAuthStore.getState().verifyEmail("new@example.com", "123456");
+
+    const s = useAuthStore.getState();
+    expect(s.pendingRecoveryCode).toBe("stashed-recovery-code");
+    expect(s.pendingRecoveryContext).toBe("signup");
+    expect(s.pendingRecoveryStash).toBeNull();
+    expect(s.pendingVerificationEmail).toBeNull();
+  });
+
+  it("clearPendingVerification drops the recovery stash", () => {
+    useAuthStore.setState({
+      pendingVerificationEmail: "gate@example.com",
+      pendingRecoveryStash: "stashed-recovery-code",
+    });
+
+    useAuthStore.getState().clearPendingVerification();
+
+    const s = useAuthStore.getState();
+    expect(s.pendingVerificationEmail).toBeNull();
+    expect(s.pendingRecoveryStash).toBeNull();
+  });
+
   it("verifyEmail failure sets error and rethrows", async () => {
     vi.mocked(authApi.verifyEmail).mockRejectedValue(
       new AuthApiError(400, {

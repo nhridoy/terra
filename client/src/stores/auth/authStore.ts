@@ -93,6 +93,7 @@ interface AuthState {
   verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   clearPendingVerification: () => void;
+  pendingRecoveryStash: string | null;
   setAlwaysAsk: (flag: boolean) => Promise<void>;
 }
 
@@ -127,6 +128,7 @@ async function teardownSession(): Promise<void> {
     isUnlocked: false,
     pendingOAuth: null,
     pendingVerificationEmail: null,
+    pendingRecoveryStash: null,
   });
   await persistTokens(null);
   try {
@@ -170,6 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingRecoveryEmail: null,
   pendingOAuth: null,
   pendingVerificationEmail: null,
+  pendingRecoveryStash: null,
   alwaysAsk: false,
 
   prelogin: async (email: string) => {
@@ -210,7 +213,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (res.verification_required) {
-        set({ pendingVerificationEmail: email, isLoading: false });
+        set({
+          pendingVerificationEmail: email,
+          pendingRecoveryStash: material.recovery_code,
+          isLoading: false,
+        });
         return;
       }
 
@@ -264,6 +271,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isUnlocked: true,
         pendingVerificationEmail: null,
+        pendingRecoveryCode: get().pendingRecoveryStash,
+        pendingRecoveryContext: get().pendingRecoveryStash ? "signup" : null,
+        pendingRecoveryStash: null,
         isLoading: false,
       });
       await persistTokens(newTokens);
@@ -299,7 +309,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  clearPendingVerification: () => set({ pendingVerificationEmail: null }),
+  clearPendingVerification: () =>
+    set({ pendingVerificationEmail: null, pendingRecoveryStash: null }),
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
