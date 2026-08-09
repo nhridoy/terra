@@ -21,12 +21,14 @@ vi.mock("../../lib/api/auth", () => ({
     verifyEmail: vi.fn(),
     resendVerification: vi.fn(),
     logout: vi.fn(),
+    refresh: vi.fn(),
     fetchKeyring: vi.fn(),
     attachRecoveryMaterial: vi.fn(),
   },
   loadApiUrl: vi.fn(async () => {}),
   setRefreshTokenGetter: vi.fn(),
   setRefreshTokenSetter: vi.fn(),
+  setOnSessionRevoked: vi.fn(),
   AuthApiError: class AuthApiError extends Error {
     constructor(
       public status: number,
@@ -79,9 +81,15 @@ vi.mock("../../lib/common/device", () => ({
   getDeviceId: vi.fn(async () => "dev-1"),
 }));
 
-import { AuthApiError, authApi } from "../../lib/api/auth";
-import { savePassword } from "../../lib/keychain/keychain";
+import { AuthApiError, authApi, setOnSessionRevoked } from "../../lib/api/auth";
+import { clearKeychain, lockSession } from "../../lib/crypto/crypto";
+import { wipeLocalData } from "../../lib/db/db";
+import { deletePassword, savePassword } from "../../lib/keychain/keychain";
 import { useAuthStore } from "./authStore";
+
+// The store registers its session-revoked hook once at import time; capture
+// it before beforeEach's vi.clearAllMocks() wipes the mock record.
+const registeredRevokedHook = vi.mocked(setOnSessionRevoked).mock.calls[0]?.[0];
 
 const preloginResponse = {
   nonce: "n",
@@ -399,5 +407,64 @@ describe("authStore email verification", () => {
     useAuthStore.getState().clearPendingVerification();
 
     expect(useAuthStore.getState().pendingVerificationEmail).toBeNull();
+  });
+
+  it("logout fully tears down: keychain, refresh token, and local db", async () => {
+    useAuthStore.setState({
+      user,
+      tokens: { access_token: "at", refresh_token: "rt" },
+      isAuthenticated: true,
+      isUnlocked: true,
+    });
+
+    await useAuthStore.getState().logout();
+
+    expect(authApi.logout).toHaveBeenCalledWith("rt");
+    expect(lockSession).toHaveBeenCalled();
+    expect(deletePassword).toHaveBeenCalled();
+    expect(setRefreshToken).toHaveBeenCalledWith(null);
+    expect(clearKeychain).toHaveBeenCalled();
+    expect(wipeLocalData).toHaveBeenCalled();
+    const s = useAuthStore.getState();
+    expect(s.user).toBeNull();
+    expect(s.tokens).toBeNull();
+    expect(s.isAuthenticated).toBe(false);
+    expect(s.isUnlocked).toBe(false);
+  });
+
+  it("registering the session-revoked hook tears the session down when fired", async () => {
+    useAuthStore.setState({
+      user,
+      tokens: { access_token: "at", refresh_token: "rt" },
+      isAuthenticated: true,
+      isUnlocked: true,
+    });
+
+    const hook = registeredRevokedHook;
+    expect(hook).toBeTypeOf("function");
+
+    hook();
+    await vi.waitFor(() => {
+      const s = useAuthStore.getState();
+      expect(s.user).toBeNull();
+    });
+
+    expect(lockSession).toHaveBeenCalled();
+    expect(deletePassword).toHaveBeenCalled();
+    expect(wipeLocalData).toHaveBeenCalled();
+    const s = useAuthStore.getState();
+    expect(s.tokens).toBeNull();
+    expect(s.isAuthenticated).toBe(false);
+    expect(s.isUnlocked).toBe(false);
+  });
+
+  it("turning alwaysAsk on purges the saved password from the keychain", async () => {
+    useAuthStore.setState({ alwaysAsk: false });
+
+    await useAuthStore.getState().setAlwaysAsk(true);
+
+    const s = useAuthStore.getState();
+    expect(s.alwaysAsk).toBe(true);
+    expect(deletePassword).toHaveBeenCalled();
   });
 });

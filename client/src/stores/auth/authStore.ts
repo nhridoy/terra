@@ -5,6 +5,7 @@ import {
   authApi,
   type KeyringRows,
   loadApiUrl,
+  setOnSessionRevoked,
   setRefreshTokenGetter,
   setRefreshTokenSetter,
   type TokenPair,
@@ -50,6 +51,12 @@ setRefreshTokenSetter((token) => {
     });
   }
 });
+// A refresh token rejected by the server (revoked by recovery/password change
+// elsewhere, or reuse detection) must end the local session immediately;
+// teardownSession is defined below but only invoked at runtime.
+setOnSessionRevoked(() => {
+  void teardownSession();
+});
 
 interface AuthState {
   user: User | null;
@@ -72,7 +79,6 @@ interface AuthState {
   }>;
   register: (email: string, name: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  refresh: () => Promise<void>;
   logout: () => Promise<void>;
   unlock: (password: string) => Promise<void>;
   updateProfile: (data: {
@@ -424,23 +430,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             : "Login failed";
       set({ error: message, isLoading: false });
       throw err;
-    }
-  },
-
-  refresh: async () => {
-    const { tokens } = get();
-    if (!tokens?.refresh_token) return;
-
-    try {
-      const newTokens = await authApi.refresh(tokens.refresh_token);
-      const refreshedTokens = {
-        access_token: newTokens.access_token,
-        refresh_token: newTokens.refresh_token,
-      };
-      set({ tokens: refreshedTokens });
-      await persistTokens(refreshedTokens);
-    } catch {
-      await teardownSession();
     }
   },
 

@@ -84,6 +84,7 @@ cd server && go test ./...
 | `RATE_LIMIT_AUTH` | Requests/min for register/login | `10` |
 | `RATE_LIMIT_API` | Requests/min for sync/refresh | `30` |
 | `TRUSTED_PROXIES` | Comma-separated CIDRs of reverse proxies | empty (no proxy) |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed browser origins (Tauri webview + dev) | `http://localhost:1420, http://127.0.0.1:1420, http://tauri.localhost, tauri://localhost` |
 | `OAUTH_REDIRECT_BASE` | Public base URL for provider callbacks | `BASE_URL` |
 | `OAUTH_GOOGLE_CLIENT_ID` | Google OAuth client ID | empty (Google login disabled) |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
@@ -91,7 +92,8 @@ cd server && go test ./...
 | `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
 | `TERMVAULT_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
 | `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
-| `SMTP_HOST` | SMTP server hostname for verification emails (empty = OTP logged to console) | empty |
+| `LOG_OTP_FALLBACK` | DEV ONLY: log OTPs to console when SMTP unset (server refuses to start with verification on + no SMTP unless set) | `false` |
+| `SMTP_HOST` | SMTP server hostname for verification emails (empty = server refuses to issue OTPs unless `LOG_OTP_FALLBACK`) | empty |
 | `SMTP_PORT` | SMTP server port | `587` |
 | `SMTP_USERNAME` | SMTP auth username | empty |
 | `SMTP_PASSWORD` | SMTP auth password | empty |

@@ -11,7 +11,6 @@ import RecoveryRevealModal from "@/pages/auth/RecoveryRevealModal";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import SetupPage from "@/pages/auth/SetupPage";
 import EditorPage from "@/pages/EditorPage";
-import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import HistoryPage from "@/pages/HistoryPage";
 import HostsPage from "@/pages/HostsPage";
 import KeysPage from "@/pages/KeysPage";
@@ -50,7 +49,6 @@ function App() {
         <Route element={<AuthGuard requireAuth={false} />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/recovery" element={<RecoveryPage />} />
         </Route>

@@ -37,6 +37,7 @@ export async function setApiUrl(url: string): Promise<void> {
 
 let getRefreshTokenFn: (() => string | null) | null = null;
 let setRefreshTokenFn: ((token: string | null) => void) | null = null;
+let onSessionRevokedFn: (() => void) | null = null;
 
 export function setRefreshTokenGetter(fn: () => string | null): void {
   getRefreshTokenFn = fn;
@@ -46,6 +47,13 @@ export function setRefreshTokenSetter(
   fn: (token: string | null) => void,
 ): void {
   setRefreshTokenFn = fn;
+}
+
+// Called when the server rejects a refresh token (revoked by recovery,
+// password change on another device, or reuse detection). The store tears
+// down the session so the app does not stay "authenticated" with dead tokens.
+export function setOnSessionRevoked(fn: () => void): void {
+  onSessionRevokedFn = fn;
 }
 
 export interface ApiError {
@@ -114,10 +122,15 @@ async function apiFetch<T>(
               body: body ? JSON.stringify(body) : undefined,
             });
           }
+        } else if (refreshRes.status === 401) {
+          // The refresh token was revoked server-side (recovery or password
+          // change elsewhere, reuse detection). Fail the request and let the
+          // store tear down the session instead of silently staying logged in.
+          onSessionRevokedFn?.();
         }
       }
     } catch {
-      // Refresh failed, fall through to error handling below
+      // Refresh failed (network), fall through to error handling below
     }
   }
 
