@@ -1023,7 +1023,7 @@ func HandleVerifyEmail(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 
         code, err := findEmailVerifyCode(db, user.ID)
         if err != nil || code.ExpiresAt.Before(time.Now()) {
-            Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "verification code expired or missing")
+            Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "verification code expired or invalid")
             return
         }
 

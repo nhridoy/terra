@@ -1,4 +1,5 @@
 import { load } from "@tauri-apps/plugin-store";
+import { HttpError, httpRequest } from "./http";
 
 const AUTH_SETTINGS_FILE = "auth.json";
 const API_URL_KEY = "apiUrl";
@@ -35,27 +36,6 @@ export async function setApiUrl(url: string): Promise<void> {
   }
 }
 
-let getRefreshTokenFn: (() => string | null) | null = null;
-let setRefreshTokenFn: ((token: string | null) => void) | null = null;
-let onSessionRevokedFn: (() => void) | null = null;
-
-export function setRefreshTokenGetter(fn: () => string | null): void {
-  getRefreshTokenFn = fn;
-}
-
-export function setRefreshTokenSetter(
-  fn: (token: string | null) => void,
-): void {
-  setRefreshTokenFn = fn;
-}
-
-// Called when the server rejects a refresh token (revoked by recovery,
-// password change on another device, or reuse detection). The store tears
-// down the session so the app does not stay "authenticated" with dead tokens.
-export function setOnSessionRevoked(fn: () => void): void {
-  onSessionRevokedFn = fn;
-}
-
 export interface ApiError {
   code: string;
   message: string;
@@ -73,79 +53,58 @@ export class AuthApiError extends Error {
   }
 }
 
+// All traffic flows through the Rust http_request proxy: Rust holds the
+// tokens, refreshes on 401 (single-flight, one retry) and classifies
+// offline/rejected sessions. This layer only maps facade results onto the
+// AuthApiError shape the stores and forms consume.
 async function apiFetch<T>(
   method: string,
   path: string,
   body?: unknown,
-  token?: string,
+  opts: { auth?: boolean } = {},
 ): Promise<T> {
-  const url = `${getApiUrl()}${path}`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  let res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  // If 401 and we have a token, try refreshing and retrying once
-  if (res.status === 401 && token) {
-    try {
-      const storedRefresh = getRefreshTokenFn?.() ?? null;
-      if (storedRefresh) {
-        const refreshRes = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: storedRefresh }),
+  let res: { status: number; body: string };
+  try {
+    res = await httpRequest(method, path, body, opts);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      if (err.kind === "network") {
+        throw new AuthApiError(0, {
+          code: "NETWORK_ERROR",
+          message: err.message,
         });
-
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json();
-          const newAccessToken = refreshData.data?.access_token;
-          const newRefreshToken = refreshData.data?.refresh_token;
-
-          if (newAccessToken) {
-            if (newRefreshToken) {
-              setRefreshTokenFn?.(newRefreshToken);
-            }
-
-            // Retry original request with new token
-            headers.Authorization = `Bearer ${newAccessToken}`;
-            res = await fetch(url, {
-              method,
-              headers,
-              body: body ? JSON.stringify(body) : undefined,
-            });
-          }
-        } else if (refreshRes.status === 401) {
-          // The refresh token was revoked server-side (recovery or password
-          // change elsewhere, reuse detection). Fail the request and let the
-          // store tear down the session instead of silently staying logged in.
-          onSessionRevokedFn?.();
-        }
       }
-    } catch {
-      // Refresh failed (network), fall through to error handling below
+      throw new AuthApiError(401, {
+        code: "AUTH_EXPIRED",
+        message: err.message,
+      });
     }
+    throw err;
   }
 
   if (res.status === 204) {
     return undefined as T;
   }
 
-  const json = await res.json();
+  const json = res.body ? tryParseJson(res.body) : null;
 
-  if (!res.ok) {
-    const error = json?.error || { code: "UNKNOWN", message: "Request failed" };
+  if (res.status >= 400) {
+    const error = (json as { error?: ApiError } | null)?.error || {
+      code: "UNKNOWN",
+      message: `Request failed (${res.status})`,
+    };
     throw new AuthApiError(res.status, error);
   }
 
-  return json?.data ?? json;
+  return (json as { data?: T })?.data ?? (json as T);
+}
+
+function tryParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 export interface PreloginResponse {
@@ -216,6 +175,7 @@ export interface RecoveryPrefetchResponse {
   server_salt: string;
   salt_cl: string;
   dek_wrapped_by_recovery: string;
+  private_key_wrapped_by_dek: string;
 }
 
 export const authApi = {
@@ -252,9 +212,14 @@ export const authApi = {
   },
 
   async refresh(refreshToken: string): Promise<TokenPair> {
-    return apiFetch("POST", "/api/v1/auth/refresh", {
-      refresh_token: refreshToken,
-    });
+    return apiFetch(
+      "POST",
+      "/api/v1/auth/refresh",
+      {
+        refresh_token: refreshToken,
+      },
+      { auth: false },
+    );
   },
 
   async logout(refreshToken: string): Promise<void> {
@@ -263,24 +228,21 @@ export const authApi = {
     });
   },
 
-  async me(token: string): Promise<User> {
-    return apiFetch("GET", "/api/v1/me", undefined, token);
+  async me(): Promise<User> {
+    return apiFetch("GET", "/api/v1/me");
   },
 
-  async passwordChange(
-    params: {
-      old_proof: string;
-      old_nonce: string;
-      new_verifier: string;
-      new_encrypted_dek: string;
-      new_nonce: string;
-      new_kdf: { m: number; t: number; p: number };
-      new_server_salt: string;
-      new_salt_cl: string;
-    },
-    token: string,
-  ): Promise<void> {
-    return apiFetch("POST", "/api/v1/auth/password-change", params, token);
+  async passwordChange(params: {
+    old_proof: string;
+    old_nonce: string;
+    new_verifier: string;
+    new_encrypted_dek: string;
+    new_nonce: string;
+    new_kdf: { m: number; t: number; p: number };
+    new_server_salt: string;
+    new_salt_cl: string;
+  }): Promise<void> {
+    return apiFetch("POST", "/api/v1/auth/password-change", params);
   },
 
   async recoveryPrefetch(
@@ -342,20 +304,17 @@ export const authApi = {
     return apiFetch("POST", "/api/v1/auth/oauth/setup", params);
   },
 
-  async fetchKeyring(token: string): Promise<{
+  async fetchKeyring(): Promise<{
     keyring: KeyringRows;
     salt_cl: string;
   }> {
-    return apiFetch("GET", "/api/v1/auth/keyring", undefined, token);
+    return apiFetch("GET", "/api/v1/auth/keyring");
   },
 
-  async attachRecoveryMaterial(
-    params: {
-      recovery_code: string;
-      dek_wrapped_by_recovery: string;
-    },
-    token: string,
-  ): Promise<{ recovery_attached: boolean }> {
-    return apiFetch("POST", "/api/v1/auth/recovery-material", params, token);
+  async attachRecoveryMaterial(params: {
+    recovery_code: string;
+    dek_wrapped_by_recovery: string;
+  }): Promise<{ recovery_attached: boolean }> {
+    return apiFetch("POST", "/api/v1/auth/recovery-material", params);
   },
 };

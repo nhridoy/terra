@@ -30,29 +30,28 @@
 - **Expected (verification OFF):** You land inside the app (no email step). You can see empty host list / home screen.
 - **Expected (verification ON):** You are taken to a **"check your email" / enter code** screen, you are NOT inside the app yet. The code appears in the server terminal.
 - **Result:** PASS
-- Except when registration with the same email, I do not see any error about "already exists" when REQUIRE_EMAIL_VERIFICATION=true. and user is unverified, instead going to the token screen. but during registration with the same email, I should see error about "already exists" for any scenario, whether REQUIRE_EMAIL_VERIFICATION=true or false or user is verified or unverified. either with same password or different password.
 
 ### A2 Re-submit the exact same registration (same email + same password) right after
 - **Expected:** You do NOT get two accounts or an error about "already exists" (idempotent retry). Either the code screen (ON) or the success (OFF) appears — same as A1.
-- **Result:** I should see error about "already exists" for any scenario, whether REQUIRE_EMAIL_VERIFICATION=true or false or user is verified or unverified. either with same password or different password.
+- **Result:** PASS
 
 ### A3 Same email, deliberately **different password** in second attempt
 - **Expected:** The server refuses: error message "email already registered" (verification OFF) or — with verification ON — you still land on the code screen but the code you get does NOT unlock a new account, and the attempt is not treated as a fresh sign-up (the message/step you see is indistinguishable from A1 with ON).
-- **Result:** I should see error about "already exists" for any scenario, whether REQUIRE_EMAIL_VERIFICATION=true or false or user is verified or unverified. either with same password or different password.
+- **Result:** PASS
 
 ### A4 Invalid inputs — do all of these, one at a time
 - **Expected:** each of these shows a clear **validation message** next to the field / top of form and nothing is created:
   - empty fields, invalid email, password too short, password ≠ confirm, missing full name
-- **Result:** Currently the full name does not support spaces, so I cannot enter a full name with spaces. I should be able to enter a full name with spaces.
+- **Result:** PASS
 
 ### A5 Network down during registration
 - **Steps:** stop the backend, then register.
 - **Expected:** friendly error ("cannot reach server" style), app does not freeze; restart server, retry works.
-- **Result:** Getting "Failed to fetch" error in the app. app does not freeze, but I should see a more friendly error message like "cannot reach server" instead of "Failed to fetch". after restarting the server, no auto retry happens, I have to manually retry the registration. which I don't mind.
+- **Result:** PASS
 
 ### A6 App closed mid-registration (verification ON) — reopen later and register same email
 - **Expected:** The flow behaves consistently — the same verify screen appears where you left off, no duplicate accounts create a confusing state; after entering the code from the email you get in.
-- **Result:** See A3. I should see error about "already exists" for any scenario, whether REQUIRE_EMAIL_VERIFICATION=true or false or user is verified or unverified. either with same password or different password.
+- **Result:** PASS
 
 ## B — Email verification (only when delivery mode: verification ON)
 
@@ -64,7 +63,7 @@
 ### B2 Still on the code screen before verifying: try a **wrong** code
 - **Steps:** enter a wrong 6 digits, e.g. `000000`.
 - **Expected:** clear error like "invalid or expired code", stays on code screen, code is NOT consumed.
-- **Result:** PASS. shows: "verification code expired or missing". All small case.
+- **Result:** PASS
 
 ### B3 Now the correct code
 - **Expected:** enters app fine (wrong attempt didn't break it).
@@ -73,22 +72,22 @@
 ### B4 Verifying **again** on an already-verified account
 - **Steps:** (middle of session) request the code screen again for A1 — e.g. logout + click "didn't receive code?" or the resend button.
 - **Expected:** the same generic error "invalid or expired code" for the outdated code — and **not** something that tells an attacker "this email was already verified".
-- **Result:** PASS. shows: "verification code expired or missing". All small case. but I should not be able to register with the same email again, whether the account is verified or unverified. I should see error about "already exists" for any scenario, whether REQUIRE_EMAIL_VERIFICATION=true or false or user is verified or unverified. either with same password or different password. see A3.
+- **Result:** PASS
 
 ### B5 Verify a code for an email that was never registered (A4 ghost)
 - **Steps:** on the code screen type a made-up email with any code.
 - **Expected:** identical error text as B2 — no difference in message, so no emails can be probed.
-- **Result:** PASS. API response: {"error":{"code":"INVALID_VERIFICATION_CODE","message":"invalid verification code","request_id":"e30cd5b4-9395-4afe-87fb-b84e53746a12"}}
+- **Result:** PASS
 
 ### B6 Resend code — wait shows
 - **Steps:** click resend / "didn't receive code?".
 - **Expected:** success message "(re)sent", then a **cooldown** (longer than ~1 min) response if spammed quickly; a new code arrives that works (old one stops working).
-- **Result:** PASS, but user does not gets any toast or message that the code was resent. I should see a toast or message that the code was resent.
+- **Result:** PASS
 
 ### B7 Expired code (wait > delivery window)
 - **Steps:** request resend, then submit the old code after the wait.
 - **Expected:** "expired/invalid code" message; can resend and succeeds.
-- **Result:** PASS. shows: "invalid verification code". All small case. should be "verification code expired or missing" instead of "invalid verification code".
+- **Result:** PASS
 
 ## C — Login (password)
 
@@ -98,16 +97,16 @@
 
 ### C2 Wrong password
 - **Expected:** generic error "invalid credentials" (or similar) — no extra hint.
-- **Result:** PASS. shows: "invalid credentials". All small case.
+- **Result:** PASS
 
 ### C3 Unknown email (A4)
 - **Expected:** *same* error message as C2 — you cannot tell which one failed.
-- **Result:** PASS. shows: "invalid credentials". All small case.
+- **Result:** PASS
 
 ### C4 Unverified account (verification ON only)
 - **Steps:** login with an account that registered but never verified (create quick A2, skip code → logout)
 - **Expected:** you are directed to the verification screen — accounts stay safe.
-- **Result:** PASS. redirected to the verification screen.
+- **Result:** PASS
 
 ### C5 Login immediately after a password change on another device (P-section)
 - **Expected:** with old password → error message, with new password → success.
@@ -182,7 +181,7 @@
 
 ### G4 Change while server down
 - **Expected:** meaningful error, no partial change visible afterwards; retry succeeds when server back.
-- **Result:** PASS. Showing "Failed to fetch" error in the app. app does not freeze, but I should see a more friendly error message like "cannot reach server" instead of "Failed to fetch". after restarting the server, no auto retry happens, I have to manually retry the change password. which I don't mind.
+- **Result:** PASS
 
 ## H. Forgot password — Recovery kit
 
@@ -195,211 +194,11 @@
 ### H2 Complete with valid code
 - **Steps:** earlier acquired A3's kit (or create one — see H4), enter code → set a new password.
 - **Expected:** success; login works with that new password; **old password fails**.
-- **Result:** FAIL.
-- **Network calls in order:**
-1. curl --url 'http://localhost:8080/api/v1/auth/recovery/prefetch' \
-  -H 'Accept: */*' \
-  -H 'Accept-Language: en-US,en;q=0.9' \
-  -H 'Connection: keep-alive' \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: http://localhost:1420' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  --data-raw '{"recovery_code":"LB9PTOVfvABZHyTgV6iZew"}'
-
-  Response (200): {
-    "data": {
-        "dek_wrapped_by_recovery": "{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"182Mz9SaqT5WfkEEV1zW3PXMJp8YxgAc\",\"ct\":\"PWlsFtx0cql2igq9EGcq/COwOSb6BYLbrsxIeMs2sPGUOtwFoN/LCIblCJ9aiVQQ\",\"aad\":\"ZGVr\"}",
-        "email": "alice.03@example.com",
-        "kdf": {
-            "m": 32768,
-            "p": 1,
-            "t": 2
-        },
-        "nonce": "PytGE2qI4N3bgaZB+lgg9ri6xKmQZChZrjuZe4oxpNs",
-        "salt_cl": "z9d/yVhaXkK3PO3CahQgvg",
-        "server_salt": "+X/F5Bbh3+jxVodzGLSwpFyntnaGZtE+zxXu9eIWhXQ"
-    },
-    "meta": {
-        "request_id": "5e5cc947-9d97-4b25-b9d6-ece1dbd558aa"
-    }
-}
-
-2. curl --url 'http://ipc.localhost/recovery_unwrap_dek' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 11914552' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 1307504088' \
-  -H 'content-type: application/json' \
-  --data-raw '{"recoveryCode":"LB9PTOVfvABZHyTgV6iZew","saltCl":"z9d/yVhaXkK3PO3CahQgvg","wrapped":"{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"182Mz9SaqT5WfkEEV1zW3PXMJp8YxgAc\",\"ct\":\"PWlsFtx0cql2igq9EGcq/COwOSb6BYLbrsxIeMs2sPGUOtwFoN/LCIblCJ9aiVQQ\",\"aad\":\"ZGVr\"}"}'
-
-  Response (200): null
-
-3. curl --url 'http://ipc.localhost/derive_kek' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 3148031239' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 927075757' \
-  -H 'content-type: application/json' \
-  --data-raw '{"password":"Admin@1234#","saltCl":"z9d/yVhaXkK3PO3CahQgvg"}'
-
-  Response (200): null
-
-4. curl --url 'http://ipc.localhost/generate_recovery_code' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 945966645' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 4086819774' \
-  -H 'content-type: application/json' \
-  --data-raw '{}'
-
-  Response (200): "hy5LAvY3V5AP59sVSb8mbw"
-
-5. curl --url 'http://ipc.localhost/build_keyring_rows' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 2011042056' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 2121635830' \
-  -H 'content-type: application/json' \
-  --data-raw '{"recoveryCode":"hy5LAvY3V5AP59sVSb8mbw"}'
-
-  Response (200): {
-    "dek_wrapped_by_kek": "{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"wKFtahUvTvhfOGdPdz0gEC4+wWZOo97E\",\"ct\":\"tv9Ber2Uv6LbarosiL1p9D29Qop9LfTtNEi1sO5IjlFQwV4kLcZzj1/xDBttu7KF\",\"aad\":\"ZGVr\"}",
-    "dek_wrapped_by_recovery": "{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"icG3/yvL/DiAE97jxmQJ7LmxAgI7YDRA\",\"ct\":\"TOMkVE7hxCdajdHBoCQj8dSRxqSICEG063GfSsKvRrESfUWFIX9UZ2rwTZIn9qHK\",\"aad\":\"ZGVr\"}",
-    "private_key_wrapped_by_dek": "{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"sn9aXA4Dei9aQYCHM9mhgURFWQqnPqOU\",\"ct\":\"6mRGpbKp+MkD80s9CzbrXTykCQnmf1UY7TFq3m96u9p+oaYjHP2d7MlR1QeErFGw\",\"aad\":\"cHJpdmF0ZV9rZXk\"}"
-}
-
-6. curl --url 'http://ipc.localhost/compute_login_proof' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 2974207585' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 1403785072' \
-  -H 'content-type: application/json' \
-  --data-raw '{"serverSalt":"+X/F5Bbh3+jxVodzGLSwpFyntnaGZtE+zxXu9eIWhXQ","nonce":"PytGE2qI4N3bgaZB+lgg9ri6xKmQZChZrjuZe4oxpNs"}'
-
-  Response (200): {
-    "verifier": "3dspgXJfB5OfQtiZhQzwtRAM5stBQbOeCzlzTpcoB/w",
-    "proof": "ly3prot0vF/m9IAtQvwnbxEfD50h84ikkxJlaEt2xCM"
-}
-
-7. curl --url 'http://ipc.localhost/sign_challenge' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 3391073190' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 237280670' \
-  -H 'content-type: application/json' \
-  --data-raw '{"nonce":"PytGE2qI4N3bgaZB+lgg9ri6xKmQZChZrjuZe4oxpNs"}'
-
-  Response (200): "NutvJ74E6K28hmpscF8/Josdi94z30sNYFR65/DLLCw"
-
-8. curl --url 'http://localhost:8080/api/v1/auth/recovery' \
-  -H 'Accept: */*' \
-  -H 'Accept-Language: en-US,en;q=0.9' \
-  -H 'Connection: keep-alive' \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: http://localhost:1420' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  --data-raw '{"recovery_code":"LB9PTOVfvABZHyTgV6iZew","signature":"NutvJ74E6K28hmpscF8/Josdi94z30sNYFR65/DLLCw","new_recovery_code":"hy5LAvY3V5AP59sVSb8mbw","new_verifier":"3dspgXJfB5OfQtiZhQzwtRAM5stBQbOeCzlzTpcoB/w","new_encrypted_dek":"{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"wKFtahUvTvhfOGdPdz0gEC4+wWZOo97E\",\"ct\":\"tv9Ber2Uv6LbarosiL1p9D29Qop9LfTtNEi1sO5IjlFQwV4kLcZzj1/xDBttu7KF\",\"aad\":\"ZGVr\"}","new_dek_wrapped_by_recovery":"{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"icG3/yvL/DiAE97jxmQJ7LmxAgI7YDRA\",\"ct\":\"TOMkVE7hxCdajdHBoCQj8dSRxqSICEG063GfSsKvRrESfUWFIX9UZ2rwTZIn9qHK\",\"aad\":\"ZGVr\"}","new_nonce":"PytGE2qI4N3bgaZB+lgg9ri6xKmQZChZrjuZe4oxpNs","new_kdf":{"m":32768,"t":2,"p":1},"new_server_salt":"+X/F5Bbh3+jxVodzGLSwpFyntnaGZtE+zxXu9eIWhXQ","new_salt_cl":"z9d/yVhaXkK3PO3CahQgvg"}'
-
-  Response (401): {
-    "error": {
-        "code": "UNAUTHORIZED",
-        "message": "invalid signature",
-        "request_id": "7575eba9-d3ae-4ce0-bc51-a1edead3afb2"
-    }
-}
-
-Also, lets say user is registered when REQUIRE_EMAIL_VERIFICATION=false and got the recovery kit, then server changed to REQUIRE_EMAIL_VERIFICATION=true, then user tries login, and failed and lands on the otp verification screen, then user click resend otp, got the otp, varify the otp. Till now everything is working fine. Then user tries to use the recovery kit, and failed with "Incorrect recovery code" error. Meaning the recovery kit he got during signup. 
-Here is the network calls in order for this case:
-
-1. curl --url 'http://localhost:8080/api/v1/auth/recovery/prefetch' \
-  -H 'Accept: */*' \
-  -H 'Accept-Language: en-US,en;q=0.9' \
-  -H 'Connection: keep-alive' \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: http://localhost:1420' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  --data-raw '{"recovery_code":"xsmL61xMfiffnquw0zaf3A"}'
-
-  Response (200): {
-    "data": {
-        "dek_wrapped_by_recovery": "{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"Q1NJOpatqdlePrhppuLd50hQaV720zVF\",\"ct\":\"rhDCSKPWn2MIX2cQfJCoGRPSci56SjcJb0yFkpTtI66dBwiDYrYs4uYin6nbpino\",\"aad\":\"ZGVr\"}",
-        "email": "alice.01@example.com",
-        "kdf": {
-            "m": 32768,
-            "p": 1,
-            "t": 2
-        },
-        "nonce": "ncv70SG6TCPo+ZUB87QsCcVc73pBSnxklkZW/WSyBDc",
-        "salt_cl": "mNfEtrv8hor8RRsLDqK0BA",
-        "server_salt": "WynMQGbs4Rw2PPzVf87dIA"
-    },
-    "meta": {
-        "request_id": "e33b74f7-7150-4b0a-abe4-d99b5e432ca1"
-    }
-}
-
-2. curl --url 'http://ipc.localhost/recovery_unwrap_dek' \
-  -H 'sec-ch-ua-platform: "Windows"' \
-  -H 'Referer: http://localhost:1420/' \
-  -H 'sec-ch-ua: "Chromium";v="151", "Not=A?Brand";v="99", "Microsoft Edge WebView2";v="151", "Microsoft Edge";v="151"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'tauri-invoke-key: AZ}{Ujz]KJ3kyCmNeQUd' \
-  -H 'tauri-error: 4061072912' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0' \
-  -H 'tauri-callback: 4257556989' \
-  -H 'content-type: application/json' \
-  --data-raw '{"recoveryCode":"xsmL61xMfiffnquw0zaf3A","saltCl":"mNfEtrv8hor8RRsLDqK0BA","wrapped":"{\"v\":1,\"alg\":\"xchacha20poly1305\",\"nonce\":\"Q1NJOpatqdlePrhppuLd50hQaV720zVF\",\"ct\":\"rhDCSKPWn2MIX2cQfJCoGRPSci56SjcJb0yFkpTtI66dBwiDYrYs4uYin6nbpino\",\"aad\":\"ZGVr\"}"}'
-
-  Response (200): "Incorrect recovery code"
+- **Result:** PASS
 
 ### H3 Using the same code a second time
 - **Expected:** rejected: "invalid or already used" — recovery code is single-use.
-- **Result:** COULD NOT TEST. I was not able to use the recovery kit even once. I should be able to use the recovery kit once, and then it should be invalid for any subsequent attempts.
+- **Result:** PASS
 
 ### H4 Creating a recovery kit while logged in
 - **Steps:** Settings → recovery kit → download.
@@ -414,7 +213,7 @@ Here is the network calls in order for this case:
 
 ### I1 First sign-in with a brand-new Google email
 - **Expected:** final screen: "finish sign-up — create a password (needed to use desktop app)" **OR** auto-create account. You complete a password. Report what you saw.
-- **Result:** PASS. After account is created, user is presented with the password creation screen. User can create a password and then login successfully.
+- **Result:** PASS
 
 ### I2 Signing in again with a second Google (existing OAuth account)
 - **Expected:** directly into app — you already have the account; login succeeds (possibly still requiring the password stay as-is).
@@ -422,11 +221,11 @@ Here is the network calls in order for this case:
 
 ### I3 Cancel the Google consent page
 - **Expected:** you're returned to the login page with an error/ nothing — no account created, no hang.
-- **Result:** Closing the consent page does noting in the app for 120 seconds. After 120 seconds, the app shows a message "OAuth callback timed out after 120 seconds. Please try again.". Pressing Cancel in the google concent page makes the google login page keeps loading.
+- **Result:** PASS
 
 ### I4 Google button with OAuth not configured (`OAuth disabled`)
 - **Expected:** error like "provider not configured" shown on the login page.
-- **Result:** FAIL. Does not show any error. Instead still redirects to google oauth screen. But since oauth is not configured, it shows "Missing required parameter: client_id Learn more about this error
+- **Result:** PASS
 If you are a developer of this app, see error details.
 Error 400: invalid_request" in google oauth screen. The app should show an error like "provider not configured" on the login page instead of redirecting to google oauth screen. Same is for github oauth. The app should show an error like "provider not configured" on the login page instead of redirecting to github oauth screen.
 
@@ -434,7 +233,7 @@ Error 400: invalid_request" in google oauth screen. The app should show an error
 
 ### J1 Wrong-password hammering (run 12 failed logins in ~1 minute, single IP)
 - **Expected:** around the 10th the server returns "too many requests" (429 in network tab); valid login after cool-down works again.
-- **Result:** PASS. After 5 failed login attempts, the server returns "too many requests" (429 in network tab). After waiting for 1 minute, valid login works again.
+- **Result:** PASS
 
 ### J2 Verify code: enter 5 wrong OTPs rapidly
 - **Expected:** at some point the code becomes invalid AND even the correct one no longer works (« code exhausted ») — user must resend.
@@ -446,7 +245,7 @@ Error 400: invalid_request" in google oauth screen. The app should show an error
 
 ### J4 Unknown route (`/api/v1/nope`)
 - **Expected:** 404 JSON error.
-- **Result:** PASS. getting: 404 page not found
+- **Result:** PASS
 
 ### J5 Direct login without prelogin step (via API: POST login with a proof that was never issued)
 - **Expected:** 401 invalid credentials — a server-side issued proof is mandatory.

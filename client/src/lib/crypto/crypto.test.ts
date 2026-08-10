@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildKeyringRows,
+  clearAuthTokens,
   computeLoginProof,
   decryptObject,
   decryptSecret,
@@ -14,10 +15,13 @@ import {
   isEncrypted,
   lockSession,
   recoveryUnwrapDek,
+  setAuthTokens,
+  setBaseUrl,
   setCurrentUser,
   signChallenge,
   unlock,
   unwrapDek,
+  unwrapPrivateKey,
 } from "./crypto";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -257,6 +261,18 @@ describe("recoveryUnwrapDek", () => {
   });
 });
 
+describe("unwrapPrivateKey", () => {
+  it("invokes the rust command with the wrapped key", async () => {
+    mockInvoke.mockResolvedValue(void 0);
+
+    await unwrapPrivateKey("wrapped-priv");
+
+    expect(mockInvoke).toHaveBeenCalledWith("unwrap_private_key", {
+      wrapped: "wrapped-priv",
+    });
+  });
+});
+
 describe("signChallenge", () => {
   it("calls invoke with nonce", async () => {
     mockInvoke.mockResolvedValue("sig-b64");
@@ -277,6 +293,48 @@ describe("lockSession", () => {
     await lockSession();
 
     expect(mockInvoke).toHaveBeenCalledWith("lock_session");
+  });
+});
+
+describe("token custody handoff", () => {
+  it("setBaseUrl forwards the URL to Rust", async () => {
+    mockInvoke.mockResolvedValue(undefined);
+
+    await setBaseUrl("http://localhost:8080");
+
+    expect(mockInvoke).toHaveBeenCalledWith("set_base_url", {
+      url: "http://localhost:8080",
+    });
+  });
+
+  it("setAuthTokens forwards the pair to Rust", async () => {
+    mockInvoke.mockResolvedValue(undefined);
+
+    await setAuthTokens("at", "rt");
+
+    expect(mockInvoke).toHaveBeenCalledWith("set_auth_tokens", {
+      accessToken: "at",
+      refreshToken: "rt",
+    });
+  });
+
+  it("setAuthTokens sends null when no refresh token is provided", async () => {
+    mockInvoke.mockResolvedValue(undefined);
+
+    await setAuthTokens("at");
+
+    expect(mockInvoke).toHaveBeenCalledWith("set_auth_tokens", {
+      accessToken: "at",
+      refreshToken: null,
+    });
+  });
+
+  it("clearAuthTokens clears the Rust token state", async () => {
+    mockInvoke.mockResolvedValue(undefined);
+
+    await clearAuthTokens();
+
+    expect(mockInvoke).toHaveBeenCalledWith("clear_auth_tokens");
   });
 });
 

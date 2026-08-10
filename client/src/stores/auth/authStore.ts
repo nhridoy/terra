@@ -3,30 +3,32 @@ import { create } from "zustand";
 import {
   AuthApiError,
   authApi,
+  getApiUrl,
   type KeyringRows,
   loadApiUrl,
-  setOnSessionRevoked,
-  setRefreshTokenGetter,
-  setRefreshTokenSetter,
   type TokenPair,
   type User,
 } from "../../lib/api/auth";
+import { onSessionRevoked } from "../../lib/api/http";
 import { getDeviceId } from "../../lib/common/device";
 import {
   buildKeyringRows,
+  clearAuthTokens,
   clearKeychain,
   computeLoginProof,
   deriveKek,
   generateAccountMaterial,
   generateRecoveryCode,
-  getRefreshToken,
   loadRefreshToken,
   lockSession,
   recoveryUnwrapDek,
   saveRefreshToken,
+  setAuthTokens,
+  setBaseUrl,
   setRefreshToken,
   signChallenge,
   unwrapDek,
+  unwrapPrivateKey,
   wrapDek,
   wrapDekWithRecovery,
 } from "../../lib/crypto/crypto";
@@ -36,25 +38,12 @@ import {
   loadPassword,
   savePassword,
 } from "../../lib/keychain/keychain";
-import { startOAuthFlow } from "../../lib/oauth/oauth";
+import { cancelOAuthFlow, startOAuthFlow } from "../../lib/oauth/oauth";
 
-// Wire up refresh token getter/setter for apiFetch auto-refresh.
-// The setter also persists rotated tokens to the OS keychain, otherwise
-// the server's rotation revokes the copy we stored and the next launch
-// would be logged out (see HandleRefresh reuse detection).
-setRefreshTokenGetter(getRefreshToken);
-setRefreshTokenSetter((token) => {
-  setRefreshToken(token ?? null);
-  if (token) {
-    void saveRefreshToken(token).catch(() => {
-      // keychain write failures are non-fatal; the next explicit persist retries
-    });
-  }
-});
-// A refresh token rejected by the server (revoked by recovery/password change
-// elsewhere, or reuse detection) must end the local session immediately;
-// teardownSession is defined below but only invoked at runtime.
-setOnSessionRevoked(() => {
+// A session revoked by Rust (refresh rejected server-side — recovery,
+// password change elsewhere, or reuse detection) must end the local session
+// immediately; teardownSession is defined below but only invoked at runtime.
+onSessionRevoked(() => {
   void teardownSession();
 });
 
@@ -97,6 +86,7 @@ interface AuthState {
   clearError: () => void;
   restoreSession: () => Promise<void>;
   oauthStartFlow: (provider: string) => Promise<{ needsSetup: boolean }>;
+  cancelOAuth: () => Promise<void>;
   oauthSetup: (password: string) => Promise<void>;
   verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
@@ -108,7 +98,8 @@ interface AuthState {
 }
 
 async function persistTokens(tokens: TokenPair | null): Promise<void> {
-  // Set in-memory first so apiFetch auto-refresh has it immediately
+  // In-memory mirror for anything still reading it; Rust owns the operative
+  // custody (access token in memory, refresh token in the OS keychain).
   setRefreshToken(tokens?.refresh_token ?? null);
   try {
     if (tokens?.refresh_token) {
@@ -140,6 +131,11 @@ async function teardownSession(): Promise<void> {
     pendingVerificationEmail: null,
   });
   await persistTokens(null);
+  try {
+    await clearAuthTokens();
+  } catch {
+    // ignore: Rust token state is best-effort on teardown
+  }
   try {
     await wipeLocalData();
   } catch {
@@ -245,6 +241,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isUnlocked: true,
         isLoading: false,
       });
+      await setAuthTokens(pair.access_token, pair.refresh_token);
       await persistTokens(pair);
       if (!get().alwaysAsk) {
         await savePassword(password);
@@ -293,6 +290,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         pendingVerificationEmail: null,
         isLoading: false,
       });
+      await setAuthTokens(newTokens.access_token, newTokens.refresh_token);
       await persistTokens(newTokens);
       if (password && !get().alwaysAsk) {
         await savePassword(password);
@@ -346,19 +344,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       let keyring = existingKeyring ?? null;
       if (!keyring) {
-        const res = await authApi.fetchKeyring(tokens.access_token);
+        const res = await authApi.fetchKeyring();
         keyring = res.keyring;
       }
       if (keyring?.dek_wrapped_by_recovery) return null;
       const recoveryCode = await generateRecoveryCode();
       const dekWrappedByRecovery = await wrapDekWithRecovery(recoveryCode);
-      await authApi.attachRecoveryMaterial(
-        {
-          recovery_code: recoveryCode,
-          dek_wrapped_by_recovery: dekWrappedByRecovery,
-        },
-        tokens.access_token,
-      );
+      await authApi.attachRecoveryMaterial({
+        recovery_code: recoveryCode,
+        dek_wrapped_by_recovery: dekWrappedByRecovery,
+      });
       return recoveryCode;
     } catch {
       return null;
@@ -400,6 +395,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         pendingVerificationEmail: null,
         isLoading: false,
       });
+      await setAuthTokens(newTokens.access_token, newTokens.refresh_token);
       await persistTokens(newTokens);
       if (!get().alwaysAsk) {
         await savePassword(password);
@@ -452,9 +448,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!user || !tokens) {
         throw new Error("Not authenticated");
       }
-      const { keyring, salt_cl } = await authApi.fetchKeyring(
-        tokens.access_token,
-      );
+      const { keyring, salt_cl } = await authApi.fetchKeyring();
       await deriveKek(password, salt_cl);
       await unwrapDek(keyring.dek_wrapped_by_kek);
       set({ isUnlocked: true });
@@ -504,15 +498,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       prelogin.nonce,
     );
 
-    // 3. Generate new KDF params + new salts
+    // 3. Generate new KDF params + a fresh server salt, but KEEP the current
+    // salt_cl: the recovery kit's dek_wrapped_by_recovery is wrapped under a
+    // recovery-KEK derived from salt_cl, so rotating it would break recovery
     const newKdf = {
       m: 32768,
       t: 2,
       p: 1,
     };
+    const newSaltCl = prelogin.salt_cl;
     const rand16 = new Uint8Array(16);
-    crypto.getRandomValues(rand16);
-    const newSaltCl = btoa(String.fromCharCode(...rand16)).replace(/=+$/, "");
     crypto.getRandomValues(rand16);
     const newServerSalt = btoa(String.fromCharCode(...rand16)).replace(
       /=+$/,
@@ -527,19 +522,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const newEncryptedDek = await wrapDek();
 
     // 6. Send to server
-    await authApi.passwordChange(
-      {
-        old_proof: oldProof.proof,
-        old_nonce: prelogin.nonce,
-        new_verifier: newVerifier.verifier,
-        new_encrypted_dek: newEncryptedDek,
-        new_nonce: prelogin.nonce,
-        new_kdf: newKdf,
-        new_server_salt: newServerSalt,
-        new_salt_cl: newSaltCl,
-      },
-      tokens.access_token,
-    );
+    await authApi.passwordChange({
+      old_proof: oldProof.proof,
+      old_nonce: prelogin.nonce,
+      new_verifier: newVerifier.verifier,
+      new_encrypted_dek: newEncryptedDek,
+      new_nonce: prelogin.nonce,
+      new_kdf: newKdf,
+      new_server_salt: newServerSalt,
+      new_salt_cl: newSaltCl,
+    });
 
     // 7. Refresh the OS keychain entry with the new password
     if (!get().alwaysAsk) {
@@ -572,21 +564,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         prefetch.dek_wrapped_by_recovery,
       );
 
-      // 2. Derive the new KEK from the new password
+      // 2. Load the account private key so the nonce signature is a real
+      // proof of possession of the recovered identity
+      await unwrapPrivateKey(prefetch.private_key_wrapped_by_dek);
+
+      // 3. Derive the new KEK from the new password
       await deriveKek(newPassword, prefetch.salt_cl);
 
-      // 3. Rotate the recovery code: fresh code + re-wrap the DEK under it and the new KEK
+      // 4. Rotate the recovery code: fresh code + re-wrap the DEK under it and the new KEK
       const newCode = await generateRecoveryCode();
       const keyring = await buildKeyringRows(newCode);
 
-      // 4. Compute new verifier and sign the nonce (proof of possession)
+      // 5. Compute new verifier and sign the nonce (proof of possession)
       const newProof = await computeLoginProof(
         prefetch.server_salt,
         prefetch.nonce,
       );
       const signature = await signChallenge(prefetch.nonce);
 
-      // 5. Send to server
+      // 6. Send to server
       await authApi.recovery({
         recovery_code: recoveryCode,
         signature,
@@ -629,6 +625,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await loadApiUrl();
         const alwaysAsk = await loadAlwaysAsk();
         set({ alwaysAsk });
+        try {
+          await setBaseUrl(getApiUrl());
+        } catch {
+          // ignore: Rust falls back to the compiled-in default URL
+        }
 
         const refreshToken = await loadRefreshToken();
 
@@ -640,9 +641,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               refresh_token: newTokens.refresh_token,
             };
             set({ tokens, isAuthenticated: true });
+            await setAuthTokens(tokens.access_token, tokens.refresh_token);
             await persistTokens(tokens);
 
-            const user = await authApi.me(newTokens.access_token);
+            const user = await authApi.me();
             set({ user });
 
             // D6: auto-unlock via OS keychain unless the user opted out
@@ -650,9 +652,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             if (!alwaysAsk) {
               set({ unlockPending: true });
               try {
-                const { keyring, salt_cl } = await authApi.fetchKeyring(
-                  newTokens.access_token,
-                );
+                const { keyring, salt_cl } = await authApi.fetchKeyring();
                 autoKeyring = keyring;
                 const savedPassword = await loadPassword();
                 if (savedPassword) {
@@ -726,16 +726,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         isLoading: false,
       });
+      await setAuthTokens(newTokens.access_token, newTokens.refresh_token);
       await persistTokens(newTokens);
-      const user = await authApi.me(newTokens.access_token);
+      const user = await authApi.me();
       set({ user });
 
       // If this device has the account's password, auto-unlock.
       if (!get().alwaysAsk) {
         try {
-          const { keyring, salt_cl } = await authApi.fetchKeyring(
-            newTokens.access_token,
-          );
+          const { keyring, salt_cl } = await authApi.fetchKeyring();
           const savedPassword = await loadPassword();
           if (savedPassword) {
             await deriveKek(savedPassword, salt_cl);
@@ -756,6 +755,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             : "OAuth sign-in failed";
       set({ error: message, isLoading: false });
       throw err;
+    }
+  },
+
+  cancelOAuth: async () => {
+    try {
+      await cancelOAuthFlow();
+    } catch {
+      // no active attempt — nothing to cancel
     }
   },
 
@@ -798,6 +805,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         pendingOAuth: null,
         isLoading: false,
       });
+      await setAuthTokens(newTokens.access_token, newTokens.refresh_token);
       await persistTokens(newTokens);
       if (!get().alwaysAsk) {
         await savePassword(password);

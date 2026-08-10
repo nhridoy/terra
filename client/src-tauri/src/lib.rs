@@ -3,6 +3,7 @@
 mod git;
 mod crypto;
 mod db;
+mod http;
 mod oauth;
 
 use std::collections::{HashMap, BTreeMap};
@@ -826,6 +827,15 @@ fn recovery_unwrap_dek(recovery_code: String, salt_cl: String, wrapped: String, 
 }
 
 #[tauri::command]
+fn unwrap_private_key(wrapped: String, state: tauri::State<'_, CryptoState>) -> Result<(), String> {
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    if session.dek == [0u8; 32] {
+        return Err("DEK not derived - unlock or recover first".to_string());
+    }
+    crypto::unwrap_private_key(&wrapped, &mut session)
+}
+
+#[tauri::command]
 fn wrap_dek_with_recovery(recovery_code: String, state: tauri::State<'_, CryptoState>) -> Result<String, String> {
     let session = state.session.lock().map_err(|e| e.to_string())?;
     // The account salt lives in the session (derived at auth); wrapping under
@@ -904,6 +914,7 @@ pub fn run() {
         .manage(CryptoState {
             session: std::sync::Mutex::new(crypto::KeySession::new()),
         })
+        .manage(http::HttpState::new(http::DEFAULT_BASE_URL.to_string()))
         .manage(git::GitLock(std::sync::Arc::new(Mutex::new(()))))
         .manage(LocalSessions {
             ptys: Mutex::new(HashMap::new()),
@@ -968,11 +979,17 @@ pub fn run() {
             decrypt_secret,
             unwrap_dek,
             recovery_unwrap_dek,
+            unwrap_private_key,
             wrap_dek_with_recovery,
             sign_challenge,
             lock_session,
             unlock,
             wrap_dek,
+            http::http_request,
+            http::set_auth_tokens,
+            http::clear_auth_tokens,
+            http::set_base_url,
+            http::get_request_log,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

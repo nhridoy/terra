@@ -24,6 +24,7 @@ export default function EmailVerification({ password }: { password?: string }) {
     clearError,
   } = useAuthStore();
   const [cooldown, setCooldown] = useState(0);
+  const [resent, setResent] = useState(false);
   const timerRef = useRef<number | null>(null);
 
   const { control, handleSubmit, watch } = useForm<EmailVerificationFormSchema>(
@@ -71,8 +72,10 @@ export default function EmailVerification({ password }: { password?: string }) {
 
   const handleResend = async () => {
     clearError();
+    setResent(false);
     startCooldown();
     await resendVerification(email);
+    setResent(true);
   };
 
   const handleBackToLogin = () => {
@@ -93,6 +96,12 @@ export default function EmailVerification({ password }: { password?: string }) {
       {error && (
         <div className="mb-4">
           <Alert variant="error">{error}</Alert>
+        </div>
+      )}
+
+      {resent && (
+        <div className="mb-4">
+          <Alert variant="success">A new code has been sent to {email}</Alert>
         </div>
       )}
 

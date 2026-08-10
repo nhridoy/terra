@@ -61,18 +61,18 @@ export default function RegisterPage() {
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <FormInput
                 control={control}
-                name="email"
-                label="Email"
-                placeholder="you@example.com"
-                required={requiredFields.includes("email")}
-              />
-
-              <FormInput
-                control={control}
                 name="full_name"
                 label="Full Name"
                 placeholder="John Doe"
                 required={requiredFields.includes("full_name")}
+              />
+
+              <FormInput
+                control={control}
+                name="email"
+                label="Email"
+                placeholder="you@example.com"
+                required={requiredFields.includes("email")}
               />
 
               <FormInput

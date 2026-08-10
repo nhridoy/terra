@@ -281,6 +281,20 @@ pub fn recovery_unwrap_dek(
     Ok(())
 }
 
+pub fn unwrap_private_key(wrapped_b64: &str, session: &mut KeySession) -> Result<(), String> {
+    let private_key_bytes = decrypt_bytes(wrapped_b64, &session.dek)
+        .map_err(|_| "Incorrect password".to_string())?;
+    if private_key_bytes.len() != 32 {
+        return Err("Invalid private key length".to_string());
+    }
+    let mut key_bytes = [0u8; 32];
+    key_bytes.copy_from_slice(&private_key_bytes);
+    session.private_key = StaticSecret::from(key_bytes);
+    session.public_key = PublicKey::from(&session.private_key);
+    key_bytes.zeroize();
+    Ok(())
+}
+
 pub fn sign_challenge(nonce_b64: &str, session: &KeySession) -> Result<String, String> {
     let nonce = BASE64
         .decode(nonce_b64)
@@ -517,6 +531,46 @@ mod tests {
 
         let zero_salt = BASE64.encode([0u8; SALT_CL_LEN]);
         let result = wrap_dek_with_recovery(&material.recovery_code, &zero_salt, &session);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unwrap_private_key_roundtrip() {
+        let mut session = KeySession::new();
+        let material = generate_account_material(&mut session).unwrap();
+        let kek = derive_kek_bytes("password", &session.salt_cl).unwrap();
+        let keyring = build_keyring_rows(&kek, &material.recovery_code, &session).unwrap();
+
+        let original_public_key = session.public_key;
+
+        lock(&mut session);
+        recovery_unwrap_dek(
+            &material.recovery_code,
+            &material.salt_cl,
+            &keyring.dek_wrapped_by_recovery,
+            &mut session,
+        )
+        .unwrap();
+        unwrap_private_key(&keyring.private_key_wrapped_by_dek, &mut session).unwrap();
+
+        assert_eq!(session.public_key, original_public_key);
+
+        let nonce = BASE64.encode([7u8; 32]);
+        let signature = sign_challenge(&nonce, &session).unwrap();
+        assert!(!signature.is_empty());
+    }
+
+    #[test]
+    fn test_unwrap_private_key_wrong_dek() {
+        let mut session = KeySession::new();
+        let material = generate_account_material(&mut session).unwrap();
+        let kek = derive_kek_bytes("password", &session.salt_cl).unwrap();
+        let keyring = build_keyring_rows(&kek, &material.recovery_code, &session).unwrap();
+
+        let mut other = KeySession::new();
+        let _ = generate_account_material(&mut other).unwrap();
+
+        let result = unwrap_private_key(&keyring.private_key_wrapped_by_dek, &mut other);
         assert!(result.is_err());
     }
 

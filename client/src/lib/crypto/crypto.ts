@@ -139,6 +139,10 @@ export async function recoveryUnwrapDek(
   return invoke<void>("recovery_unwrap_dek", { recoveryCode, saltCl, wrapped });
 }
 
+export async function unwrapPrivateKey(wrapped: string): Promise<void> {
+  return invoke<void>("unwrap_private_key", { wrapped });
+}
+
 export async function wrapDekWithRecovery(
   recoveryCode: string,
 ): Promise<string> {
@@ -178,6 +182,28 @@ export async function loadRefreshToken(): Promise<string | null> {
 
 export async function clearKeychain(): Promise<void> {
   await deletePasswords([REFRESH_TOKEN_ACCOUNT]);
+}
+
+// Token custody handoff: the Rust http proxy owns the access token (memory)
+// and persists the refresh token via its own keyring provider. The webview
+// hands tokens over at every successful auth moment and clears them on
+// session teardown.
+export async function setBaseUrl(url: string): Promise<void> {
+  await invoke("set_base_url", { url });
+}
+
+export async function setAuthTokens(
+  accessToken: string,
+  refreshToken?: string,
+): Promise<void> {
+  await invoke("set_auth_tokens", {
+    accessToken,
+    refreshToken: refreshToken ?? null,
+  });
+}
+
+export async function clearAuthTokens(): Promise<void> {
+  await invoke("clear_auth_tokens");
 }
 
 let inMemoryRefreshToken: string | null = null;

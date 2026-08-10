@@ -22,13 +22,15 @@ vi.mock("../../lib/api/auth", () => ({
     resendVerification: vi.fn(),
     logout: vi.fn(),
     refresh: vi.fn(),
+    me: vi.fn(),
     fetchKeyring: vi.fn(),
     attachRecoveryMaterial: vi.fn(),
+    recoveryPrefetch: vi.fn(),
+    recovery: vi.fn(),
+    passwordChange: vi.fn(),
   },
   loadApiUrl: vi.fn(async () => {}),
-  setRefreshTokenGetter: vi.fn(),
-  setRefreshTokenSetter: vi.fn(),
-  setOnSessionRevoked: vi.fn(),
+  getApiUrl: vi.fn(() => "http://localhost:8080"),
   AuthApiError: class AuthApiError extends Error {
     constructor(
       public status: number,
@@ -37,6 +39,10 @@ vi.mock("../../lib/api/auth", () => ({
       super(apiError.message);
     }
   },
+}));
+
+vi.mock("../../lib/api/http", () => ({
+  onSessionRevoked: vi.fn(),
 }));
 
 vi.mock("../../lib/crypto/crypto", () => ({
@@ -56,12 +62,18 @@ vi.mock("../../lib/crypto/crypto", () => ({
     verifier: "verifier",
   })),
   unwrapDek: vi.fn(async () => {}),
+  wrapDek: vi.fn(async () => "new-dek"),
+  recoveryUnwrapDek: vi.fn(async () => {}),
+  unwrapPrivateKey: vi.fn(async () => {}),
   lockSession: vi.fn(async () => {}),
   clearKeychain: vi.fn(async () => {}),
   setRefreshToken,
   getRefreshToken,
   saveRefreshToken: vi.fn(async () => {}),
   loadRefreshToken: vi.fn(async () => null),
+  setBaseUrl: vi.fn(async () => {}),
+  setAuthTokens: vi.fn(async () => {}),
+  clearAuthTokens: vi.fn(async () => {}),
   signChallenge: vi.fn(async () => "sig"),
   generateRecoveryCode: vi.fn(async () => "new-recovery-code"),
   wrapDekWithRecovery: vi.fn(async () => "wrapped-recovery"),
@@ -81,15 +93,21 @@ vi.mock("../../lib/common/device", () => ({
   getDeviceId: vi.fn(async () => "dev-1"),
 }));
 
-import { AuthApiError, authApi, setOnSessionRevoked } from "../../lib/api/auth";
-import { clearKeychain, lockSession } from "../../lib/crypto/crypto";
+import { AuthApiError, authApi } from "../../lib/api/auth";
+import { onSessionRevoked } from "../../lib/api/http";
+import {
+  clearKeychain,
+  loadRefreshToken,
+  lockSession,
+  setAuthTokens,
+} from "../../lib/crypto/crypto";
 import { wipeLocalData } from "../../lib/db/db";
 import { deletePassword, savePassword } from "../../lib/keychain/keychain";
 import { useAuthStore } from "./authStore";
 
 // The store registers its session-revoked hook once at import time; capture
 // it before beforeEach's vi.clearAllMocks() wipes the mock record.
-const registeredRevokedHook = vi.mocked(setOnSessionRevoked).mock.calls[0]?.[0];
+const registeredRevokedHook = vi.mocked(onSessionRevoked).mock.calls[0]?.[0];
 
 const preloginResponse = {
   nonce: "n",
@@ -161,13 +179,10 @@ describe("authStore email verification", () => {
         keyring: expect.objectContaining({ dek_wrapped_by_recovery: "" }),
       }),
     );
-    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith(
-      {
-        recovery_code: "new-recovery-code",
-        dek_wrapped_by_recovery: "wrapped-recovery",
-      },
-      "at",
-    );
+    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith({
+      recovery_code: "new-recovery-code",
+      dek_wrapped_by_recovery: "wrapped-recovery",
+    });
     // the keyring from the register response is reused — no extra fetch
     expect(authApi.fetchKeyring).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
@@ -261,13 +276,10 @@ describe("authStore email verification", () => {
       .getState()
       .verifyEmail("new@example.com", "123456", "pw");
 
-    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith(
-      {
-        recovery_code: "new-recovery-code",
-        dek_wrapped_by_recovery: "wrapped-recovery",
-      },
-      "at",
-    );
+    expect(authApi.attachRecoveryMaterial).toHaveBeenCalledWith({
+      recovery_code: "new-recovery-code",
+      dek_wrapped_by_recovery: "wrapped-recovery",
+    });
     // the keyring from the verify response is reused — no extra fetch
     expect(authApi.fetchKeyring).not.toHaveBeenCalled();
     const s = useAuthStore.getState();
@@ -466,5 +478,98 @@ describe("authStore email verification", () => {
     const s = useAuthStore.getState();
     expect(s.alwaysAsk).toBe(true);
     expect(deletePassword).toHaveBeenCalled();
+  });
+
+  it("recovery unwraps the private key before signing with the recovered identity", async () => {
+    vi.mocked(authApi.recoveryPrefetch).mockResolvedValue({
+      nonce: "recovery-nonce",
+      email: "recovered@example.com",
+      kdf: { m: 32768, t: 2, p: 1 },
+      server_salt: "ss",
+      salt_cl: "sc",
+      dek_wrapped_by_recovery: "wrapped-dek",
+      private_key_wrapped_by_dek: "wrapped-priv",
+    });
+    vi.mocked(authApi.recovery).mockResolvedValue({
+      recovery_emitted: true,
+    });
+
+    await useAuthStore.getState().recovery("rc-code", "new-password");
+
+    const { recoveryUnwrapDek, unwrapPrivateKey } = await import(
+      "../../lib/crypto/crypto"
+    );
+    expect(recoveryUnwrapDek).toHaveBeenCalledWith(
+      "rc-code",
+      "sc",
+      "wrapped-dek",
+    );
+    expect(unwrapPrivateKey).toHaveBeenCalledWith("wrapped-priv");
+    expect(vi.mocked(authApi.recovery)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signature: "sig",
+        new_recovery_code: "new-recovery-code",
+        new_salt_cl: "sc",
+      }),
+    );
+    const s = useAuthStore.getState();
+    expect(s.pendingRecoveryCode).toBe("new-recovery-code");
+    expect(s.pendingRecoveryContext).toBe("recovery");
+    expect(s.pendingRecoveryEmail).toBe("recovered@example.com");
+    expect(s.isLoading).toBe(false);
+  });
+
+  it("changePassword keeps the original salt_cl so the recovery kit survives", async () => {
+    useAuthStore.setState({
+      user,
+      tokens: { access_token: "at", refresh_token: "rt" },
+      isAuthenticated: true,
+    });
+    vi.mocked(authApi.prelogin).mockResolvedValue(preloginResponse);
+    vi.mocked(authApi.passwordChange).mockResolvedValue({
+      password_changed: true,
+    });
+
+    await useAuthStore.getState().changePassword("old-pw", "new-pw");
+
+    expect(authApi.passwordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        new_salt_cl: preloginResponse.salt_cl,
+      }),
+    );
+    const saved = vi.mocked(authApi.passwordChange).mock.calls[0][0] as {
+      new_salt_cl: string;
+    };
+    expect(saved.new_salt_cl).toBe("sc");
+  });
+
+  it("restoreSession hands the refreshed pair to Rust and loads the user", async () => {
+    vi.mocked(loadRefreshToken).mockResolvedValue("saved-rt");
+    vi.mocked(authApi.refresh).mockResolvedValue({
+      access_token: "at2",
+      refresh_token: "rt2",
+    });
+    vi.mocked(authApi.me).mockResolvedValue(user);
+
+    await useAuthStore.getState().restoreSession();
+
+    expect(setAuthTokens).toHaveBeenCalledWith("at2", "rt2");
+    expect(authApi.me).toHaveBeenCalledWith();
+    const s = useAuthStore.getState();
+    expect(s.isAuthenticated).toBe(true);
+    expect(s.tokens).toEqual({ access_token: "at2", refresh_token: "rt2" });
+    expect(s.user).toEqual(user);
+    expect(s.isInitialized).toBe(true);
+  });
+
+  it("restoreSession with no saved refresh token stays signed out", async () => {
+    vi.mocked(loadRefreshToken).mockResolvedValue(null);
+    await useAuthStore.getState().restoreSession();
+
+    expect(authApi.refresh).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    const s = useAuthStore.getState();
+    expect(s.isAuthenticated).toBe(false);
+    expect(s.isInitialized).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth/authStore";
 export default function OAuthLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const oauthStartFlow = useAuthStore((s) => s.oauthStartFlow);
+  const oauthCancel = useAuthStore((s) => s.cancelOAuth);
   const navigate = useNavigate();
 
   const handleOAuthLogin = async (provider: "github" | "google") => {
@@ -17,6 +18,14 @@ export default function OAuthLogin() {
       }
     } catch {
       // error is shown via the store's error field (LoginPage renders it)
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      await oauthCancel();
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +75,18 @@ export default function OAuthLogin() {
         </svg>
         {isLoading ? "Connecting..." : "Continue with Google"}
       </Button>
+
+      {isLoading && (
+        <Button
+          type="button"
+          onClick={() => void handleCancel()}
+          variant="outline"
+          size="sm"
+          className="w-full"
+        >
+          Cancel sign-in
+        </Button>
+      )}
 
       <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">

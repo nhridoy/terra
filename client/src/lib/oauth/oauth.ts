@@ -58,6 +58,8 @@ export function parseCallbackUrl(rawUrl: string): OAuthCallbackResult {
   return { dest: "error", message: "Unknown OAuth callback destination." };
 }
 
+let activeAttempt: number | null = null;
+
 export async function startOAuthFlow(
   provider: string,
   deviceId: string,
@@ -66,6 +68,7 @@ export async function startOAuthFlow(
     "bind_oauth_listener",
   );
   const appCallback = `http://127.0.0.1:${port}/oauth/callback`;
+  activeAttempt = attempt;
   try {
     const { auth_url } = await authApi.oauthStart({
       provider,
@@ -78,10 +81,17 @@ export async function startOAuthFlow(
     });
     return parseCallbackUrl(callbackUrl);
   } finally {
+    activeAttempt = null;
     try {
       await invoke("cancel_oauth_listener", { attempt });
     } catch {
       // ignore cleanup errors
     }
   }
+}
+
+export async function cancelOAuthFlow(): Promise<void> {
+  const attempt = activeAttempt;
+  if (attempt === null) return;
+  await invoke("cancel_oauth_listener", { attempt });
 }
