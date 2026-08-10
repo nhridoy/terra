@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import { decryptRowData, encryptRowData } from "@/lib/crypto/crypto";
+import type { SyncRow } from "@/lib/db/db";
+import { deleteRow, getRow, listRows, upsertRow } from "@/lib/db/db";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 interface Snippet {
   id: string;
@@ -26,6 +30,32 @@ interface SnippetState {
   getFilteredSnippets: () => Snippet[];
 }
 
+interface SnippetPayload {
+  command: string;
+  tags: string[];
+}
+
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function snippetFromRow(row: SyncRow): Promise<Snippet> {
+  const payload = (await decryptRowData(row.data)) as Partial<SnippetPayload>;
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    command: payload.command ?? "",
+    description: row.description ?? undefined,
+    tags: payload.tags ?? [],
+    vaultId: row.vault_id,
+    createdAt: String(row.created_at),
+  };
+}
+
 export const useSnippetStore = create<SnippetState>((set, get) => ({
   snippets: [],
   selectedSnippet: null,
@@ -33,11 +63,112 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   error: null,
   searchQuery: "",
 
-  fetchSnippets: async () => {},
+  fetchSnippets: async (vaultId) => {
+    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vid) {
+      set({ isLoading: false });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const rows = await listRows("snippets", vid);
+      const snippets = await Promise.all(
+        rows.map((row) => snippetFromRow(row)),
+      );
+      set({ snippets, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
   selectSnippet: (snippet) => set({ selectedSnippet: snippet }),
-  createSnippet: async () => {},
-  updateSnippet: async () => {},
-  deleteSnippet: async () => {},
+
+  createSnippet: async (snippet) => {
+    const vaultId = snippet.vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vaultId) {
+      set({ isLoading: false, error: "No vault selected" });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const row = await upsertRow("snippets", {
+        id: newId(),
+        vault_id: vaultId,
+        name: snippet.name ?? "",
+        description: snippet.description ?? null,
+        sort_order: 0,
+        data: await encryptRowData("snippets", {
+          command: snippet.command ?? "",
+          tags: snippet.tags ?? [],
+        }),
+      });
+      const created: Snippet = {
+        id: row.id,
+        name: row.name ?? "",
+        command: snippet.command ?? "",
+        description: row.description ?? undefined,
+        tags: snippet.tags ?? [],
+        vaultId,
+        createdAt: String(row.created_at),
+      };
+      set({ snippets: [created, ...get().snippets], isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  updateSnippet: async (id, patch) => {
+    set({ isLoading: true, error: null });
+    try {
+      const row = await getRow("snippets", id);
+      if (!row) {
+        set({ isLoading: false, error: "Snippet not found" });
+        return;
+      }
+      const existing = ((await decryptRowData(row.data)) ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const sensitive: Record<string, unknown> = {};
+      if (patch.command !== undefined) sensitive.command = patch.command;
+      if (patch.tags !== undefined) sensitive.tags = patch.tags;
+      await upsertRow("snippets", {
+        id: row.id,
+        vault_id: row.vault_id,
+        name: patch.name ?? row.name,
+        description:
+          patch.description !== undefined
+            ? patch.description
+            : (row.description ?? null),
+        sort_order: row.sort_order,
+        data: await encryptRowData("snippets", { ...existing, ...sensitive }),
+      });
+      set({
+        snippets: get().snippets.map((s) =>
+          s.id === id ? { ...s, ...patch } : s,
+        ),
+        isLoading: false,
+      });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  deleteSnippet: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      await deleteRow("snippets", id);
+      set((s) => ({
+        snippets: s.snippets.filter((snp) => snp.id !== id),
+        selectedSnippet:
+          s.selectedSnippet?.id === id ? null : s.selectedSnippet,
+        isLoading: false,
+      }));
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
   setSearchQuery: (query) => set({ searchQuery: query }),
   getFilteredSnippets: () => {
     const { snippets, searchQuery } = get();
