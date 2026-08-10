@@ -75,6 +75,7 @@ describe("hostStore", () => {
       created_at: 1,
       updated_at: 1,
       deleted_at: null,
+      sort_order: 0,
       data: "enc",
     });
     useVaultStore.setState({ currentVaultId: "v1" });
@@ -142,7 +143,16 @@ describe("hostStore", () => {
           updatedAt: "",
         },
       ],
-      selectedHost: { id: "h1" },
+      selectedHost: {
+        id: "h1",
+        name: "x",
+        address: "a",
+        port: 22,
+        tags: [],
+        sortOrder: 0,
+        createdAt: "",
+        updatedAt: "",
+      },
     });
     await useHostStore.getState().deleteHost("h1");
     expect(mockDelete).toHaveBeenCalledWith("hosts", "h1");
@@ -234,6 +244,7 @@ describe("hostStore", () => {
       created_at: 1,
       updated_at: 1,
       deleted_at: null,
+      sort_order: 0,
       data: "{}",
     });
     useVaultStore.setState({ currentVaultId: "v1" });

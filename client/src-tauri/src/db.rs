@@ -426,7 +426,7 @@ fn row_vals(row: &SyncRow, cols: &str) -> Vec<rusqlite::types::Value> {
     v
 }
 
-fn row_from(table: Table, row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncRow> {
+fn row_from(_table: Table, row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncRow> {
     // Envelope by position (0-5); whitelist columns by name — rusqlite resolves
     // named columns at query time, so optional columns absent from a table are
     // read as None via .ok() (get by name errors when the name is not in the
@@ -558,6 +558,8 @@ pub fn outbox_pending(db: &LocalDb) -> Result<Vec<OutboxEntry>, String> {
     Ok(rows)
 }
 
+// used by the Plan #4 sync engine and db tests
+#[allow(dead_code)]
 pub fn outbox_remove(db: &LocalDb, table: Table, id: &str) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM outbox WHERE table_name = ?1 AND record_id = ?2", rusqlite::params![table.as_str(), id])

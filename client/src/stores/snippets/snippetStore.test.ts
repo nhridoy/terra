@@ -176,7 +176,13 @@ describe("snippetStore", () => {
           createdAt: "",
         },
       ],
-      selectedSnippet: { id: "s1" },
+      selectedSnippet: {
+        id: "s1",
+        name: "x",
+        command: "ls",
+        tags: [],
+        createdAt: "",
+      },
     });
     await useSnippetStore.getState().deleteSnippet("s1");
     expect(mockDelete).toHaveBeenCalledWith("snippets", "s1");

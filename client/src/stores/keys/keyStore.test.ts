@@ -61,15 +61,18 @@ describe("keyStore", () => {
   });
 
   it("importKey falls back to crypto.randomUUID, encrypts payload, upserts with vault fallback", async () => {
-    vi.spyOn(crypto, "randomUUID").mockReturnValue("uuid-123");
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
     mockEncrypt.mockResolvedValue("enc");
     mockUpsert.mockResolvedValue({
-      id: "uuid-123",
+      id: "123e4567-e89b-12d3-a456-426614174000",
       revision: 1,
       vault_id: "v1",
       created_at: 1,
       updated_at: 1,
       deleted_at: null,
+      sort_order: 0,
       data: "enc",
     });
     useVaultStore.setState({ currentVaultId: "v1" });
@@ -89,7 +92,7 @@ describe("keyStore", () => {
     expect(mockUpsert).toHaveBeenCalledWith(
       "keys",
       expect.objectContaining({
-        id: "uuid-123",
+        id: "123e4567-e89b-12d3-a456-426614174000",
         vault_id: "v1",
         name: "mykey",
         data: "enc",
@@ -101,12 +104,13 @@ describe("keyStore", () => {
   it("importKey keeps sensitive key material out of plaintext columns", async () => {
     mockEncrypt.mockResolvedValue("enc");
     mockUpsert.mockResolvedValue({
-      id: "uuid-123",
+      id: "123e4567-e89b-12d3-a456-426614174000",
       revision: 1,
       vault_id: "v1",
       created_at: 1,
       updated_at: 1,
       deleted_at: null,
+      sort_order: 0,
       data: "enc",
     });
     useVaultStore.setState({ currentVaultId: "v1" });
@@ -138,12 +142,13 @@ describe("keyStore", () => {
   it("generateKey encrypts empty key material and upserts", async () => {
     mockEncrypt.mockResolvedValue("enc");
     mockUpsert.mockResolvedValue({
-      id: "uuid-123",
+      id: "123e4567-e89b-12d3-a456-426614174000",
       revision: 1,
       vault_id: "v1",
       created_at: 1,
       updated_at: 1,
       deleted_at: null,
+      sort_order: 0,
       data: "enc",
     });
     useVaultStore.setState({ currentVaultId: "v1" });
@@ -179,7 +184,14 @@ describe("keyStore", () => {
           createdAt: "",
         },
       ],
-      selectedKey: { id: "k1" },
+      selectedKey: {
+        id: "k1",
+        name: "x",
+        keyType: "ed25519",
+        publicKey: "",
+        encryptedPrivateKey: "",
+        createdAt: "",
+      },
     });
     await useKeyStore.getState().deleteKey("k1");
     expect(mockDelete).toHaveBeenCalledWith("keys", "k1");
