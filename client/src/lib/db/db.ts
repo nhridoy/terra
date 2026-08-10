@@ -62,7 +62,7 @@ export async function getOutbox(): Promise<OutboxEntry[]> {
 }
 
 // Reset the on-device SQLite cache to a pristine, fresh-install state.
-// Best-effort: removes the DB file plus WAL/SHM sidecars so a re-open
+// Best-effort: deletes all rows from all local tables (wipe_all) so a re-open
 // recreates all tables empty. Called on logout so no encrypted local rows
 // remain on disk once the user signs out.
 export async function wipeLocalData(): Promise<void> {

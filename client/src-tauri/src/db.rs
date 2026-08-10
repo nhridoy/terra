@@ -602,8 +602,8 @@ pub fn list_sync_rows(db: &LocalDb, table: Table, vault_id: &str, include_delete
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Table { Groups, Hosts, Keys, Snippets, Workspaces, Presets }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", default)]
 pub struct SyncRow {
     pub id: String,
     pub revision: i64,
@@ -846,6 +846,46 @@ mod tests {
         assert_eq!(Table::parse("hosts").unwrap(), Table::Hosts);
         assert!(Table::parse("hosts; DROP TABLE groups").is_err());
         assert!(Table::parse("HOSTS").is_err());
+    }
+
+    #[test]
+    fn test_sync_row_deserializes_store_shapes() {
+        let host = serde_json::from_value::<SyncRow>(serde_json::json!({
+            "id": "h1", "vault_id": "v1", "name": "prod",
+            "group_id": "g1", "key_id": "k1", "sort_order": 0, "data": "enc"
+        })).unwrap();
+        assert_eq!(host.revision, 0);
+        assert_eq!(host.created_at, 0);
+        assert_eq!(host.updated_at, 0);
+        assert!(host.deleted_at.is_none());
+        assert_eq!(host.name.as_deref(), Some("prod"));
+        assert!(host.os.is_none());
+        assert_eq!(host.group_id.as_deref(), Some("g1"));
+        assert_eq!(host.key_id.as_deref(), Some("k1"));
+        assert_eq!(host.data, "enc");
+
+        let key = serde_json::from_value::<SyncRow>(serde_json::json!({
+            "id": "k1", "vault_id": "v1", "name": "ssh",
+            "description": "main", "sort_order": 0, "data": "enc"
+        })).unwrap();
+        assert_eq!(key.revision, 0);
+        assert_eq!(key.description.as_deref(), Some("main"));
+        assert!(key.group_id.is_none() && key.key_id.is_none());
+
+        let snippet = serde_json::from_value::<SyncRow>(serde_json::json!({
+            "id": "s1", "vault_id": "v1", "name": "script",
+            "description": "d", "sort_order": 0, "data": "enc"
+        })).unwrap();
+        assert_eq!(snippet.revision, 0);
+        assert_eq!(snippet.name.as_deref(), Some("script"));
+
+        let workspace = serde_json::from_value::<SyncRow>(serde_json::json!({
+            "id": "w1", "vault_id": "v1", "name": "prod", "sort_order": 0, "data": "enc"
+        })).unwrap();
+        assert_eq!(workspace.revision, 0);
+        assert_eq!(workspace.updated_at, 0);
+        assert!(workspace.deleted_at.is_none());
+        assert_eq!(workspace.data, "enc");
     }
 
     #[test]
