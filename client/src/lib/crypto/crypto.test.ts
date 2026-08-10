@@ -4,9 +4,11 @@ import {
   clearAuthTokens,
   computeLoginProof,
   decryptObject,
+  decryptRowData,
   decryptSecret,
   deriveKek,
   encryptObject,
+  encryptRowData,
   encryptSecret,
   generateAccountMaterial,
   generateRecoveryCode,
@@ -349,5 +351,23 @@ describe("unlock", () => {
       saltCl: "salt",
       wrappedDek: "wrapped",
     });
+  });
+});
+
+describe("encryptRowData / decryptRowData", () => {
+  it("encryptRowData uses table name as AAD", async () => {
+    const secret = "secret";
+    mockInvoke.mockResolvedValue(secret);
+    const encrypted = await encryptRowData("hosts", { address: "1.2.3.4" });
+    expect(mockInvoke).toHaveBeenCalledWith("encrypt_secret", {
+      plaintext: JSON.stringify({ address: "1.2.3.4" }),
+      recordType: "hosts",
+    });
+    expect(encrypted).toBe(secret);
+  });
+
+  it("decryptRowData parses payload json", async () => {
+    mockInvoke.mockResolvedValueOnce('{"port":22}');
+    expect(await decryptRowData("enc")).toEqual({ port: 22 });
   });
 });

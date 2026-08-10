@@ -127,6 +127,17 @@ export async function decryptSecret(payload: string): Promise<string> {
   return invoke<string>("decrypt_secret", { payload });
 }
 
+export async function encryptRowData(
+  table: string,
+  value: unknown,
+): Promise<string> {
+  return encryptSecret(JSON.stringify(value), table);
+}
+
+export async function decryptRowData(encrypted: string): Promise<unknown> {
+  return JSON.parse(await decryptSecret(encrypted)) as unknown;
+}
+
 export async function unwrapDek(wrapped: string): Promise<void> {
   return invoke<void>("unwrap_dek", { wrapped });
 }
