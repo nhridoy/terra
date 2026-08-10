@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import { decryptRowData, encryptRowData } from "@/lib/crypto/crypto";
+import type { SyncRow } from "@/lib/db/db";
+import { deleteRow, getRow, listRows, upsertRow } from "@/lib/db/db";
+import { useKeyStore } from "@/stores/keys/keyStore";
+import { useVaultStore } from "@/stores/vault/vaultStore";
 
 export interface Host {
   id: string;
@@ -52,26 +57,286 @@ interface HostState {
   clearError: () => void;
 }
 
-export const useHostStore = create<HostState>((_set) => ({
+interface HostPayload {
+  address: string;
+  port: number;
+  username: string;
+  authType: "password" | "key";
+  password?: string;
+  tags: string[];
+  color?: string;
+}
+
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function hostFromRow(row: SyncRow): Promise<Host> {
+  const payload = (await decryptRowData(row.data)) as Partial<HostPayload>;
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    address: payload.address ?? "",
+    port: payload.port ?? 22,
+    username: payload.username ?? "root",
+    groupId: row.group_id ?? null,
+    tags: payload.tags ?? [],
+    color: payload.color ?? "#64748b",
+    sortOrder: row.sort_order,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+    vaultId: row.vault_id,
+    authType: payload.authType ?? "password",
+    password: payload.password,
+    keyId: row.key_id ?? undefined,
+  };
+}
+
+export const useHostStore = create<HostState>((set, get) => ({
   hosts: [],
   groups: [],
   selectedHost: null,
   isLoading: false,
   error: null,
 
-  fetchHosts: async () => {},
-  fetchGroups: async () => {},
-  createHost: async () => {},
-  updateHost: async () => {},
-  deleteHost: async () => {},
-  selectHost: () => {},
-  getCredentialsForHost: async () => ({
-    password: "",
-    privateKey: "",
-    passphrase: "",
-  }),
-  createGroup: async () => {},
-  updateGroup: async () => {},
-  deleteGroup: async () => {},
-  clearError: () => {},
+  fetchHosts: async (vaultId) => {
+    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vid) {
+      set({ isLoading: false });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const rows = await listRows("hosts", vid);
+      const hosts = await Promise.all(rows.map((row) => hostFromRow(row)));
+      set({ hosts, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  fetchGroups: async (vaultId) => {
+    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vid) {
+      set({ isLoading: false });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const rows = await listRows("groups", vid);
+      const groups = await Promise.all(
+        rows.map(async (row) => {
+          await decryptRowData(row.data);
+          return {
+            id: row.id,
+            name: row.name ?? "",
+            parentId: row.parent_id ?? null,
+            vaultId: row.vault_id,
+            sortOrder: row.sort_order,
+            createdAt: String(row.created_at),
+          };
+        }),
+      );
+      set({ groups, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  createHost: async (host) => {
+    const vaultId = host.vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vaultId) {
+      set({ isLoading: false, error: "No vault selected" });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const row = await upsertRow("hosts", {
+        id: newId(),
+        vault_id: vaultId,
+        name: host.name ?? "",
+        group_id: host.groupId ?? null,
+        key_id: host.keyId ?? null,
+        sort_order: host.sortOrder ?? 0,
+        data: await encryptRowData("hosts", {
+          address: host.address,
+          port: host.port ?? 22,
+          username: host.username ?? "root",
+          authType: host.authType ?? "password",
+          password: host.password,
+          tags: host.tags ?? [],
+          color: host.color,
+        }),
+      });
+      const created: Host = {
+        id: row.id,
+        name: row.name ?? "",
+        address: host.address ?? "",
+        port: host.port ?? 22,
+        username: host.username ?? "root",
+        groupId: host.groupId ?? null,
+        tags: host.tags ?? [],
+        color: host.color ?? "#64748b",
+        sortOrder: host.sortOrder ?? 0,
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+        vaultId,
+        authType: host.authType ?? "password",
+        password: host.password,
+        keyId: host.keyId ?? undefined,
+      };
+      set({ hosts: [created, ...get().hosts], isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  updateHost: async (id, patch) => {
+    set({ isLoading: true, error: null });
+    try {
+      const row = await getRow("hosts", id);
+      if (!row) {
+        set({ isLoading: false, error: "Host not found" });
+        return;
+      }
+      const existing = ((await decryptRowData(row.data)) ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const sensitive: Record<string, unknown> = {};
+      if (patch.address !== undefined) sensitive.address = patch.address;
+      if (patch.port !== undefined) sensitive.port = patch.port;
+      if (patch.username !== undefined) sensitive.username = patch.username;
+      if (patch.authType !== undefined) sensitive.authType = patch.authType;
+      if (patch.password !== undefined) sensitive.password = patch.password;
+      if (patch.tags !== undefined) sensitive.tags = patch.tags;
+      if (patch.color !== undefined) sensitive.color = patch.color;
+      await upsertRow("hosts", {
+        id: row.id,
+        vault_id: row.vault_id,
+        name: patch.name ?? row.name,
+        group_id:
+          patch.groupId !== undefined ? patch.groupId : (row.group_id ?? null),
+        key_id: patch.keyId !== undefined ? patch.keyId : (row.key_id ?? null),
+        sort_order: patch.sortOrder ?? row.sort_order,
+        data: await encryptRowData("hosts", { ...existing, ...sensitive }),
+      });
+      set({
+        hosts: get().hosts.map((h) => (h.id === id ? { ...h, ...patch } : h)),
+        isLoading: false,
+      });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  deleteHost: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      await deleteRow("hosts", id);
+      set((s) => ({
+        hosts: s.hosts.filter((h) => h.id !== id),
+        selectedHost: s.selectedHost?.id === id ? null : s.selectedHost,
+        isLoading: false,
+      }));
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  selectHost: (host) => set({ selectedHost: host }),
+
+  getCredentialsForHost: async (hostId) => {
+    const row = await getRow("hosts", hostId);
+    if (!row) {
+      return { password: "", privateKey: "", passphrase: "" };
+    }
+    const payload = ((await decryptRowData(row.data)) ??
+      {}) as Partial<HostPayload>;
+    if (payload.authType === "key" && row.key_id) {
+      const keyCreds = await useKeyStore
+        .getState()
+        .getCredentialsForKey(row.key_id);
+      return { password: "", privateKey: keyCreds, passphrase: "" };
+    }
+    return { password: payload.password ?? "", privateKey: "", passphrase: "" };
+  },
+
+  createGroup: async (group) => {
+    const vaultId = group.vaultId ?? useVaultStore.getState().currentVaultId;
+    if (!vaultId) {
+      set({ isLoading: false, error: "No vault selected" });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const row = await upsertRow("groups", {
+        id: newId(),
+        vault_id: vaultId,
+        name: group.name ?? "",
+        parent_id: group.parentId ?? null,
+        sort_order: group.sortOrder ?? 0,
+        data: await encryptRowData("groups", {}),
+      });
+      const created: Group = {
+        id: row.id,
+        name: row.name ?? "",
+        parentId: group.parentId ?? null,
+        vaultId,
+        sortOrder: group.sortOrder ?? 0,
+        createdAt: String(row.created_at),
+      };
+      set({ groups: [created, ...get().groups], isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  updateGroup: async (id, patch) => {
+    set({ isLoading: true, error: null });
+    try {
+      const row = await getRow("groups", id);
+      if (!row) {
+        set({ isLoading: false, error: "Group not found" });
+        return;
+      }
+      await decryptRowData(row.data);
+      await upsertRow("groups", {
+        id: row.id,
+        vault_id: row.vault_id,
+        name: patch.name ?? row.name,
+        parent_id:
+          patch.parentId !== undefined
+            ? patch.parentId
+            : (row.parent_id ?? null),
+        sort_order: patch.sortOrder ?? row.sort_order,
+        data: await encryptRowData("groups", {}),
+      });
+      set({
+        groups: get().groups.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+        isLoading: false,
+      });
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  deleteGroup: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      await deleteRow("groups", id);
+      set((s) => ({
+        groups: s.groups.filter((g) => g.id !== id),
+        isLoading: false,
+      }));
+    } catch (err) {
+      set({ isLoading: false, error: errorMessage(err) });
+    }
+  },
+
+  clearError: () => set({ error: null }),
 }));
