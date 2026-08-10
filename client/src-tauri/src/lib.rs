@@ -49,7 +49,8 @@ fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
 #[tauri::command]
 fn wipe_local_data(app: tauri::AppHandle) -> Result<(), String> {
 	let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-	db::wipe_database(&dir.join(db::DB_FILE_NAME))
+	let local_db = db::open(&dir.join(db::DB_FILE_NAME).to_string_lossy())?;
+	db::wipe_all(&local_db)
 }
 
 #[tauri::command]
