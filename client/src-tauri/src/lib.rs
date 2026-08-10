@@ -47,10 +47,38 @@ fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn wipe_local_data(app: tauri::AppHandle) -> Result<(), String> {
-	let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-	let local_db = db::open(&dir.join(db::DB_FILE_NAME).to_string_lossy())?;
-	db::wipe_all(&local_db)
+fn wipe_local_data(db: tauri::State<'_, db::LocalDb>) -> Result<(), String> {
+    db::wipe_all(&db)
+}
+
+#[tauri::command]
+fn db_upsert(db: tauri::State<'_, db::LocalDb>, table: String, row: serde_json::Value) -> Result<db::SyncRow, String> {
+    let table = db::Table::parse(&table)?;
+    let row: db::SyncRow = serde_json::from_value(row).map_err(|e| format!("db_upsert: bad row: {e}"))?;
+    db::upsert_sync_row(&db, table, &row)
+}
+
+#[tauri::command]
+fn db_get(db: tauri::State<'_, db::LocalDb>, table: String, id: String) -> Result<Option<db::SyncRow>, String> {
+    let table = db::Table::parse(&table)?;
+    db::get_sync_row(&db, table, &id)
+}
+
+#[tauri::command]
+fn db_list(db: tauri::State<'_, db::LocalDb>, table: String, vault_id: String, include_deleted: Option<bool>) -> Result<Vec<db::SyncRow>, String> {
+    let table = db::Table::parse(&table)?;
+    db::list_sync_rows(&db, table, &vault_id, include_deleted.unwrap_or(false))
+}
+
+#[tauri::command]
+fn db_delete(db: tauri::State<'_, db::LocalDb>, table: String, id: String) -> Result<(), String> {
+    let table = db::Table::parse(&table)?;
+    db::tombstone_sync_row(&db, table, &id)
+}
+
+#[tauri::command]
+fn db_outbox(db: tauri::State<'_, db::LocalDb>) -> Result<Vec<db::OutboxEntry>, String> {
+    db::outbox_pending(&db)
 }
 
 #[tauri::command]
@@ -891,6 +919,10 @@ pub fn run() {
                 .ok_or("main window not found")?;
             window.set_title("TermVault")?;
 
+            let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            let db_path = data_dir.join(db::DB_FILE_NAME);
+            app.manage(db::open(&db_path.display().to_string())?);
+
             let handle = app.handle().clone();
             app.listen("main-ready", move |_| {
                 let splash = handle.get_webview_window("splashscreen");
@@ -930,6 +962,11 @@ pub fn run() {
             set_api_url,
             get_api_url,
             wipe_local_data,
+            db_upsert,
+            db_get,
+            db_list,
+            db_delete,
+            db_outbox,
             write_file,
             detect_shells,
             is_same_volume,
