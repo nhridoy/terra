@@ -1,0 +1,6 @@
+[submodule "client"]
+	path = client
+	url = ../open-term-client
+[submodule "server"]
+	path = server
+	url = ../open-term-server
