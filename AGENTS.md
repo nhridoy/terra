@@ -2,6 +2,12 @@
 
 Open-source Termius alternative. Tauri v2 desktop + Go server. Local-first, encrypted, self-hostable.
 
+## Repository layout
+
+- This repo is the monorepo shell (docs, specs, workflows). `client/` and `server/` are git submodules pointing at sibling repos (`../open-term-client`, `../open-term-server`), with full history preserved via subtree splits.
+- After cloning the superproject: `git submodule update --init --recursive`.
+- Submodule URLs in `.gitmodules` are local-path placeholders — point them at real remotes once hosted.
+
 ## Commands
 
 ```bash
