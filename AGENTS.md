@@ -4,9 +4,8 @@ Open-source Termius alternative. Tauri v2 desktop + Go server. Local-first, encr
 
 ## Repository layout
 
-- This repo is the monorepo shell (docs, specs, workflows). `client/` and `server/` are git submodules pointing at sibling repos (`../open-term-client`, `../open-term-server`), with full history preserved via subtree splits.
+- This repo is the monorepo shell (docs, specs, workflows). `client/` and `server/` are git submodules pointing at `git@personal:nhridoy/terra-client.git` and `git@personal:nhridoy/terra-server.git`, with full history preserved via subtree splits.
 - After cloning the superproject: `git submodule update --init --recursive`.
-- Submodule URLs in `.gitmodules` are local-path placeholders — point them at real remotes once hosted.
 
 ## Commands
 

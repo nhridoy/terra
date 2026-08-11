@@ -1,6 +1,6 @@
 [submodule "client"]
 	path = client
-	url = ../open-term-client
+	url = git@personal:nhridoy/terra-client.git
 [submodule "server"]
 	path = server
-	url = ../open-term-server
+	url = git@personal:nhridoy/terra-server.git
