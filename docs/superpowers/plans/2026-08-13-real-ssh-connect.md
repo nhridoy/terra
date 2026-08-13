@@ -298,8 +298,8 @@ fn canonical_os_id(id: &str) -> Option<&'static str> {
         .map(|(_, canonical)| *canonical)
 }
 
-pub fn fingerprint_of(server_public_key: &russh::keys::key::PublicKey) -> String {
-    server_public_key.fingerprint(russh::keys::key::HashAlg::Sha256).to_string()
+pub fn fingerprint_of(server_public_key: &russh::keys::PublicKey) -> String {
+    server_public_key.fingerprint(russh::keys::HashAlg::Sha256).to_string()
 }
 
 pub struct PendingHostKeyGuard {
@@ -405,7 +405,7 @@ impl russh::client::Handler for SshHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::key::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
         let fingerprint = fingerprint_of(server_public_key);
         let (host, port) = (self.host.clone(), self.port);
@@ -489,26 +489,25 @@ async fn connect_authenticated(
         let key = russh::keys::decode_secret_key(pem, config.passphrase.as_deref())
             .map_err(|e| format!("decode private key: {e}"))?;
         let key_with_alg = russh::keys::key::PrivateKeyWithHashAlg::new(
-            key,
-            russh::keys::key::HashAlg::Sha256,
-        )
-        .map_err(|e| format!("prepare private key: {e}"))?;
-        let accepted = session
-            .authenticate_publickey(&config.username, key_with_alg)
+            Arc::new(key),
+            Some(russh::keys::HashAlg::Sha256),
+        );
+        let auth = session
+            .authenticate_publickey(config.username.clone(), key_with_alg)
             .await
             .map_err(|e| format!("publickey auth: {e}"))?;
-        if !accepted {
+        if !auth.success() {
             return Err("public key authentication rejected".to_string());
         }
     } else {
-        let accepted = session
+        let auth = session
             .authenticate_password(
-                &config.username,
-                config.password.as_deref().unwrap_or(""),
+                config.username.clone(),
+                config.password.clone().unwrap_or_default(),
             )
             .await
             .map_err(|e| format!("password auth: {e}"))?;
-        if !accepted {
+        if !auth.success() {
             return Err("password authentication rejected".to_string());
         }
     }
@@ -541,7 +540,7 @@ async fn probe_os(
     let mut out = String::new();
     while let Some(msg) = channel.wait().await {
         match msg {
-            russh::ChannelMsg::Data(data) => out.push_str(&String::from_utf8_lossy(&data)),
+            russh::ChannelMsg::Data { data } => out.push_str(&String::from_utf8_lossy(&data)),
             russh::ChannelMsg::Eof | russh::ChannelMsg::Close => break,
             _ => {}
         }
@@ -604,18 +603,14 @@ pub async fn connect(
             }
         };
         if let Err(e) = channel
-            .request_pty(
-                true,
-                &russh::Pty {
-                    term: "xterm",
-                    char_width: 80,
-                    char_height: 24,
-                    pix_width: 0,
-                    pix_height: 0,
-                },
-            )
-            .and_then(|()| channel.request_shell())
+            .request_pty(true, "xterm", 80, 24, 0, 0, &[])
+            .await
         {
+            emit(&app_handle, "error", &e.to_string());
+            emit(&app_handle, "disconnected", "");
+            return;
+        }
+        if let Err(e) = channel.request_shell(true).await {
             emit(&app_handle, "error", &e.to_string());
             emit(&app_handle, "disconnected", "");
             return;
@@ -645,7 +640,7 @@ pub async fn connect(
                 msg = channel.wait() => {
                     let Some(msg) = msg else { break };
                     match msg {
-                        russh::ChannelMsg::Data(data) => {
+                        russh::ChannelMsg::Data { data } => {
                             let text = String::from_utf8_lossy(&data);
                             if !text.is_empty() {
                                 emit(&app_handle, "output", &text);
@@ -658,10 +653,10 @@ pub async fn connect(
                 cmd = rx.recv() => {
                     match cmd {
                         Some(SessionCmd::Input(bytes)) => {
-                            let _ = channel.data(&bytes).await;
+                            let _ = channel.data_bytes(bytes).await;
                         }
                         Some(SessionCmd::Resize(cols, rows)) => {
-                            let _ = channel.request_pty_window_change(cols, rows, 0, 0);
+                            let _ = channel.window_change(cols, rows, 0, 0).await;
                         }
                         Some(SessionCmd::Close) | None => break,
                     }
@@ -763,7 +758,7 @@ pub async fn ping_host(
 }
 ```
 
-Compile-fallback notes (only if the pinned 0.54 API differs): `ChannelMsg::Data` holds `CryptoVec` (derefs to `[u8]`) — if the variant is `Data { data }`, match accordingly; if `request_pty_window_change` is async, await it; `request_pty`+`request_shell` — chain with `and_then` only if both are sync (`Result<(), E>`), otherwise call them as separate `if let Err` statements.
+Compile-fallback notes: the code above was verified against the pinned `russh 0.62.6` source (cargo registry `russh-0.62.6/src`). Pointers: `russh::keys::PublicKey` and `russh::keys::HashAlg` come from `keys/mod.rs` line 78 (`pub use ssh_key::{...}`); `russh::keys::key::PrivateKeyWithHashAlg` is russh's own helper (`keys/key.rs:49`, `pub fn new(key: Arc<PrivateKey>, hash_alg: Option<HashAlg>) -> Self`); `decode_secret_key(secret: &str, password: Option<&str>)` via `keys/format/mod.rs:47`; `Msg::ChannelSuccess` is not part of `ChannelMsg` in this version (only `Eof`/`Close`/`Data { data }`/`ExtendedData` matter here); `Channel::data_bytes` takes `impl Into<Bytes>`; `Channel::window_change` is `&self` + async; `Handle::authenticate_*` return `Result<AuthResult, Error>` — check `.success()`.
 
 - [ ] **Step 2: Remove the stubs and wire the commands** in `client/src-tauri/src/lib.rs`
 
