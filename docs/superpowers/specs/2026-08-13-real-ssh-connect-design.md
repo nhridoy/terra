@@ -98,9 +98,29 @@ Background probes (ping, post-save, connect fallback) auto-accept unknown host k
 
 `react-icons` is NOT used: Simple Icons / Font Awesome brands are monochrome; Phosphor only has generic `LinuxLogo`/`AppleLogo`/`WindowsLogo`. Colored, true-to-brand logos require the real logo SVGs, self-hosted (offline-safe, no runtime network, no new npm dependency):
 
-- **Assets**: vendor colored SVGs into `client/src/assets/os/*.svg` for the canonical `os` set (ubuntu, debian, fedora, arch, manjaro, linuxmint, pop, kali, alpine, centos, rocky, rhel, amazon, opensuse, sles, nixos, gentoo, zorin, elementary, darwin, windows, bsd, solaris, linux). Source: fetched from the devicon project at implementation time (attribution captured in a `LICENSE`/`NOTICE` note in that folder).
-- **New component `client/src/components/icons/OsIcon.tsx`**: maps `os` → `<img src={asset}>` with a fixed size; unknown/unsourced `os` → placeholder component (user populates later), Phosphor `LinuxLogo` as the transient/unknown fallback.
-- **Display map `client/src/lib/constants/os.ts`**: `OS_META: Record<string, { name, src }>` holding canonical `os` → pretty name (Linux Mint, Pop!_OS) + asset; single source of truth for icon and label.
+- **Icon components**: one TSX file per OS in `client/src/components/icons/os/`, each exporting a typed React component (user-specified format):
+
+  ```tsx
+  const UbuntuIcon: React.FC<React.SVGProps<SVGElement>> = (props) => (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="229.093"
+      height="184.469"
+      data-name="Group 317"
+      viewBox="0 0 229.093 184.469"
+    >
+      {/* colored paths preserved from source */}
+    </svg>
+  );
+
+  export default UbuntuIcon;
+  ```
+
+  Used as a normal React component (typed props, size/className overridable via props). Source: colored SVG markup fetched from the devicon project at implementation time, inner markup embedded verbatim (fill colors preserved, original viewBox kept, no path rewriting). Attribution captured in a `LICENSE`/`NOTICE` note in that folder.
+- **Canonical set**: ubuntu, debian, fedora, arch, manjaro, linuxmint, pop, kali, alpine, centos, rocky, rhel, amazon, opensuse, sles, nixos, gentoo, zorin, elementary, darwin, windows, bsd, solaris, linux (plus a `PlaceholderOsIcon` for anything unsourced — user populates later).
+- **New component `client/src/components/icons/OsIcon.tsx`**: maps canonical `os` → icon component; unknown/unsourced → `PlaceholderOsIcon`; Phosphor `LinuxLogo` as the transient/unknown fallback.
+- **Display map `client/src/lib/constants/os.ts`**: `OS_META: Record<string, { name, Icon }>` holding canonical `os` → pretty name (Linux Mint, Pop!_OS) + component; single source of truth for icon and label.
 - Used in: host card subtitle (icon + name), ping result line, HostDetails.
 
 ## Error handling
