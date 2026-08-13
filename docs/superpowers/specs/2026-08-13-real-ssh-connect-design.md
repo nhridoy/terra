@@ -53,16 +53,14 @@ Signature unchanged: `connect(session_id, config: SshConfig)`; `SshConfig` gains
 
 ### OS probe (shared)
 
-`probe_os(...)` internally: connect → auth → exec channel `uname -s` → trim → map:
+`probe_os(...)` internally: connect → auth → exec channel with a two-step command:
 
-| uname output | stored value |
-|---|---|
-| `Linux` | `linux` |
-| `Darwin` | `darwin` |
-| `FreeBSD` / `OpenBSD` / `NetBSD` | `bsd` |
-| `SunOS` | `solaris` |
-| `MINGW*` / `MSYS*` / `CYGWIN*` | `windows` |
-| anything else | trimmed raw string |
+1. `uname -s` gates the platform:
+   - `Linux` → read `/etc/os-release` (fallback `/usr/lib/os-release`) and parse `ID=` / `ID_LIKE=`;
+   - `Darwin` → `darwin`, the BSDs → `bsd`, `SunOS` → `solaris`, `MINGW*`/`MSYS*`/`CYGWIN*` → `windows`.
+2. On Linux, normalize `ID` against a known-ID table → canonical stored value: `ubuntu`, `debian`, `fedora`, `arch`, `manjaro`, `linuxmint`, `pop`, `kali`, `alpine`, `centos`, `rocky`, `rhel`, `amazon`, `opensuse`, `sles`, `nixos`, `gentoo`, `zorin`, `elementary`, … Unknown `ID` → first known token from `ID_LIKE=`; still unknown → `linux`.
+
+`VERSION_ID` is deliberately not stored (family-only keeps the `os` column clean and icon lookup simple; a version suffix is a future extension).
 
 Background probes (ping, post-save, connect fallback) auto-accept unknown host keys silently and never open the change prompt; interactive `connect` keeps the prompt. Probe timeout ~5s; failures return `null` os (never fatal).
 
@@ -95,6 +93,15 @@ Background probes (ping, post-save, connect fallback) auto-accept unknown host k
 - Transient status line under the subtitle while a ping result exists:
   - `● 23 ms` green (with `os` appended when returned), `● Unreachable` red, spinner while `pinging`.
 - Order: ping → edit → delete (other host-list surfaces with action rows, if edit/delete exist there, get the same icon — verify each during implementation).
+
+## Colored OS icons
+
+`react-icons` is NOT used: Simple Icons / Font Awesome brands are monochrome; Phosphor only has generic `LinuxLogo`/`AppleLogo`/`WindowsLogo`. Colored, true-to-brand logos require the real logo SVGs, self-hosted (offline-safe, no runtime network, no new npm dependency):
+
+- **Assets**: vendor colored SVGs into `client/src/assets/os/*.svg` for the canonical `os` set (ubuntu, debian, fedora, arch, manjaro, linuxmint, pop, kali, alpine, centos, rocky, rhel, amazon, opensuse, sles, nixos, gentoo, zorin, elementary, darwin, windows, bsd, solaris, linux). Source: fetched from the devicon project at implementation time (attribution captured in a `LICENSE`/`NOTICE` note in that folder).
+- **New component `client/src/components/icons/OsIcon.tsx`**: maps `os` → `<img src={asset}>` with a fixed size; unknown/unsourced `os` → placeholder component (user populates later), Phosphor `LinuxLogo` as the transient/unknown fallback.
+- **Display map `client/src/lib/constants/os.ts`**: `OS_META: Record<string, { name, src }>` holding canonical `os` → pretty name (Linux Mint, Pop!_OS) + asset; single source of truth for icon and label.
+- Used in: host card subtitle (icon + name), ping result line, HostDetails.
 
 ## Error handling
 
