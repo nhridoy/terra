@@ -134,6 +134,53 @@ class RemoteFileProvider implements FileProvider {
 
 **Transfer panel** — Already built. Wire `useSftpStore.transfers` to Rust progress events.
 
+### UI Design
+
+**Page placement:** SFTP opens as a separate page (not a tab or split pane alongside terminal).
+
+**Entry point:** Use existing SFTP page host picker button. Clicking it opens the host picker modal.
+
+**Host support:** Both saved hosts (encrypted credentials via Rust) and direct/quick connect (plaintext creds in IPC), same model as terminal.
+
+**Connection lifecycle:** Persistent — connection stays alive until user manually disconnects or closes the SFTP pane. Survives React component unmounting (page navigation). Reconnection button reconnects to same host.
+
+**File operations:**
+- Browse/list files with full directory navigation
+- Read/download files
+- Write/upload files
+- Modify/delete files (rename, move, copy)
+- Advanced: mkdir, chmod, chown, symlink
+
+**File view modes:** List view (rows) and grid view (cards). User can toggle between them.
+
+**File selection:** Standard multi-select (click, Ctrl+click, Shift+click, Ctrl+A) plus click-and-drag marquee/rubber-band selection (like OS file managers).
+
+**Sorting:** Column headers — click to sort by name, size, type, mtime, atime, permissions. Toggle ascending/descending.
+
+**Search:** Both local filter (client-side, current directory) and optional recursive server-side search.
+
+**Path/breadcrumb:** Clickable path segments (click any segment to jump) + editable path bar (double-click to type a path directly).
+
+**File preview:** In-app viewer — double-click file to open read-only. Text files show content, images show preview.
+
+**Permissions display:** Permissions column in file list view + context menu dialog for editing (chmod + chown).
+
+**File timestamps:** Show both mtime (last modified) and atime (last accessed) in file list.
+
+**File type icons:** Use existing icon system from `fileHelpers.tsx` (already supports code/image/video/audio/binary classification).
+
+**Drag-and-drop:** Both cross-pane drag (remote-to-remote, remote-to-local, local-to-remote) and desktop-to-browser drop (upload from OS file manager).
+
+**Progress tracking:** Per-file progress bars in transfer panel. Progress events streamed from Rust per chunk.
+
+**Transfer queue:** Parallel concurrent transfers. Multiple file transfers run simultaneously.
+
+**Large file handling:** Streaming chunk-based uploads/downloads (64KB chunks). Memory efficient, supports resume.
+
+**Resume support:** Track file offsets for interrupted transfers. Resumable from last successful offset.
+
+**Error handling:** Inline errors in file browser for operation failures. Toast notifications for transient errors. Modal dialog for connection failures.
+
 ### Error Handling
 
 | Error type | Display |
