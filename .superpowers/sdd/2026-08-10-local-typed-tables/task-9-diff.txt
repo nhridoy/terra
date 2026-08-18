@@ -1,0 +1,781 @@
+diff --git a/client/src/stores/snippets/snippetStore.test.ts b/client/src/stores/snippets/snippetStore.test.ts
+new file mode 100644
+index 0000000..83d60fc
+--- /dev/null
++++ b/client/src/stores/snippets/snippetStore.test.ts
+@@ -0,0 +1,210 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++vi.mock("../../lib/db/db");
++vi.mock("../../lib/crypto/crypto");
++
++import { decryptRowData, encryptRowData } from "../../lib/crypto/crypto";
++import { deleteRow, getRow, listRows, upsertRow } from "../../lib/db/db";
++import { useVaultStore } from "../vault/vaultStore";
++import { useSnippetStore } from "./snippetStore";
++
++const mockList = vi.mocked(listRows);
++const mockGet = vi.mocked(getRow);
++const mockUpsert = vi.mocked(upsertRow);
++const mockDelete = vi.mocked(deleteRow);
++const mockDecrypt = vi.mocked(decryptRowData);
++const mockEncrypt = vi.mocked(encryptRowData);
++
++const snippetRow = {
++  id: "s1",
++  revision: 1,
++  vault_id: "v1",
++  created_at: 1000,
++  updated_at: 1000,
++  deleted_at: null,
++  name: "deploy",
++  description: "ship to prod",
++  sort_order: 0,
++  data: "enc",
++};
++
++beforeEach(() => {
++  useSnippetStore.setState({
++    snippets: [],
++    selectedSnippet: null,
++    isLoading: false,
++    error: null,
++    searchQuery: "",
++  });
++  vi.restoreAllMocks();
++  useVaultStore.setState({ currentVaultId: null });
++});
++
++describe("snippetStore", () => {
++  it("fetchSnippets decrypts payload into the Snippet model", async () => {
++    mockList.mockResolvedValue([snippetRow]);
++    mockDecrypt.mockResolvedValue({
++      command: "pnpm build && pnpm deploy",
++      tags: ["ci", "prod"],
++    });
++    await useSnippetStore.getState().fetchSnippets("v1");
++    expect(mockList).toHaveBeenCalledWith("snippets", "v1");
++    const snippet = useSnippetStore.getState().snippets[0];
++    expect(snippet.id).toBe("s1");
++    expect(snippet.name).toBe("deploy");
++    expect(snippet.description).toBe("ship to prod");
++    expect(snippet.command).toBe("pnpm build && pnpm deploy");
++    expect(snippet.tags).toEqual(["ci", "prod"]);
++    expect(snippet.vaultId).toBe("v1");
++    expect(snippet.createdAt).toBe("1000");
++  });
++
++  it("createSnippet encrypts payload with AAD snippets and upserts with vault fallback", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "deploy",
++      sort_order: 0,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useSnippetStore.getState().createSnippet({
++      name: "deploy",
++      command: "pnpm build",
++      tags: ["ci"],
++    });
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "snippets",
++      expect.objectContaining({ command: "pnpm build", tags: ["ci"] }),
++    );
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "snippets",
++      expect.objectContaining({ name: "deploy", vault_id: "v1", data: "enc" }),
++    );
++    expect(useSnippetStore.getState().snippets.length).toBe(1);
++  });
++
++  it("createSnippet keeps command/tags out of plaintext columns and whitelist fields out of the encrypt payload", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "deploy",
++      description: "ship to prod",
++      sort_order: 0,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useSnippetStore.getState().createSnippet({
++      name: "deploy",
++      description: "ship to prod",
++      command: "pnpm build",
++      tags: ["ci"],
++    });
++    const rowArg = mockUpsert.mock.calls[0][1];
++    expect(rowArg.data).toBe("enc");
++    expect(rowArg).not.toHaveProperty("command");
++    expect(rowArg).not.toHaveProperty("tags");
++    const payloadArg = mockEncrypt.mock.calls[0][1] as Record<string, unknown>;
++    expect(payloadArg).toHaveProperty("command", "pnpm build");
++    expect(payloadArg).toHaveProperty("tags");
++    expect(payloadArg).not.toHaveProperty("name");
++    expect(payloadArg).not.toHaveProperty("description");
++    expect(payloadArg).not.toHaveProperty("sort_order");
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "snippets",
++      expect.not.objectContaining({
++        name: "pnpm build",
++        description: "pnpm build",
++        sort_order: "pnpm build",
++      }),
++    );
++  });
++
++  it("updateSnippet preserves unpatched command/tags", async () => {
++    useSnippetStore.setState({
++      snippets: [
++        {
++          id: "s1",
++          name: "deploy",
++          command: "pnpm build",
++          description: "ship to prod",
++          tags: ["ci"],
++          createdAt: "1000",
++        },
++      ],
++    });
++    mockGet.mockResolvedValue(snippetRow);
++    mockDecrypt.mockResolvedValue({
++      command: "pnpm build",
++      tags: ["ci"],
++    });
++    mockEncrypt.mockResolvedValue("enc2");
++    await useSnippetStore
++      .getState()
++      .updateSnippet("s1", { name: "deploy2", description: "new" });
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "snippets",
++      expect.objectContaining({ command: "pnpm build", tags: ["ci"] }),
++    );
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "snippets",
++      expect.objectContaining({ name: "deploy2", data: "enc2" }),
++    );
++    expect(useSnippetStore.getState().snippets[0]).toMatchObject({
++      name: "deploy2",
++    });
++  });
++
++  it("deleteSnippet tombstones and clears selection", async () => {
++    useSnippetStore.setState({
++      snippets: [
++        {
++          id: "s1",
++          name: "x",
++          command: "ls",
++          tags: [],
++          createdAt: "",
++        },
++      ],
++      selectedSnippet: { id: "s1" },
++    });
++    await useSnippetStore.getState().deleteSnippet("s1");
++    expect(mockDelete).toHaveBeenCalledWith("snippets", "s1");
++    expect(useSnippetStore.getState().snippets).toEqual([]);
++    expect(useSnippetStore.getState().selectedSnippet).toBeNull();
++  });
++
++  it("getFilteredSnippets filters by search query", async () => {
++    useSnippetStore.setState({
++      snippets: [
++        {
++          id: "a",
++          name: "deploy",
++          command: "pnpm build",
++          tags: [],
++          createdAt: "",
++        },
++        {
++          id: "b",
++          name: "backup",
++          command: "pg_dump",
++          tags: [],
++          createdAt: "",
++        },
++      ],
++      searchQuery: "deploy",
++    });
++    const filtered = useSnippetStore.getState().getFilteredSnippets();
++    expect(filtered.map((s) => s.id)).toEqual(["a"]);
++  });
++});
+diff --git a/client/src/stores/snippets/snippetStore.ts b/client/src/stores/snippets/snippetStore.ts
+index 925a630..4b31b5f 100644
+--- a/client/src/stores/snippets/snippetStore.ts
++++ b/client/src/stores/snippets/snippetStore.ts
+@@ -1,11 +1,15 @@
+ import { create } from "zustand";
++import { decryptRowData, encryptRowData } from "@/lib/crypto/crypto";
++import type { SyncRow } from "@/lib/db/db";
++import { deleteRow, getRow, listRows, upsertRow } from "@/lib/db/db";
++import { useVaultStore } from "@/stores/vault/vaultStore";
+ 
+ interface Snippet {
+   id: string;
+   name: string;
+   command: string;
+   description?: string;
+   tags: string[];
+   vaultId?: string;
+   createdAt: string;
+ }
+@@ -19,32 +23,159 @@ interface SnippetState {
+ 
+   fetchSnippets: (vaultId?: string) => Promise<void>;
+   selectSnippet: (snippet: Snippet | null) => void;
+   createSnippet: (snippet: Partial<Snippet>) => Promise<void>;
+   updateSnippet: (id: string, snippet: Partial<Snippet>) => Promise<void>;
+   deleteSnippet: (id: string) => Promise<void>;
+   setSearchQuery: (query: string) => void;
+   getFilteredSnippets: () => Snippet[];
+ }
+ 
++interface SnippetPayload {
++  command: string;
++  tags: string[];
++}
++
++function newId(): string {
++  return crypto.randomUUID();
++}
++
++function errorMessage(err: unknown): string {
++  return err instanceof Error ? err.message : String(err);
++}
++
++async function snippetFromRow(row: SyncRow): Promise<Snippet> {
++  const payload = (await decryptRowData(row.data)) as Partial<SnippetPayload>;
++  return {
++    id: row.id,
++    name: row.name ?? "",
++    command: payload.command ?? "",
++    description: row.description ?? undefined,
++    tags: payload.tags ?? [],
++    vaultId: row.vault_id,
++    createdAt: String(row.created_at),
++  };
++}
++
+ export const useSnippetStore = create<SnippetState>((set, get) => ({
+   snippets: [],
+   selectedSnippet: null,
+   isLoading: false,
+   error: null,
+   searchQuery: "",
+ 
+-  fetchSnippets: async () => {},
++  fetchSnippets: async (vaultId) => {
++    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vid) {
++      set({ isLoading: false });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const rows = await listRows("snippets", vid);
++      const snippets = await Promise.all(
++        rows.map((row) => snippetFromRow(row)),
++      );
++      set({ snippets, isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
+   selectSnippet: (snippet) => set({ selectedSnippet: snippet }),
+-  createSnippet: async () => {},
+-  updateSnippet: async () => {},
+-  deleteSnippet: async () => {},
++
++  createSnippet: async (snippet) => {
++    const vaultId = snippet.vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vaultId) {
++      set({ isLoading: false, error: "No vault selected" });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const row = await upsertRow("snippets", {
++        id: newId(),
++        vault_id: vaultId,
++        name: snippet.name ?? "",
++        description: snippet.description ?? null,
++        sort_order: 0,
++        data: await encryptRowData("snippets", {
++          command: snippet.command ?? "",
++          tags: snippet.tags ?? [],
++        }),
++      });
++      const created: Snippet = {
++        id: row.id,
++        name: row.name ?? "",
++        command: snippet.command ?? "",
++        description: row.description ?? undefined,
++        tags: snippet.tags ?? [],
++        vaultId,
++        createdAt: String(row.created_at),
++      };
++      set({ snippets: [created, ...get().snippets], isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  updateSnippet: async (id, patch) => {
++    set({ isLoading: true, error: null });
++    try {
++      const row = await getRow("snippets", id);
++      if (!row) {
++        set({ isLoading: false, error: "Snippet not found" });
++        return;
++      }
++      const existing = ((await decryptRowData(row.data)) ?? {}) as Record<
++        string,
++        unknown
++      >;
++      const sensitive: Record<string, unknown> = {};
++      if (patch.command !== undefined) sensitive.command = patch.command;
++      if (patch.tags !== undefined) sensitive.tags = patch.tags;
++      await upsertRow("snippets", {
++        id: row.id,
++        vault_id: row.vault_id,
++        name: patch.name ?? row.name,
++        description:
++          patch.description !== undefined
++            ? patch.description
++            : (row.description ?? null),
++        sort_order: row.sort_order,
++        data: await encryptRowData("snippets", { ...existing, ...sensitive }),
++      });
++      set({
++        snippets: get().snippets.map((s) =>
++          s.id === id ? { ...s, ...patch } : s,
++        ),
++        isLoading: false,
++      });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  deleteSnippet: async (id) => {
++    set({ isLoading: true, error: null });
++    try {
++      await deleteRow("snippets", id);
++      set((s) => ({
++        snippets: s.snippets.filter((snp) => snp.id !== id),
++        selectedSnippet:
++          s.selectedSnippet?.id === id ? null : s.selectedSnippet,
++        isLoading: false,
++      }));
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
+   setSearchQuery: (query) => set({ searchQuery: query }),
+   getFilteredSnippets: () => {
+     const { snippets, searchQuery } = get();
+     if (!searchQuery) return snippets;
+     const q = searchQuery.toLowerCase();
+     return snippets.filter(
+       (s) =>
+         s.name.toLowerCase().includes(q) ||
+         s.command.toLowerCase().includes(q) ||
+         (s.description || "").toLowerCase().includes(q),
+diff --git a/client/src/stores/workspaces/workspaceStore.test.ts b/client/src/stores/workspaces/workspaceStore.test.ts
+new file mode 100644
+index 0000000..13a2376
+--- /dev/null
++++ b/client/src/stores/workspaces/workspaceStore.test.ts
+@@ -0,0 +1,210 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++vi.mock("../../lib/db/db");
++vi.mock("../../lib/crypto/crypto");
++
++import { decryptRowData, encryptRowData } from "../../lib/crypto/crypto";
++import { deleteRow, getRow, listRows, upsertRow } from "../../lib/db/db";
++import { useVaultStore } from "../vault/vaultStore";
++import { useWorkspaceStore } from "./workspaceStore";
++
++const mockList = vi.mocked(listRows);
++const mockGet = vi.mocked(getRow);
++const mockUpsert = vi.mocked(upsertRow);
++const mockDelete = vi.mocked(deleteRow);
++const mockDecrypt = vi.mocked(decryptRowData);
++const mockEncrypt = vi.mocked(encryptRowData);
++
++const workspaceRow = {
++  id: "w1",
++  revision: 1,
++  vault_id: "v1",
++  created_at: 1000,
++  updated_at: 2000,
++  deleted_at: null,
++  name: "monitoring",
++  sort_order: 0,
++  data: "enc",
++};
++
++beforeEach(() => {
++  useWorkspaceStore.setState({
++    workspaces: [],
++    isLoading: false,
++    error: null,
++  });
++  vi.restoreAllMocks();
++  useVaultStore.setState({ currentVaultId: null });
++});
++
++const layout = {
++  tabs: [{ root: { type: "leaf", hostId: "h1" } }],
++};
++
++describe("workspaceStore", () => {
++  it("fetchWorkspaces maps layout string from payload", async () => {
++    mockList.mockResolvedValue([workspaceRow]);
++    mockDecrypt.mockResolvedValue({
++      layout: JSON.stringify(layout),
++      hostIds: "h1,h2",
++    });
++    await useWorkspaceStore.getState().fetchWorkspaces("v1");
++    expect(mockList).toHaveBeenCalledWith("workspaces", "v1");
++    const ws = useWorkspaceStore.getState().workspaces[0];
++    expect(ws.id).toBe("w1");
++    expect(ws.name).toBe("monitoring");
++    expect(ws.layout).toBe(JSON.stringify(layout));
++    expect(ws.hostIds).toBe("h1,h2");
++    expect(ws.vaultId).toBe("v1");
++    expect(ws.createdAt).toBe("1000");
++    expect(ws.updatedAt).toBe("2000");
++  });
++
++  it("fetchWorkspaces defaults layout to '{}' without payload", async () => {
++    mockList.mockResolvedValue([workspaceRow]);
++    mockDecrypt.mockResolvedValue({});
++    await useWorkspaceStore.getState().fetchWorkspaces("v1");
++    expect(useWorkspaceStore.getState().workspaces[0].layout).toBe("{}");
++  });
++
++  it("createWorkspace encrypts stringified layout with AAD workspaces and upserts", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "monitoring",
++      sort_order: 0,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useWorkspaceStore.getState().createWorkspace("monitoring", layout);
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "workspaces",
++      expect.objectContaining({ layout: JSON.stringify(layout) }),
++    );
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "workspaces",
++      expect.objectContaining({
++        name: "monitoring",
++        vault_id: "v1",
++        data: "enc",
++      }),
++    );
++    expect(useWorkspaceStore.getState().workspaces.length).toBe(1);
++    expect(useWorkspaceStore.getState().workspaces[0].layout).toBe(
++      JSON.stringify(layout),
++    );
++  });
++
++  it("createWorkspace honors explicit vaultId over the current vault", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v2",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "monitoring",
++      sort_order: 0,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useWorkspaceStore
++      .getState()
++      .createWorkspace("monitoring", layout, "v2");
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "workspaces",
++      expect.objectContaining({ vault_id: "v2" }),
++    );
++  });
++
++  it("createWorkspace keeps layout/hostIds out of plaintext columns and whitelist fields out of the encrypt payload", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "monitoring",
++      sort_order: 0,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useWorkspaceStore.getState().createWorkspace("monitoring", layout);
++    const rowArg = mockUpsert.mock.calls[0][1];
++    expect(rowArg.data).toBe("enc");
++    expect(rowArg).not.toHaveProperty("layout");
++    expect(rowArg).not.toHaveProperty("hostIds");
++    const payloadArg = mockEncrypt.mock.calls[0][1] as Record<string, unknown>;
++    expect(payloadArg).toHaveProperty("layout", JSON.stringify(layout));
++    expect(payloadArg).not.toHaveProperty("name");
++    expect(payloadArg).not.toHaveProperty("sort_order");
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "workspaces",
++      expect.not.objectContaining({
++        name: JSON.stringify(layout),
++        sort_order: JSON.stringify(layout),
++      }),
++    );
++  });
++
++  it("renameWorkspace re-encrypts with unchanged layout", async () => {
++    useWorkspaceStore.setState({
++      workspaces: [
++        {
++          id: "w1",
++          name: "monitoring",
++          layout: JSON.stringify(layout),
++          hostIds: "h1",
++          createdAt: "1000",
++          updatedAt: "2000",
++        },
++      ],
++    });
++    mockGet.mockResolvedValue(workspaceRow);
++    mockDecrypt.mockResolvedValue({
++      layout: JSON.stringify(layout),
++      hostIds: "h1",
++    });
++    mockEncrypt.mockResolvedValue("enc2");
++    await useWorkspaceStore.getState().renameWorkspace("w1", "observability");
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "workspaces",
++      expect.objectContaining({
++        layout: JSON.stringify(layout),
++        hostIds: "h1",
++      }),
++    );
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "workspaces",
++      expect.objectContaining({ name: "observability", data: "enc2" }),
++    );
++    expect(useWorkspaceStore.getState().workspaces[0]).toMatchObject({
++      name: "observability",
++    });
++  });
++
++  it("deleteWorkspace tombstones", async () => {
++    useWorkspaceStore.setState({
++      workspaces: [
++        {
++          id: "w1",
++          name: "x",
++          layout: "{}",
++          createdAt: "",
++          updatedAt: "",
++        },
++      ],
++    });
++    await useWorkspaceStore.getState().deleteWorkspace("w1");
++    expect(mockDelete).toHaveBeenCalledWith("workspaces", "w1");
++    expect(useWorkspaceStore.getState().workspaces).toEqual([]);
++  });
++});
+diff --git a/client/src/stores/workspaces/workspaceStore.ts b/client/src/stores/workspaces/workspaceStore.ts
+index dc52e9c..0229e52 100644
+--- a/client/src/stores/workspaces/workspaceStore.ts
++++ b/client/src/stores/workspaces/workspaceStore.ts
+@@ -1,11 +1,15 @@
+ import { create } from "zustand";
++import { decryptRowData, encryptRowData } from "@/lib/crypto/crypto";
++import type { SyncRow } from "@/lib/db/db";
++import { deleteRow, getRow, listRows, upsertRow } from "@/lib/db/db";
++import { useVaultStore } from "@/stores/vault/vaultStore";
+ 
+ interface Workspace {
+   id: string;
+   name: string;
+   layout: string;
+   vaultId?: string;
+   hostIds?: string;
+   createdAt: string;
+   updatedAt: string;
+ }
+@@ -19,21 +23,138 @@ interface WorkspaceState {
+   createWorkspace: (
+     name: string,
+     layout: Record<string, unknown>,
+     vaultId?: string,
+   ) => Promise<void>;
+   renameWorkspace: (id: string, name: string) => Promise<void>;
+   deleteWorkspace: (id: string) => Promise<void>;
+   clearError: () => void;
+ }
+ 
+-export const useWorkspaceStore = create<WorkspaceState>((_set) => ({
++function newId(): string {
++  return crypto.randomUUID();
++}
++
++function errorMessage(err: unknown): string {
++  return err instanceof Error ? err.message : String(err);
++}
++
++async function workspaceFromRow(row: SyncRow): Promise<Workspace> {
++  const payload = (await decryptRowData(row.data)) as {
++    layout?: string;
++    hostIds?: string;
++  } | null;
++  return {
++    id: row.id,
++    name: row.name ?? "",
++    layout: (payload?.layout as string | undefined) ?? "{}",
++    vaultId: row.vault_id,
++    hostIds: payload?.hostIds,
++    createdAt: String(row.created_at),
++    updatedAt: String(row.updated_at),
++  };
++}
++
++export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+   workspaces: [],
+   isLoading: false,
+   error: null,
+ 
+-  fetchWorkspaces: async () => {},
+-  createWorkspace: async () => {},
+-  renameWorkspace: async () => {},
+-  deleteWorkspace: async () => {},
+-  clearError: () => {},
++  fetchWorkspaces: async (vaultId) => {
++    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vid) {
++      set({ isLoading: false });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const rows = await listRows("workspaces", vid);
++      const workspaces = await Promise.all(
++        rows.map((row) => workspaceFromRow(row)),
++      );
++      set({ workspaces, isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  createWorkspace: async (name, layout, vaultId) => {
++    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vid) {
++      set({ isLoading: false, error: "No vault selected" });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const row = await upsertRow("workspaces", {
++        id: newId(),
++        vault_id: vid,
++        name: name ?? "",
++        sort_order: 0,
++        data: await encryptRowData("workspaces", {
++          layout: JSON.stringify(layout),
++          hostIds: undefined,
++        }),
++      });
++      const created: Workspace = {
++        id: row.id,
++        name: row.name ?? "",
++        layout: JSON.stringify(layout),
++        vaultId: vid,
++        hostIds: undefined,
++        createdAt: String(row.created_at),
++        updatedAt: String(row.updated_at),
++      };
++      set({ workspaces: [created, ...get().workspaces], isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  renameWorkspace: async (id, name) => {
++    set({ isLoading: true, error: null });
++    try {
++      const row = await getRow("workspaces", id);
++      if (!row) {
++        set({ isLoading: false, error: "Workspace not found" });
++        return;
++      }
++      const payload = ((await decryptRowData(row.data)) ?? {}) as {
++        layout?: string;
++        hostIds?: string;
++      };
++      await upsertRow("workspaces", {
++        id: row.id,
++        vault_id: row.vault_id,
++        name: name ?? row.name,
++        sort_order: row.sort_order,
++        data: await encryptRowData("workspaces", {
++          layout: payload.layout ?? "{}",
++          hostIds: payload.hostIds,
++        }),
++      });
++      set({
++        workspaces: get().workspaces.map((w) =>
++          w.id === id ? { ...w, name: name ?? w.name } : w,
++        ),
++        isLoading: false,
++      });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  deleteWorkspace: async (id) => {
++    set({ isLoading: true, error: null });
++    try {
++      await deleteRow("workspaces", id);
++      set((s) => ({
++        workspaces: s.workspaces.filter((w) => w.id !== id),
++        isLoading: false,
++      }));
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  clearError: () => set({ error: null }),
+ }));

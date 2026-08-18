@@ -1,0 +1,750 @@
+diff --git a/server/cmd/termvault-server/main.go b/server/cmd/termvault-server/main.go
+index fca5647..faf583b 100644
+--- a/server/cmd/termvault-server/main.go
++++ b/server/cmd/termvault-server/main.go
+@@ -1,31 +1,54 @@
+ package main
+ 
+ import (
+ 	"log/slog"
+ 	"os"
+ 	"os/signal"
+ 	"syscall"
+ 
+ 	"github.com/gin-gonic/gin"
++	gormsqlite "github.com/glebarez/sqlite"
++	"github.com/termvault/termvault/internal/config"
++	"github.com/termvault/termvault/internal/models"
++	"gorm.io/gorm"
+ )
+ 
+ func main() {
++	cfg := config.Load()
++
++	var db *gorm.DB
++	var err error
++
++	if cfg.DatabaseURL == "" || cfg.DatabaseURL == "sqlite://termvault.db" {
++		db, err = gorm.Open(gormsqlite.Open("termvault.db"), &gorm.Config{})
++	} else {
++		db, err = gorm.Open(gormsqlite.Open(cfg.DatabaseURL), &gorm.Config{})
++	}
++
++	if err != nil {
++		slog.Error("failed to connect database", "error", err)
++		os.Exit(1)
++	}
++
++	if err := models.AutoMigrate(db); err != nil {
++		slog.Error("failed to run migrations", "error", err)
++		os.Exit(1)
++	}
++
+ 	r := gin.Default()
++
+ 	r.GET("/", func(c *gin.Context) {
+-		c.JSON(200, gin.H{"message": "hello world"})
++		c.JSON(200, gin.H{"message": "TermVault API"})
+ 	})
+ 
+-	addr := ":8080"
+-	if port := os.Getenv("TERMVAULT_PORT"); port != "" {
+-		addr = ":" + port
+-	}
++	addr := cfg.Host + ":" + cfg.Port
+ 
+ 	go func() {
+ 		slog.Info("server starting", "addr", addr)
+ 		if err := r.Run(addr); err != nil {
+ 			slog.Error("server failed", "error", err)
+ 			os.Exit(1)
+ 		}
+ 	}()
+ 
+ 	quit := make(chan os.Signal, 1)
+diff --git a/server/go.mod b/server/go.mod
+index c0b4e85..59bf71b 100644
+--- a/server/go.mod
++++ b/server/go.mod
+@@ -1,32 +1,49 @@
+ module github.com/termvault/termvault
+ 
+ go 1.26.5
+ 
+ require github.com/gin-gonic/gin v1.9.1
+ 
+ require (
+ 	github.com/bytedance/sonic v1.9.1 // indirect
+ 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
++	github.com/dustin/go-humanize v1.0.1 // indirect
+ 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
+ 	github.com/gin-contrib/sse v0.1.0 // indirect
++	github.com/glebarez/go-sqlite v1.21.2 // indirect
++	github.com/glebarez/sqlite v1.11.0 // indirect
+ 	github.com/go-playground/locales v0.14.1 // indirect
+ 	github.com/go-playground/universal-translator v0.18.1 // indirect
+ 	github.com/go-playground/validator/v10 v10.14.0 // indirect
+ 	github.com/goccy/go-json v0.10.2 // indirect
++	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
++	github.com/google/uuid v1.6.0 // indirect
++	github.com/jinzhu/inflection v1.0.0 // indirect
++	github.com/jinzhu/now v1.1.5 // indirect
++	github.com/joho/godotenv v1.5.1 // indirect
+ 	github.com/json-iterator/go v1.1.12 // indirect
+ 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
+ 	github.com/leodido/go-urn v1.2.4 // indirect
+ 	github.com/mattn/go-isatty v0.0.19 // indirect
++	github.com/mattn/go-sqlite3 v1.14.22 // indirect
+ 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+ 	github.com/modern-go/reflect2 v1.0.2 // indirect
+ 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
++	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+ 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
+ 	github.com/ugorji/go/codec v1.2.11 // indirect
+ 	golang.org/x/arch v0.3.0 // indirect
+ 	golang.org/x/crypto v0.9.0 // indirect
+ 	golang.org/x/net v0.10.0 // indirect
++	golang.org/x/oauth2 v0.36.0 // indirect
+ 	golang.org/x/sys v0.8.0 // indirect
+-	golang.org/x/text v0.9.0 // indirect
++	golang.org/x/text v0.20.0 // indirect
+ 	google.golang.org/protobuf v1.30.0 // indirect
+ 	gopkg.in/yaml.v3 v3.0.1 // indirect
++	gorm.io/driver/sqlite v1.6.0 // indirect
++	gorm.io/gorm v1.31.2 // indirect
++	modernc.org/libc v1.22.5 // indirect
++	modernc.org/mathutil v1.5.0 // indirect
++	modernc.org/memory v1.5.0 // indirect
++	modernc.org/sqlite v1.23.1 // indirect
+ )
+diff --git a/server/go.sum b/server/go.sum
+index 1a77fa1..d215d3d 100644
+--- a/server/go.sum
++++ b/server/go.sum
+@@ -1,57 +1,78 @@
+ github.com/bytedance/sonic v1.5.0/go.mod h1:ED5hyg4y6t3/9Ku1R6dU/4KyJ48DZ4jPhfY1O2AihPM=
+ github.com/bytedance/sonic v1.9.1 h1:6iJ6NqdoxCDr6mbY8h18oSO+cShGSMRGCEo7F2h0x8s=
+ github.com/bytedance/sonic v1.9.1/go.mod h1:i736AoUSYt75HyZLoJW9ERYxcy6eaN6h4BZXU064P/U=
+ github.com/chenzhuoyu/base64x v0.0.0-20211019084208-fb5309c8db06/go.mod h1:DH46F32mSOjUmXrMHnKwZdA8wcEefY7UVqBKYGjpdQY=
+ github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 h1:qSGYFH7+jGhDF8vLC+iwCD4WpbV1EBDSzWkJODFLams=
+ github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311/go.mod h1:b583jCggY9gE99b6G5LEC39OIiVsWj+R97kbl5odCEk=
+ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
++github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
++github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
+ github.com/gabriel-vasile/mimetype v1.4.2 h1:w5qFW6JKBz9Y393Y4q372O9A7cUSequkh1Q7OhCmWKU=
+ github.com/gabriel-vasile/mimetype v1.4.2/go.mod h1:zApsH/mKG4w07erKIaJPFiX0Tsq9BFQgN3qGY5GnNgA=
+ github.com/gin-contrib/sse v0.1.0 h1:Y/yl/+YNO8GZSjAhjMsSuLt29uWRFHdHYUb5lYOV9qE=
+ github.com/gin-contrib/sse v0.1.0/go.mod h1:RHrZQHXnP2xjPF+u1gW/2HnVO7nvIa9PG3Gm+fLHvGI=
+ github.com/gin-gonic/gin v1.9.1 h1:4idEAncQnU5cB7BeOkPtxjfCSye0AAm1R0RVIqJ+Jmg=
+ github.com/gin-gonic/gin v1.9.1/go.mod h1:hPrL7YrpYKXt5YId3A/Tnip5kqbEAP+KLuI3SUcPTeU=
++github.com/glebarez/go-sqlite v1.21.2 h1:3a6LFC4sKahUunAmynQKLZceZCOzUthkRkEAl9gAXWo=
++github.com/glebarez/go-sqlite v1.21.2/go.mod h1:sfxdZyhQjTM2Wry3gVYWaW072Ri1WMdWJi0k6+3382k=
++github.com/glebarez/sqlite v1.11.0 h1:wSG0irqzP6VurnMEpFGer5Li19RpIRi2qvQz++w0GMw=
++github.com/glebarez/sqlite v1.11.0/go.mod h1:h8/o8j5wiAsqSPoWELDUdJXhjAhsVliSn7bWZjOhrgQ=
+ github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
+ github.com/go-playground/assert/v2 v2.2.0/go.mod h1:VDjEfimB/XKnb+ZQfWdccd7VUvScMdVu0Titje2rxJ4=
+ github.com/go-playground/locales v0.14.1 h1:EWaQ/wswjilfKLTECiXz7Rh+3BjFhfDFKv/oXslEjJA=
+ github.com/go-playground/locales v0.14.1/go.mod h1:hxrqLVvrK65+Rwrd5Fc6F2O76J/NuW9t0sjnWqG1slY=
+ github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJnYK9S473LQFuzCbDbfSFY=
+ github.com/go-playground/universal-translator v0.18.1/go.mod h1:xekY+UJKNuX9WP91TpwSH2VMlDf28Uj24BCp08ZFTUY=
+ github.com/go-playground/validator/v10 v10.14.0 h1:vgvQWe3XCz3gIeFDm/HnTIbj6UGmg/+t63MyGU2n5js=
+ github.com/go-playground/validator/v10 v10.14.0/go.mod h1:9iXMNT7sEkjXb0I+enO7QXmzG6QCsPWY4zveKFVRSyU=
+ github.com/goccy/go-json v0.10.2 h1:CrxCmQqYDkv1z7lO7Wbh2HN93uovUHgrECaO5ZrCXAU=
+ github.com/goccy/go-json v0.10.2/go.mod h1:6MelG93GURQebXPDq3khkgXZkazVtN9CRI+MGFi0w8I=
++github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
++github.com/golang-jwt/jwt/v5 v5.3.1/go.mod h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=
+ github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
+ github.com/google/go-cmp v0.5.5 h1:Khx7svrCpmxxtHBq5j2mp/xVjsi8hQMfNLvJFAlrGgU=
+ github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
+ github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
++github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
++github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
++github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
++github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
++github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=
++github.com/jinzhu/now v1.1.5/go.mod h1:d3SSVoowX0Lcu0IBviAWJpolVfI5UJVZZ7cO71lE/z8=
++github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
++github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+ github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
+ github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
+ github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
+ github.com/klauspost/cpuid/v2 v2.2.4 h1:acbojRNwl3o09bUq+yDCtZFc1aiwaAAxtcn8YkZXnvk=
+ github.com/klauspost/cpuid/v2 v2.2.4/go.mod h1:RVVoqg1df56z8g3pUjL/3lE5UfnlrJX8tyFgg4nqhuY=
+ github.com/leodido/go-urn v1.2.4 h1:XlAE/cm/ms7TE/VMVoduSpNBoyc2dOxHs5MZSwAN63Q=
+ github.com/leodido/go-urn v1.2.4/go.mod h1:7ZrI8mTSeBSHl/UaRyKQW1qZeMgak41ANeCNaVckg+4=
+ github.com/mattn/go-isatty v0.0.19 h1:JITubQf0MOLdlGRuRq+jtsDlekdYPia9ZFsB8h/APPA=
+ github.com/mattn/go-isatty v0.0.19/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
++github.com/mattn/go-sqlite3 v1.14.22 h1:2gZY6PC6kBnID23Tichd1K+Z0oS6nE/XwU+Vz/5o4kU=
++github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
+ github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
+ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
+ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
+ github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
+ github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
+ github.com/pelletier/go-toml/v2 v2.0.8 h1:0ctb6s9mE31h0/lhu+J6OPmVeDxJn+kYnJc2jZR9tGQ=
+ github.com/pelletier/go-toml/v2 v2.0.8/go.mod h1:vuYfssBdrU2XDZ9bYydBu6t+6a6PYNcZljzZR9VXg+4=
+ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
++github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
++github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
++github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
+ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+ github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
+ github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
+ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
+ github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+ github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
+ github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+ github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+ github.com/stretchr/testify v1.8.3 h1:RP3t2pwF7cMEbC1dqtB6poj3niw/9gnV4Cjg5oW5gtY=
+@@ -60,27 +81,43 @@ github.com/twitchyliquid64/golang-asm v0.15.1 h1:SU5vSMR7hnwNxj24w34ZyCi/FmDZTkS
+ github.com/twitchyliquid64/golang-asm v0.15.1/go.mod h1:a1lVb/DtPvCB8fslRZhAngC2+aY1QWCk3Cedj/Gdt08=
+ github.com/ugorji/go/codec v1.2.11 h1:BMaWp1Bb6fHwEtbplGBGJ498wD+LKlNSl25MjdZY4dU=
+ github.com/ugorji/go/codec v1.2.11/go.mod h1:UNopzCgEMSXjBc6AOMqYvWC1ktqTAfzJZUZgYf6w6lg=
+ golang.org/x/arch v0.0.0-20210923205945-b76863e36670/go.mod h1:5om86z9Hs0C8fWVUuoMHwpExlXzs5Tkyp9hOrfG7pp8=
+ golang.org/x/arch v0.3.0 h1:02VY4/ZcO/gBOH6PUaoiptASxtXU10jazRCP865E97k=
+ golang.org/x/arch v0.3.0/go.mod h1:5om86z9Hs0C8fWVUuoMHwpExlXzs5Tkyp9hOrfG7pp8=
+ golang.org/x/crypto v0.9.0 h1:LF6fAI+IutBocDJ2OT0Q1g8plpYljMZ4+lty+dsqw3g=
+ golang.org/x/crypto v0.9.0/go.mod h1:yrmDGqONDYtNj3tH8X9dzUun2m2lzPa9ngI6/RUPGR0=
+ golang.org/x/net v0.10.0 h1:X2//UzNDwYmtCLn7To6G58Wr6f5ahEAQgKNzv9Y951M=
+ golang.org/x/net v0.10.0/go.mod h1:0qNGK6F8kojg2nk9dLZ2mShWaEBan6FAoqfSigmmuDg=
++golang.org/x/oauth2 v0.36.0 h1:peZ/1z27fi9hUOFCAZaHyrpWG5lwe0RJEEEeH0ThlIs=
++golang.org/x/oauth2 v0.36.0/go.mod h1:YDBUJMTkDnJS+A4BP4eZBjCqtokkg1hODuPjwiGPO7Q=
+ golang.org/x/sys v0.0.0-20220704084225-05e143d24a9e/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.8.0 h1:EBmGv8NaZBZTWvrbjNoL6HVt+IVy3QDQpJs7VRIw3tU=
+ golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/text v0.9.0 h1:2sjJmO8cDvYveuX97RDLsxlyUxLl+GHoLxBiRdHllBE=
+ golang.org/x/text v0.9.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
++golang.org/x/text v0.20.0 h1:gK/Kv2otX8gz+wn7Rmb3vT96ZwuoxnQlY+HlJVj7Qug=
++golang.org/x/text v0.20.0/go.mod h1:D4IsuqiFMhST5bX19pQ9ikHC2GsaKyk/oF+pn3ducp4=
+ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=
+ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
+ google.golang.org/protobuf v1.30.0 h1:kPPoIgf3TsEvrm0PFe15JQ+570QVxYzEvvHqChK+cng=
+ google.golang.org/protobuf v1.30.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
+ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
+ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+ gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+ gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
++gorm.io/driver/sqlite v1.6.0 h1:WHRRrIiulaPiPFmDcod6prc4l2VGVWHz80KspNsxSfQ=
++gorm.io/driver/sqlite v1.6.0/go.mod h1:AO9V1qIQddBESngQUKWL9yoH93HIeA1X6V633rBwyT8=
++gorm.io/gorm v1.31.2 h1:3o8FXNo9v9S858gil+3LlZA1LkCOzgb4g5BL64FgaCo=
++gorm.io/gorm v1.31.2/go.mod h1:XyQVbO2k6YkOis7C2437jSit3SsDK72s7n7rsSHd+Gs=
++modernc.org/libc v1.22.5 h1:91BNch/e5B0uPbJFgqbxXuOnxBQjlS//icfQEGmvyjE=
++modernc.org/libc v1.22.5/go.mod h1:jj+Z7dTNX8fBScMVNRAYZ/jF91K8fdT2hYMThc3YjBY=
++modernc.org/mathutil v1.5.0 h1:rV0Ko/6SfM+8G+yKiyI830l3Wuz1zRutdslNoQ0kfiQ=
++modernc.org/mathutil v1.5.0/go.mod h1:mZW8CKdRPY1v87qxC/wUdX5O1qDzXMP5TH3wjfpga6E=
++modernc.org/memory v1.5.0 h1:N+/8c5rE6EqugZwHii4IFsaJ7MUhoWX07J5tC/iI5Ds=
++modernc.org/memory v1.5.0/go.mod h1:PkUhL0Mugw21sHPeskwZW4D6VscE/GQJOnIpCnW6pSU=
++modernc.org/sqlite v1.23.1 h1:nrSBg4aRQQwq59JpvGEQ15tNxoO5pX/kUjcRNwSAGQM=
++modernc.org/sqlite v1.23.1/go.mod h1:OrDj17Mggn6MhE+iPbBNf7RGKODDE9NFT0f3EwDzJqk=
+ rsc.io/pdf v0.1.1/go.mod h1:n8OzWcQ6Sp37PL01nO98y4iUCRdTGarVfzxY20ICaU4=
+diff --git a/server/internal/config/config.go b/server/internal/config/config.go
+new file mode 100644
+index 0000000..5c1c36e
+--- /dev/null
++++ b/server/internal/config/config.go
+@@ -0,0 +1,97 @@
++package config
++
++import (
++	"fmt"
++	"os"
++	"strings"
++	"time"
++
++	"github.com/joho/godotenv"
++)
++
++type Config struct {
++	Port              string
++	Host              string
++	DatabaseURL       string
++	JWTSecret         string
++	JWTExpiry         time.Duration
++	RefreshTokenExpiry time.Duration
++	BaseURL           string
++	OAuthGoogleID     string
++	OAuthGoogleSecret string
++	OAuthGitHubID     string
++	OAuthGitHubSecret string
++	OAuthRedirectBase string
++	AppScheme         string
++	RateLimitAuth     int
++	RateLimitAPI      int
++	TrustedProxies    []string
++}
++
++func Load() *Config {
++	godotenv.Load()
++
++	rateLimitAuth := 10
++	rateLimitAPI := 30
++
++	cfg := &Config{
++		Port:              getEnv("TERMVAULT_PORT", "8080"),
++		Host:              getEnv("TERMVAULT_HOST", "0.0.0.0"),
++		DatabaseURL:       getEnv("DATABASE_URL", "sqlite://termvault.db"),
++		JWTSecret:         os.Getenv("JWT_SECRET"),
++		JWTExpiry:         parseDuration(getEnv("JWT_EXPIRY", "15m")),
++		RefreshTokenExpiry: parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h")),
++		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
++		OAuthGoogleID:     os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
++		OAuthGoogleSecret: os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
++		OAuthGitHubID:     os.Getenv("OAUTH_GITHUB_CLIENT_ID"),
++		OAuthGitHubSecret: os.Getenv("OAUTH_GITHUB_CLIENT_SECRET"),
++		OAuthRedirectBase: getEnv("OAUTH_REDIRECT_BASE", getEnv("BASE_URL", "http://localhost:8080")),
++		AppScheme:         getEnv("APP_SCHEME", "termvault"),
++		RateLimitAuth:     rateLimitAuth,
++		RateLimitAPI:      rateLimitAPI,
++	}
++
++	if v := os.Getenv("RATE_LIMIT_AUTH"); v != "" {
++		if n, err := parseIntSafe(v, 10); err == nil {
++			cfg.RateLimitAuth = n
++		}
++	}
++	if v := os.Getenv("RATE_LIMIT_API"); v != "" {
++		if n, err := parseIntSafe(v, 30); err == nil {
++			cfg.RateLimitAPI = n
++		}
++	}
++
++	if v := os.Getenv("TRUSTED_PROXIES"); v != "" {
++		for _, cidr := range strings.Split(v, ",") {
++			cidr = strings.TrimSpace(cidr)
++			if cidr != "" {
++				cfg.TrustedProxies = append(cfg.TrustedProxies, cidr)
++			}
++		}
++	}
++
++	return cfg
++}
++
++func getEnv(key, fallback string) string {
++	if v := os.Getenv(key); v != "" {
++		return v
++	}
++	return fallback
++}
++
++func parseDuration(s string) time.Duration {
++	d, _ := time.ParseDuration(s)
++	return d
++}
++
++func parseIntSafe(s string, fallback int) (int, error) {
++	var n int
++	_, err := fmt.Sscanf(s, "%d", &n)
++	if err != nil {
++		return fallback, err
++	}
++	return n, nil
++}
+diff --git a/server/internal/config/config_test.go b/server/internal/config/config_test.go
+new file mode 100644
+index 0000000..7746ef8
+--- /dev/null
++++ b/server/internal/config/config_test.go
+@@ -0,0 +1,57 @@
++package config
++
++import (
++	"os"
++	"testing"
++)
++
++func TestLoadDefaults(t *testing.T) {
++	cfg := Load()
++
++	if cfg.Port != "8080" {
++		t.Errorf("expected default port 8080, got %s", cfg.Port)
++	}
++	if cfg.Host != "0.0.0.0" {
++		t.Errorf("expected default host 0.0.0.0, got %s", cfg.Host)
++	}
++	if cfg.DatabaseURL != "sqlite://termvault.db" {
++		t.Errorf("expected default database URL, got %s", cfg.DatabaseURL)
++	}
++	if cfg.RateLimitAuth != 10 {
++		t.Errorf("expected default rate limit auth 10, got %d", cfg.RateLimitAuth)
++	}
++	if cfg.RateLimitAPI != 30 {
++		t.Errorf("expected default rate limit API 30, got %d", cfg.RateLimitAPI)
++	}
++}
++
++func TestLoadEnvOverrides(t *testing.T) {
++	os.Setenv("TERMVAULT_PORT", "9090")
++	os.Setenv("TERMVAULT_HOST", "127.0.0.1")
++	os.Setenv("RATE_LIMIT_AUTH", "20")
++	os.Setenv("RATE_LIMIT_API", "50")
++	os.Setenv("TRUSTED_PROXIES", "10.0.0.0/8, 172.16.0.0/12")
++	defer os.Unsetenv("TERMVAULT_PORT")
++	defer os.Unsetenv("TERMVAULT_HOST")
++	defer os.Unsetenv("RATE_LIMIT_AUTH")
++	defer os.Unsetenv("RATE_LIMIT_API")
++	defer os.Unsetenv("TRUSTED_PROXIES")
++
++	cfg := Load()
++
++	if cfg.Port != "9090" {
++		t.Errorf("expected port 9090, got %s", cfg.Port)
++	}
++	if cfg.Host != "127.0.0.1" {
++		t.Errorf("expected host 127.0.0.1, got %s", cfg.Host)
++	}
++	if cfg.RateLimitAuth != 20 {
++		t.Errorf("expected rate limit auth 20, got %d", cfg.RateLimitAuth)
++	}
++	if cfg.RateLimitAPI != 50 {
++		t.Errorf("expected rate limit API 50, got %d", cfg.RateLimitAPI)
++	}
++	if len(cfg.TrustedProxies) != 2 {
++		t.Errorf("expected 2 trusted proxies, got %d", len(cfg.TrustedProxies))
++	}
++}
+diff --git a/server/internal/models/auth_code.go b/server/internal/models/auth_code.go
+new file mode 100644
+index 0000000..c9e8846
+--- /dev/null
++++ b/server/internal/models/auth_code.go
+@@ -0,0 +1,18 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type AuthCode struct {
++	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
++	CodeHash  string     `gorm:"uniqueIndex;not null" json:"-"`
++	Purpose   string     `gorm:"not null" json:"purpose"`
++	UserID    uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
++	DeviceID  string     `gorm:"not null" json:"device_id"`
++	ExpiresAt time.Time  `gorm:"not null" json:"expires_at"`
++	UsedAt    *time.Time `json:"used_at,omitempty"`
++	CreatedAt time.Time  `json:"created_at"`
++}
+diff --git a/server/internal/models/models.go b/server/internal/models/models.go
+new file mode 100644
+index 0000000..ef11a96
+--- /dev/null
++++ b/server/internal/models/models.go
+@@ -0,0 +1,40 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++	"gorm.io/gorm"
++)
++
++func AutoMigrate(db *gorm.DB) error {
++	return db.AutoMigrate(
++		&User{},
++		&UserKey{},
++		&RefreshToken{},
++		&OAuthState{},
++		&AuthCode{},
++		&Vault{},
++		&Record{},
++	)
++}
++
++func SeedPersonalVault(db *gorm.DB, userID uuid.UUID) error {
++	var count int64
++	if err := db.Model(&Vault{}).Where("owner_id = ? AND kind = ?", userID, "personal").Count(&count).Error; err != nil {
++		return err
++	}
++	if count > 0 {
++		return nil
++	}
++
++	vault := Vault{
++		ID:        uuid.New(),
++		OwnerID:   userID,
++		Kind:      "personal",
++		Name:      "Personal",
++		CreatedAt: time.Now(),
++		UpdatedAt: time.Now(),
++	}
++	return db.Create(&vault).Error
++}
+diff --git a/server/internal/models/models_test.go b/server/internal/models/models_test.go
+new file mode 100644
+index 0000000..06c6656
+--- /dev/null
++++ b/server/internal/models/models_test.go
+@@ -0,0 +1,113 @@
++package models
++
++import (
++	"testing"
++
++	"github.com/google/uuid"
++	gormsqlite "github.com/glebarez/sqlite"
++	"gorm.io/gorm"
++)
++
++func setupTestDB(t *testing.T) *gorm.DB {
++	t.Helper()
++	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
++	if err != nil {
++		t.Fatalf("failed to open test db: %v", err)
++	}
++	return db
++}
++
++func TestAutoMigrate(t *testing.T) {
++	db := setupTestDB(t)
++
++	err := AutoMigrate(db)
++	if err != nil {
++		t.Fatalf("AutoMigrate failed: %v", err)
++	}
++
++	var tables []string
++	db.Raw("SELECT name FROM sqlite_master WHERE type='table'").Pluck("name", &tables)
++
++	t.Logf("tables created: %v", tables)
++
++	expectedTables := map[string]bool{
++		"users":          false,
++		"user_keys":      false,
++		"refresh_tokens": false,
++		"oauth_states":   false,
++		"auth_codes":     false,
++		"vaults":         false,
++		"records":        false,
++	}
++
++	for _, table := range tables {
++		if _, ok := expectedTables[table]; ok {
++			expectedTables[table] = true
++		}
++	}
++
++	for table, found := range expectedTables {
++		if !found {
++			t.Errorf("expected table %s to exist", table)
++		}
++	}
++}
++
++func TestSeedPersonalVault(t *testing.T) {
++	db := setupTestDB(t)
++	if err := AutoMigrate(db); err != nil {
++		t.Fatalf("AutoMigrate failed: %v", err)
++	}
++
++	userID := uuid.New()
++	err := SeedPersonalVault(db, userID)
++	if err != nil {
++		t.Fatalf("SeedPersonalVault failed: %v", err)
++	}
++
++	var vault Vault
++	if err := db.Where("owner_id = ? AND kind = ?", userID, "personal").First(&vault).Error; err != nil {
++		t.Fatalf("expected personal vault to exist: %v", err)
++	}
++	if vault.Name != "Personal" {
++		t.Errorf("expected vault name 'Personal', got '%s'", vault.Name)
++	}
++
++	err = SeedPersonalVault(db, userID)
++	if err != nil {
++		t.Fatalf("SeedPersonalVault idempotent call failed: %v", err)
++	}
++
++	var count int64
++	db.Model(&Vault{}).Where("owner_id = ? AND kind = ?", userID, "personal").Count(&count)
++	if count != 1 {
++		t.Errorf("expected exactly 1 personal vault, got %d", count)
++	}
++}
++
++func TestUserModel(t *testing.T) {
++	db := setupTestDB(t)
++	if err := AutoMigrate(db); err != nil {
++		t.Fatalf("AutoMigrate failed: %v", err)
++	}
++
++	user := User{
++		ID:           uuid.New(),
++		Email:        "test@example.com",
++		Name:         "Test User",
++		AuthProvider: "password",
++		Initialized:  true,
++	}
++
++	if err := db.Create(&user).Error; err != nil {
++		t.Fatalf("failed to create user: %v", err)
++	}
++
++	var found User
++	if err := db.Where("email = ?", "test@example.com").First(&found).Error; err != nil {
++		t.Fatalf("failed to find user: %v", err)
++	}
++	if found.Name != "Test User" {
++		t.Errorf("expected name 'Test User', got '%s'", found.Name)
++	}
++}
+diff --git a/server/internal/models/oauth_state.go b/server/internal/models/oauth_state.go
+new file mode 100644
+index 0000000..f7500e8
+--- /dev/null
++++ b/server/internal/models/oauth_state.go
+@@ -0,0 +1,17 @@
++package models
++
++import "time"
++
++type OAuthState struct {
++	State        string     `gorm:"primaryKey" json:"state"`
++	Provider     string     `gorm:"not null" json:"provider"`
++	CodeVerifier string     `gorm:"not null" json:"code_verifier"`
++	DeviceID     string     `gorm:"not null" json:"device_id"`
++	ExpiresAt    time.Time  `gorm:"not null" json:"expires_at"`
++	UsedAt       *time.Time `json:"used_at,omitempty"`
++	CreatedAt    time.Time  `json:"created_at"`
++}
++
++func (OAuthState) TableName() string {
++	return "oauth_states"
++}
+diff --git a/server/internal/models/record.go b/server/internal/models/record.go
+new file mode 100644
+index 0000000..b17e512
+--- /dev/null
++++ b/server/internal/models/record.go
+@@ -0,0 +1,19 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type Record struct {
++	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
++	UserID     uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
++	VaultID    uuid.UUID  `gorm:"type:uuid;not null;index" json:"vault_id"`
++	RecordType string     `gorm:"not null" json:"record_type"`
++	Data       string     `gorm:"not null" json:"data"`
++	Revision   int        `gorm:"not null;default:1" json:"revision"`
++	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
++	CreatedAt  time.Time  `json:"created_at"`
++	UpdatedAt  time.Time  `json:"updated_at"`
++}
+diff --git a/server/internal/models/refresh_token.go b/server/internal/models/refresh_token.go
+new file mode 100644
+index 0000000..312acc6
+--- /dev/null
++++ b/server/internal/models/refresh_token.go
+@@ -0,0 +1,20 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type RefreshToken struct {
++	ID          uint       `gorm:"primaryKey;autoIncrement" json:"id"`
++	UserID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
++	TokenHash   string     `gorm:"uniqueIndex;not null" json:"-"`
++	DeviceID    string     `gorm:"not null" json:"device_id"`
++	UserAgent   *string    `json:"user_agent,omitempty"`
++	ExpiresAt   time.Time  `gorm:"not null" json:"expires_at"`
++	RotatedAt   *time.Time `json:"rotated_at,omitempty"`
++	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
++	ReplacedBy  *uint      `json:"replaced_by,omitempty"`
++	CreatedAt   time.Time  `json:"created_at"`
++}
+diff --git a/server/internal/models/user.go b/server/internal/models/user.go
+new file mode 100644
+index 0000000..d34135b
+--- /dev/null
++++ b/server/internal/models/user.go
+@@ -0,0 +1,26 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type User struct {
++	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
++	Email        string     `gorm:"uniqueIndex;not null" json:"email"`
++	Name         string     `gorm:"not null" json:"name"`
++	AuthProvider string     `gorm:"not null;default:'password'" json:"auth_provider"`
++	ProviderSub  *string    `gorm:"uniqueIndex" json:"provider_sub,omitempty"`
++	AuthVerifier *string    `json:"-"`
++	AuthSalt     *string    `json:"-"`
++	SaltCL       *string    `json:"salt_cl,omitempty"`
++	KDFM         int        `gorm:"not null;default:67108864" json:"kdf_m"`
++	KDFT         int        `gorm:"not null;default:3" json:"kdf_t"`
++	KDFP         int        `gorm:"not null;default:1" json:"kdf_p"`
++	PublicKey    *string    `json:"public_key,omitempty"`
++	Initialized  bool       `gorm:"not null;default:false" json:"initialized"`
++	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
++	CreatedAt    time.Time  `json:"created_at"`
++	UpdatedAt    time.Time  `json:"updated_at"`
++}
+diff --git a/server/internal/models/user_key.go b/server/internal/models/user_key.go
+new file mode 100644
+index 0000000..789e8c3
+--- /dev/null
++++ b/server/internal/models/user_key.go
+@@ -0,0 +1,15 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type UserKey struct {
++	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
++	UserID    uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
++	KeyType   string    `gorm:"not null" json:"key_type"`
++	Payload   string    `gorm:"not null" json:"payload"`
++	CreatedAt time.Time `json:"created_at"`
++}
+diff --git a/server/internal/models/vault.go b/server/internal/models/vault.go
+new file mode 100644
+index 0000000..477c931
+--- /dev/null
++++ b/server/internal/models/vault.go
+@@ -0,0 +1,16 @@
++package models
++
++import (
++	"time"
++
++	"github.com/google/uuid"
++)
++
++type Vault struct {
++	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
++	OwnerID   uuid.UUID `gorm:"type:uuid;not null;index" json:"owner_id"`
++	Kind      string    `gorm:"not null" json:"kind"`
++	Name      string    `gorm:"not null" json:"name"`
++	CreatedAt time.Time `json:"created_at"`
++	UpdatedAt time.Time `json:"updated_at"`
++}

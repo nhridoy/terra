@@ -1,0 +1,265 @@
+# Review package: 8c5a38f..b9f78ae
+
+## Commits
+b9f78ae test: cover register verification re-issue and verified-user paths
+1464de6 refactor: extract register verification helper
+
+## Files changed
+ server/internal/auth/handlers.go      |  44 ++++++--------
+ server/internal/auth/handlers_test.go | 104 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 122 insertions(+), 26 deletions(-)
+
+## Diff
+diff --git a/server/internal/auth/handlers.go b/server/internal/auth/handlers.go
+index e2f1190..31cd0fa 100644
+--- a/server/internal/auth/handlers.go
++++ b/server/internal/auth/handlers.go
+@@ -98,33 +98,21 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 
+ 		userID, err := uuid.Parse(req.UserID)
+ 		if err != nil {
+ 			Error(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid user_id")
+ 			return
+ 		}
+ 
+ 		var existing models.User
+ 		if db.Where("id = ?", userID).First(&existing).Error == nil {
+ 			if cfg.RequireEmailVerification && existing.EmailVerifiedAt == nil {
+-				otp, err := issueEmailVerifyCode(db, userID)
+-				if err != nil {
+-					Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
+-					return
+-				}
+-				sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+-				if err := sender.SendOtp(existing.Email, otp); err != nil {
+-					slog.Error("failed to send verification otp", "email", existing.Email, "error", err)
+-				}
+-				Success(c, http.StatusCreated, gin.H{
+-					"verification_required": true,
+-					"user":                  existing,
+-				})
++				respondVerificationRequired(c, db, cfg, &existing)
+ 				return
+ 			}
+ 			rt, err := createRefreshToken(db, userID, "", cfg)
+ 			if err != nil {
+ 				Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
+ 				return
+ 			}
+ 			at, _, err := GenerateTokenPair(userID, "", cfg)
+ 			if err != nil {
+ 				Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to generate tokens")
+@@ -189,33 +177,21 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to store keyring")
+ 			return
+ 		}
+ 
+ 		if err := models.SeedPersonalVault(db, userID); err != nil {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to seed vault")
+ 			return
+ 		}
+ 
+ 		if cfg.RequireEmailVerification {
+-			otp, err := issueEmailVerifyCode(db, userID)
+-			if err != nil {
+-				Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
+-				return
+-			}
+-			sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+-			if err := sender.SendOtp(user.Email, otp); err != nil {
+-				slog.Error("failed to send verification otp", "email", user.Email, "error", err)
+-			}
+-			Success(c, http.StatusCreated, gin.H{
+-				"verification_required": true,
+-				"user":                  user,
+-			})
++			respondVerificationRequired(c, db, cfg, &user)
+ 			return
+ 		}
+ 
+ 		rt, err := createRefreshToken(db, userID, "", cfg)
+ 		if err != nil {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
+ 			return
+ 		}
+ 
+ 		at, _, err := GenerateTokenPair(userID, "", cfg)
+@@ -225,20 +201,36 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		}
+ 
+ 		Success(c, http.StatusCreated, gin.H{
+ 			"access_token":  at,
+ 			"refresh_token": rt,
+ 			"user":          user,
+ 		})
+ 	}
+ }
+ 
++func respondVerificationRequired(c *gin.Context, db *gorm.DB, cfg *config.Config, user *models.User) {
++	otp, err := issueEmailVerifyCode(db, user.ID)
++	if err != nil {
++		Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++		return
++	}
++	sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++	if err := sender.SendOtp(user.Email, otp); err != nil {
++		slog.Error("failed to send verification otp", "email", user.Email, "error", err)
++	}
++	Success(c, http.StatusCreated, gin.H{
++		"verification_required": true,
++		"user":                  user,
++	})
++}
++
+ type loginRequest struct {
+ 	Email        string `json:"email" binding:"required"`
+ 	Proof        string `json:"proof" binding:"required"`
+ 	Nonce        string `json:"nonce" binding:"required"`
+ 	DeviceID     string `json:"device_id"`
+ 	ClientPubkey string `json:"client_pubkey"`
+ }
+ 
+ func HandleLogin(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+diff --git a/server/internal/auth/handlers_test.go b/server/internal/auth/handlers_test.go
+index 8643c8e..2c4f9fa 100644
+--- a/server/internal/auth/handlers_test.go
++++ b/server/internal/auth/handlers_test.go
+@@ -486,33 +486,137 @@ func TestRegister_VerificationOff_ReturnsTokens(t *testing.T) {
+ 	req.Header.Set("Content-Type", "application/json")
+ 	r.ServeHTTP(w, req)
+ 
+ 	if w.Code != http.StatusCreated {
+ 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+ 	}
+ 	var resp struct {
+ 		Data struct {
+ 			VerificationRequired bool   `json:"verification_required"`
+ 			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
+ 		} `json:"data"`
+ 	}
+ 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	if resp.Data.AccessToken == "" {
+ 		t.Fatal("expected access token when verification off")
+ 	}
++	if resp.Data.RefreshToken == "" {
++		t.Fatal("expected refresh token when verification off")
++	}
+ 	if resp.Data.VerificationRequired {
+ 		t.Fatal("expected no verification_required flag")
+ 	}
+ }
+ 
++func TestRegister_VerificationRequired_Reissue(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID := uuid.New().String()
++	body := registerRequestPayload("reissue@example.com", userID)
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++	if w.Code != http.StatusCreated {
++		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++	}
++
++	w2 := httptest.NewRecorder()
++	req2 := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req2.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w2, req2)
++	if w2.Code != http.StatusCreated {
++		t.Fatalf("expected 201 on re-register, got %d: %s", w2.Code, w2.Body.String())
++	}
++
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if !resp.Data.VerificationRequired {
++		t.Fatal("expected verification_required true on re-register")
++	}
++	if resp.Data.AccessToken != "" || resp.Data.RefreshToken != "" {
++		t.Fatal("expected no tokens on re-register")
++	}
++
++	uid, err := uuid.Parse(userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var codeCount int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", uid, emailVerifyPurpose).Count(&codeCount)
++	if codeCount != 1 {
++		t.Fatalf("expected exactly 1 verification code after re-register, got %d", codeCount)
++	}
++}
++
++func TestRegister_VerifiedUser_ReturnsTokens(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID := uuid.New()
++	now := time.Now()
++	salt := "server-salt"
++	saltCL := "client-salt"
++	existing := models.User{
++		ID:              userID,
++		Email:           "verified@example.com",
++		FullName:        "Verified",
++		AuthProvider:    "password",
++		AuthSalt:        &salt,
++		SaltCL:          &saltCL,
++		EmailVerifiedAt: &now,
++	}
++	if err := db.Create(&existing).Error; err != nil {
++		t.Fatalf("seed user: %v", err)
++	}
++
++	body := registerRequestPayload("verified@example.com", userID.String())
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
++		t.Fatal("expected tokens for verified user")
++	}
++	if resp.Data.VerificationRequired {
++		t.Fatal("expected no verification_required flag for verified user")
++	}
++}
++
+ func TestRegister_StoresKeyringAndRecovery(t *testing.T) {
+ 	db := setupTestDB(t)
+ 	cfg := testConfig()
+ 	r := setupHandlerRouter(db, cfg)
+ 
+ 	userID := uuid.New()
+ 	recoveryCode := "recovery-code-123"
+ 	body, _ := json.Marshal(gin.H{
+ 		"user_id":       userID.String(),
+ 		"email":         "keyring@example.com",

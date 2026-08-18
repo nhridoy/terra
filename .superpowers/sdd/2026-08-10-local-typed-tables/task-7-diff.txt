@@ -1,0 +1,594 @@
+diff --git a/client/src/stores/hosts/hostStore.test.ts b/client/src/stores/hosts/hostStore.test.ts
+new file mode 100644
+index 0000000..342d717
+--- /dev/null
++++ b/client/src/stores/hosts/hostStore.test.ts
+@@ -0,0 +1,257 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++vi.mock("../../lib/db/db");
++vi.mock("../../lib/crypto/crypto");
++vi.mock("../keys/keyStore", () => ({
++  useKeyStore: {
++    getState: () => ({ getCredentialsForKey: vi.fn(async () => "PRIVATE") }),
++  },
++}));
++
++import { decryptRowData, encryptRowData } from "../../lib/crypto/crypto";
++import { deleteRow, getRow, listRows, upsertRow } from "../../lib/db/db";
++import { useVaultStore } from "../vault/vaultStore";
++import { useHostStore } from "./hostStore";
++
++const mockList = vi.mocked(listRows);
++const mockGet = vi.mocked(getRow);
++const mockUpsert = vi.mocked(upsertRow);
++const mockDelete = vi.mocked(deleteRow);
++const mockDecrypt = vi.mocked(decryptRowData);
++const mockEncrypt = vi.mocked(encryptRowData);
++
++beforeEach(() =>
++  useHostStore.setState({
++    hosts: [],
++    groups: [],
++    selectedHost: null,
++    isLoading: false,
++    error: null,
++  }),
++);
++
++describe("hostStore", () => {
++  it("fetchHosts decrypts payloads into the Host model", async () => {
++    mockList.mockResolvedValue([
++      {
++        id: "h1",
++        revision: 1,
++        vault_id: "v1",
++        created_at: 1000,
++        updated_at: 1000,
++        deleted_at: null,
++        name: "prod",
++        os: "linux",
++        group_id: "g1",
++        key_id: null,
++        sort_order: 0,
++        data: "enc",
++      },
++    ]);
++    mockDecrypt.mockResolvedValue({
++      address: "1.2.3.4",
++      port: 22,
++      username: "root",
++      authType: "password",
++      password: "pw",
++      tags: ["prod"],
++      color: "#f00",
++    });
++    await useHostStore.getState().fetchHosts("v1");
++    expect(mockList).toHaveBeenCalledWith("hosts", "v1");
++    const host = useHostStore.getState().hosts[0];
++    expect(host.address).toBe("1.2.3.4");
++    expect(host.port).toBe(22);
++    expect(host.groupId).toBe("g1");
++    expect(host.tags).toEqual(["prod"]);
++  });
++
++  it("createHost encrypts payload with AAD hosts and upserts", async () => {
++    mockEncrypt.mockResolvedValue("enc");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      data: "enc",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useHostStore
++      .getState()
++      .createHost({ name: "prod", address: "1.2.3.4" });
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "hosts",
++      expect.objectContaining({
++        address: "1.2.3.4",
++        port: 22,
++        username: "root",
++        authType: "password",
++      }),
++    );
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "hosts",
++      expect.objectContaining({ name: "prod", vault_id: "v1" }),
++    );
++    expect(useHostStore.getState().hosts.length).toBe(1);
++  });
++
++  it("updateHost preserves unpatched encrypted fields", async () => {
++    mockGet.mockResolvedValue({
++      id: "h1",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "prod",
++      group_id: null,
++      key_id: null,
++      sort_order: 0,
++      data: "enc",
++    });
++    mockDecrypt.mockResolvedValue({
++      address: "1.2.3.4",
++      port: 22,
++      username: "root",
++      authType: "password",
++      password: "pw",
++      tags: [],
++      color: "#64748b",
++    });
++    mockEncrypt.mockResolvedValue("enc2");
++    await useHostStore.getState().updateHost("h1", { name: "prod2" });
++    expect(mockEncrypt).toHaveBeenCalledWith(
++      "hosts",
++      expect.objectContaining({ address: "1.2.3.4", password: "pw" }),
++    );
++  });
++
++  it("deleteHost tombstones and clears selection", async () => {
++    useHostStore.setState({
++      hosts: [
++        {
++          id: "h1",
++          name: "x",
++          address: "a",
++          port: 22,
++          tags: [],
++          sortOrder: 0,
++          createdAt: "",
++          updatedAt: "",
++        },
++      ],
++      selectedHost: { id: "h1" },
++    });
++    await useHostStore.getState().deleteHost("h1");
++    expect(mockDelete).toHaveBeenCalledWith("hosts", "h1");
++    expect(useHostStore.getState().hosts).toEqual([]);
++    expect(useHostStore.getState().selectedHost).toBeNull();
++  });
++
++  it("getCredentialsForHost resolves key auth via keyStore", async () => {
++    mockGet.mockResolvedValue({
++      id: "h1",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "prod",
++      key_id: "k1",
++      sort_order: 0,
++      data: "enc",
++    });
++    mockDecrypt.mockResolvedValue({
++      address: "1.2.3.4",
++      port: 22,
++      username: "root",
++      authType: "key",
++      password: null,
++      tags: [],
++      color: "#64748b",
++    });
++    const creds = await useHostStore.getState().getCredentialsForHost("h1");
++    expect(creds.privateKey).toBe("PRIVATE");
++  });
++
++  it("getCredentialsForHost returns password auth creds", async () => {
++    mockGet.mockResolvedValue({
++      id: "h1",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      name: "prod",
++      key_id: null,
++      sort_order: 0,
++      data: "enc",
++    });
++    mockDecrypt.mockResolvedValue({
++      address: "1.2.3.4",
++      port: 22,
++      username: "root",
++      authType: "password",
++      password: "pw",
++      tags: [],
++      color: "#64748b",
++    });
++    const creds = await useHostStore.getState().getCredentialsForHost("h1");
++    expect(creds.password).toBe("pw");
++    expect(creds.privateKey).toBe("");
++  });
++
++  it("fetchGroups decrypts {} payload into Group", async () => {
++    mockList.mockResolvedValue([
++      {
++        id: "g1",
++        revision: 1,
++        vault_id: "v1",
++        created_at: 1000,
++        updated_at: 1000,
++        deleted_at: null,
++        name: "prod",
++        sort_order: 0,
++        data: "{}",
++      },
++    ]);
++    mockDecrypt.mockResolvedValue({});
++    await useHostStore.getState().fetchGroups("v1");
++    expect(mockList).toHaveBeenCalledWith("groups", "v1");
++    const group = useHostStore.getState().groups[0];
++    expect(group.id).toBe("g1");
++    expect(group.name).toBe("prod");
++  });
++
++  it("createGroup upserts with data encrypted '{}'", async () => {
++    mockEncrypt.mockResolvedValue("{}");
++    mockUpsert.mockResolvedValue({
++      id: "new",
++      revision: 1,
++      vault_id: "v1",
++      created_at: 1,
++      updated_at: 1,
++      deleted_at: null,
++      data: "{}",
++    });
++    useVaultStore.setState({ currentVaultId: "v1" });
++    await useHostStore.getState().createGroup({ name: "prod" });
++    expect(mockEncrypt).toHaveBeenCalledWith("groups", {});
++    expect(mockUpsert).toHaveBeenCalledWith(
++      "groups",
++      expect.objectContaining({ name: "prod", vault_id: "v1", data: "{}" }),
++    );
++    expect(useHostStore.getState().groups.length).toBe(1);
++  });
++
++  it("deleteGroup tombstones", async () => {
++    useHostStore.setState({
++      groups: [{ id: "g1", name: "x", sortOrder: 0, createdAt: "" }],
++    });
++    await useHostStore.getState().deleteGroup("g1");
++    expect(mockDelete).toHaveBeenCalledWith("groups", "g1");
++    expect(useHostStore.getState().groups).toEqual([]);
++  });
++});
+diff --git a/client/src/stores/hosts/hostStore.ts b/client/src/stores/hosts/hostStore.ts
+index 34093bc..a855e7b 100644
+--- a/client/src/stores/hosts/hostStore.ts
++++ b/client/src/stores/hosts/hostStore.ts
+@@ -1,11 +1,16 @@
+ import { create } from "zustand";
++import { decryptRowData, encryptRowData } from "@/lib/crypto/crypto";
++import type { SyncRow } from "@/lib/db/db";
++import { deleteRow, getRow, listRows, upsertRow } from "@/lib/db/db";
++import { useKeyStore } from "@/stores/keys/keyStore";
++import { useVaultStore } from "@/stores/vault/vaultStore";
+ 
+ export interface Host {
+   id: string;
+   name: string;
+   address: string;
+   port: number;
+   username?: string;
+   groupId?: string | null;
+   tags: string[];
+   color?: string;
+@@ -45,33 +50,293 @@ interface HostState {
+   selectHost: (host: Host | null) => void;
+   getCredentialsForHost: (
+     hostId: string,
+   ) => Promise<{ password: string; privateKey: string; passphrase: string }>;
+   createGroup: (group: Partial<Group>) => Promise<void>;
+   updateGroup: (id: string, group: Partial<Group>) => Promise<void>;
+   deleteGroup: (id: string) => Promise<void>;
+   clearError: () => void;
+ }
+ 
+-export const useHostStore = create<HostState>((_set) => ({
++interface HostPayload {
++  address: string;
++  port: number;
++  username: string;
++  authType: "password" | "key";
++  password?: string;
++  tags: string[];
++  color?: string;
++}
++
++function newId(): string {
++  return crypto.randomUUID();
++}
++
++function errorMessage(err: unknown): string {
++  return err instanceof Error ? err.message : String(err);
++}
++
++async function hostFromRow(row: SyncRow): Promise<Host> {
++  const payload = (await decryptRowData(row.data)) as Partial<HostPayload>;
++  return {
++    id: row.id,
++    name: row.name ?? "",
++    address: payload.address ?? "",
++    port: payload.port ?? 22,
++    username: payload.username ?? "root",
++    groupId: row.group_id ?? null,
++    tags: payload.tags ?? [],
++    color: payload.color ?? "#64748b",
++    sortOrder: row.sort_order,
++    createdAt: String(row.created_at),
++    updatedAt: String(row.updated_at),
++    vaultId: row.vault_id,
++    authType: payload.authType ?? "password",
++    password: payload.password,
++    keyId: row.key_id ?? undefined,
++  };
++}
++
++export const useHostStore = create<HostState>((set, get) => ({
+   hosts: [],
+   groups: [],
+   selectedHost: null,
+   isLoading: false,
+   error: null,
+ 
+-  fetchHosts: async () => {},
+-  fetchGroups: async () => {},
+-  createHost: async () => {},
+-  updateHost: async () => {},
+-  deleteHost: async () => {},
+-  selectHost: () => {},
+-  getCredentialsForHost: async () => ({
+-    password: "",
+-    privateKey: "",
+-    passphrase: "",
+-  }),
+-  createGroup: async () => {},
+-  updateGroup: async () => {},
+-  deleteGroup: async () => {},
+-  clearError: () => {},
++  fetchHosts: async (vaultId) => {
++    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vid) {
++      set({ isLoading: false });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const rows = await listRows("hosts", vid);
++      const hosts = await Promise.all(rows.map((row) => hostFromRow(row)));
++      set({ hosts, isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  fetchGroups: async (vaultId) => {
++    const vid = vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vid) {
++      set({ isLoading: false });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const rows = await listRows("groups", vid);
++      const groups = await Promise.all(
++        rows.map(async (row) => {
++          await decryptRowData(row.data);
++          return {
++            id: row.id,
++            name: row.name ?? "",
++            parentId: row.parent_id ?? null,
++            vaultId: row.vault_id,
++            sortOrder: row.sort_order,
++            createdAt: String(row.created_at),
++          };
++        }),
++      );
++      set({ groups, isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  createHost: async (host) => {
++    const vaultId = host.vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vaultId) {
++      set({ isLoading: false, error: "No vault selected" });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const row = await upsertRow("hosts", {
++        id: newId(),
++        vault_id: vaultId,
++        name: host.name ?? "",
++        group_id: host.groupId ?? null,
++        key_id: host.keyId ?? null,
++        sort_order: host.sortOrder ?? 0,
++        data: await encryptRowData("hosts", {
++          address: host.address,
++          port: host.port ?? 22,
++          username: host.username ?? "root",
++          authType: host.authType ?? "password",
++          password: host.password,
++          tags: host.tags ?? [],
++          color: host.color,
++        }),
++      });
++      const created: Host = {
++        id: row.id,
++        name: row.name ?? "",
++        address: host.address ?? "",
++        port: host.port ?? 22,
++        username: host.username ?? "root",
++        groupId: host.groupId ?? null,
++        tags: host.tags ?? [],
++        color: host.color ?? "#64748b",
++        sortOrder: host.sortOrder ?? 0,
++        createdAt: String(row.created_at),
++        updatedAt: String(row.updated_at),
++        vaultId,
++        authType: host.authType ?? "password",
++        password: host.password,
++        keyId: host.keyId ?? undefined,
++      };
++      set({ hosts: [created, ...get().hosts], isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  updateHost: async (id, patch) => {
++    set({ isLoading: true, error: null });
++    try {
++      const row = await getRow("hosts", id);
++      if (!row) {
++        set({ isLoading: false, error: "Host not found" });
++        return;
++      }
++      const existing = ((await decryptRowData(row.data)) ?? {}) as Record<
++        string,
++        unknown
++      >;
++      const sensitive: Record<string, unknown> = {};
++      if (patch.address !== undefined) sensitive.address = patch.address;
++      if (patch.port !== undefined) sensitive.port = patch.port;
++      if (patch.username !== undefined) sensitive.username = patch.username;
++      if (patch.authType !== undefined) sensitive.authType = patch.authType;
++      if (patch.password !== undefined) sensitive.password = patch.password;
++      if (patch.tags !== undefined) sensitive.tags = patch.tags;
++      if (patch.color !== undefined) sensitive.color = patch.color;
++      await upsertRow("hosts", {
++        id: row.id,
++        vault_id: row.vault_id,
++        name: patch.name ?? row.name,
++        group_id:
++          patch.groupId !== undefined ? patch.groupId : (row.group_id ?? null),
++        key_id: patch.keyId !== undefined ? patch.keyId : (row.key_id ?? null),
++        sort_order: patch.sortOrder ?? row.sort_order,
++        data: await encryptRowData("hosts", { ...existing, ...sensitive }),
++      });
++      set({
++        hosts: get().hosts.map((h) => (h.id === id ? { ...h, ...patch } : h)),
++        isLoading: false,
++      });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  deleteHost: async (id) => {
++    set({ isLoading: true, error: null });
++    try {
++      await deleteRow("hosts", id);
++      set((s) => ({
++        hosts: s.hosts.filter((h) => h.id !== id),
++        selectedHost: s.selectedHost?.id === id ? null : s.selectedHost,
++        isLoading: false,
++      }));
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  selectHost: (host) => set({ selectedHost: host }),
++
++  getCredentialsForHost: async (hostId) => {
++    const row = await getRow("hosts", hostId);
++    if (!row) {
++      return { password: "", privateKey: "", passphrase: "" };
++    }
++    const payload = ((await decryptRowData(row.data)) ??
++      {}) as Partial<HostPayload>;
++    if (payload.authType === "key" && row.key_id) {
++      const keyCreds = await useKeyStore
++        .getState()
++        .getCredentialsForKey(row.key_id);
++      return { password: "", privateKey: keyCreds, passphrase: "" };
++    }
++    return { password: payload.password ?? "", privateKey: "", passphrase: "" };
++  },
++
++  createGroup: async (group) => {
++    const vaultId = group.vaultId ?? useVaultStore.getState().currentVaultId;
++    if (!vaultId) {
++      set({ isLoading: false, error: "No vault selected" });
++      return;
++    }
++    set({ isLoading: true, error: null });
++    try {
++      const row = await upsertRow("groups", {
++        id: newId(),
++        vault_id: vaultId,
++        name: group.name ?? "",
++        parent_id: group.parentId ?? null,
++        sort_order: group.sortOrder ?? 0,
++        data: await encryptRowData("groups", {}),
++      });
++      const created: Group = {
++        id: row.id,
++        name: row.name ?? "",
++        parentId: group.parentId ?? null,
++        vaultId,
++        sortOrder: group.sortOrder ?? 0,
++        createdAt: String(row.created_at),
++      };
++      set({ groups: [created, ...get().groups], isLoading: false });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  updateGroup: async (id, patch) => {
++    set({ isLoading: true, error: null });
++    try {
++      const row = await getRow("groups", id);
++      if (!row) {
++        set({ isLoading: false, error: "Group not found" });
++        return;
++      }
++      await decryptRowData(row.data);
++      await upsertRow("groups", {
++        id: row.id,
++        vault_id: row.vault_id,
++        name: patch.name ?? row.name,
++        parent_id:
++          patch.parentId !== undefined
++            ? patch.parentId
++            : (row.parent_id ?? null),
++        sort_order: patch.sortOrder ?? row.sort_order,
++        data: await encryptRowData("groups", {}),
++      });
++      set({
++        groups: get().groups.map((g) => (g.id === id ? { ...g, ...patch } : g)),
++        isLoading: false,
++      });
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  deleteGroup: async (id) => {
++    set({ isLoading: true, error: null });
++    try {
++      await deleteRow("groups", id);
++      set((s) => ({
++        groups: s.groups.filter((g) => g.id !== id),
++        isLoading: false,
++      }));
++    } catch (err) {
++      set({ isLoading: false, error: errorMessage(err) });
++    }
++  },
++
++  clearError: () => set({ error: null }),
+ }));

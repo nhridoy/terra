@@ -1,0 +1,5 @@
+ client/src-tauri/src/db.rs                      |  4 +++-
+ client/src/stores/hosts/hostStore.test.ts       | 13 ++++++++++++-
+ client/src/stores/keys/keyStore.test.ts         | 24 ++++++++++++++++++------
+ client/src/stores/snippets/snippetStore.test.ts |  8 +++++++-
+ 4 files changed, 40 insertions(+), 9 deletions(-)

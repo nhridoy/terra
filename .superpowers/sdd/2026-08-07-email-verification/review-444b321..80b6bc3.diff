@@ -1,0 +1,210 @@
+# Review package: 444b321..80b6bc3
+
+## Commits
+80b6bc3 feat: parse REQUIRE_EMAIL_VERIFICATION and SMTP settings
+
+## Files changed
+ server/internal/config/config.go      | 91 +++++++++++++++++++++++------------
+ server/internal/config/config_test.go | 24 +++++++++
+ 2 files changed, 84 insertions(+), 31 deletions(-)
+
+## Diff
+diff --git a/server/internal/config/config.go b/server/internal/config/config.go
+index 7388bd5..7e9ff90 100644
+--- a/server/internal/config/config.go
++++ b/server/internal/config/config.go
+@@ -3,74 +3,92 @@ package config
+ import (
+ 	"fmt"
+ 	"os"
+ 	"strings"
+ 	"time"
+ 
+ 	"github.com/joho/godotenv"
+ )
+ 
+ type Config struct {
+-	Port              string
+-	Host              string
+-	DatabaseURL       string
+-	JWTSecret         string
+-	JWTExpiry         time.Duration
+-	RefreshTokenExpiry time.Duration
+-	BaseURL           string
+-	OAuthGoogleID     string
+-	OAuthGoogleSecret string
+-	OAuthGitHubID     string
+-	OAuthGitHubSecret string
+-	OAuthRedirectBase string
+-	OAuthRedirectURIs []string
+-	AppScheme         string
+-	RateLimitAuth     int
+-	RateLimitAPI      int
+-	TrustedProxies    []string
++	Port                     string
++	Host                     string
++	DatabaseURL              string
++	JWTSecret                string
++	JWTExpiry                time.Duration
++	RefreshTokenExpiry       time.Duration
++	BaseURL                  string
++	OAuthGoogleID            string
++	OAuthGoogleSecret        string
++	OAuthGitHubID            string
++	OAuthGitHubSecret        string
++	OAuthRedirectBase        string
++	OAuthRedirectURIs        []string
++	AppScheme                string
++	RateLimitAuth            int
++	RateLimitAPI             int
++	TrustedProxies           []string
++	RequireEmailVerification bool
++	SMTPHost                 string
++	SMTPPort                 int
++	SMTPUsername             string
++	SMTPPassword             string
++	SMTPFrom                 string
+ }
+ 
+ func Load() *Config {
+ 	godotenv.Load()
+ 
+ 	rateLimitAuth := 10
+ 	rateLimitAPI := 30
+ 
+ 	cfg := &Config{
+-		Port:              getEnv("TERMVAULT_PORT", "8080"),
+-		Host:              getEnv("TERMVAULT_HOST", "0.0.0.0"),
+-		DatabaseURL:       getEnv("DATABASE_URL", "sqlite://termvault.db"),
+-		JWTSecret:         os.Getenv("JWT_SECRET"),
+-		JWTExpiry:         parseDuration(getEnv("JWT_EXPIRY", "15m")),
++		Port:               getEnv("TERMVAULT_PORT", "8080"),
++		Host:               getEnv("TERMVAULT_HOST", "0.0.0.0"),
++		DatabaseURL:        getEnv("DATABASE_URL", "sqlite://termvault.db"),
++		JWTSecret:          os.Getenv("JWT_SECRET"),
++		JWTExpiry:          parseDuration(getEnv("JWT_EXPIRY", "15m")),
+ 		RefreshTokenExpiry: parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h")),
+-		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
+-		OAuthGoogleID:     os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
+-		OAuthGoogleSecret: os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
+-		OAuthGitHubID:     os.Getenv("OAUTH_GITHUB_CLIENT_ID"),
+-		OAuthGitHubSecret: os.Getenv("OAUTH_GITHUB_CLIENT_SECRET"),
+-		OAuthRedirectBase: getEnv("OAUTH_REDIRECT_BASE", getEnv("BASE_URL", "http://localhost:8080")),
+-		AppScheme:         getEnv("APP_SCHEME", "termvault"),
+-		RateLimitAuth:     rateLimitAuth,
+-		RateLimitAPI:      rateLimitAPI,
++		BaseURL:            getEnv("BASE_URL", "http://localhost:8080"),
++		OAuthGoogleID:      os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
++		OAuthGoogleSecret:  os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
++		OAuthGitHubID:      os.Getenv("OAUTH_GITHUB_CLIENT_ID"),
++		OAuthGitHubSecret:  os.Getenv("OAUTH_GITHUB_CLIENT_SECRET"),
++		OAuthRedirectBase:  getEnv("OAUTH_REDIRECT_BASE", getEnv("BASE_URL", "http://localhost:8080")),
++		AppScheme:          getEnv("APP_SCHEME", "termvault"),
++		RateLimitAuth:      rateLimitAuth,
++		RateLimitAPI:       rateLimitAPI,
+ 	}
+ 
+ 	if v := os.Getenv("RATE_LIMIT_AUTH"); v != "" {
+ 		if n, err := parseIntSafe(v, 10); err == nil {
+ 			cfg.RateLimitAuth = n
+ 		}
+ 	}
+ 	if v := os.Getenv("RATE_LIMIT_API"); v != "" {
+ 		if n, err := parseIntSafe(v, 30); err == nil {
+ 			cfg.RateLimitAPI = n
+ 		}
+ 	}
+ 
++	cfg.RequireEmailVerification = parseBoolEnv("REQUIRE_EMAIL_VERIFICATION", false)
++	cfg.SMTPHost = os.Getenv("SMTP_HOST")
++	cfg.SMTPPort = 587
++	if v := os.Getenv("SMTP_PORT"); v != "" {
++		if n, err := parseIntSafe(v, 587); err == nil {
++			cfg.SMTPPort = n
++		}
++	}
++	cfg.SMTPUsername = os.Getenv("SMTP_USERNAME")
++	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
++	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
++
+ 	if v := os.Getenv("TRUSTED_PROXIES"); v != "" {
+ 		for _, cidr := range strings.Split(v, ",") {
+ 			cidr = strings.TrimSpace(cidr)
+ 			if cidr != "" {
+ 				cfg.TrustedProxies = append(cfg.TrustedProxies, cidr)
+ 			}
+ 		}
+ 	}
+ 
+ 	cfg.OAuthRedirectURIs = []string{
+@@ -104,10 +122,21 @@ func parseDuration(s string) time.Duration {
+ }
+ 
+ func parseIntSafe(s string, fallback int) (int, error) {
+ 	var n int
+ 	_, err := fmt.Sscanf(s, "%d", &n)
+ 	if err != nil {
+ 		return fallback, err
+ 	}
+ 	return n, nil
+ }
++
++func parseBoolEnv(key string, fallback bool) bool {
++	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
++	switch v {
++	case "true", "1", "yes":
++		return true
++	case "false", "0", "no":
++		return false
++	}
++	return fallback
++}
+diff --git a/server/internal/config/config_test.go b/server/internal/config/config_test.go
+index 7746ef8..dc199ab 100644
+--- a/server/internal/config/config_test.go
++++ b/server/internal/config/config_test.go
+@@ -16,20 +16,44 @@ func TestLoadDefaults(t *testing.T) {
+ 	}
+ 	if cfg.DatabaseURL != "sqlite://termvault.db" {
+ 		t.Errorf("expected default database URL, got %s", cfg.DatabaseURL)
+ 	}
+ 	if cfg.RateLimitAuth != 10 {
+ 		t.Errorf("expected default rate limit auth 10, got %d", cfg.RateLimitAuth)
+ 	}
+ 	if cfg.RateLimitAPI != 30 {
+ 		t.Errorf("expected default rate limit API 30, got %d", cfg.RateLimitAPI)
+ 	}
++	if cfg.RequireEmailVerification {
++		t.Errorf("expected email verification off by default")
++	}
++	if cfg.SMTPPort != 587 {
++		t.Errorf("expected default SMTP port 587, got %d", cfg.SMTPPort)
++	}
++}
++
++func TestLoadEmailVerificationToggle(t *testing.T) {
++	cases := []struct {
++		val  string
++		want bool
++	}{
++		{"true", true}, {"TRUE", true}, {"1", true}, {"yes", true},
++		{"false", false}, {"0", false}, {"", false}, {"banana", false},
++	}
++	for _, c := range cases {
++		os.Setenv("REQUIRE_EMAIL_VERIFICATION", c.val)
++		cfg := Load()
++		if cfg.RequireEmailVerification != c.want {
++			t.Errorf("REQUIRE_EMAIL_VERIFICATION=%q: got %v want %v", c.val, cfg.RequireEmailVerification, c.want)
++		}
++	}
++	os.Unsetenv("REQUIRE_EMAIL_VERIFICATION")
+ }
+ 
+ func TestLoadEnvOverrides(t *testing.T) {
+ 	os.Setenv("TERMVAULT_PORT", "9090")
+ 	os.Setenv("TERMVAULT_HOST", "127.0.0.1")
+ 	os.Setenv("RATE_LIMIT_AUTH", "20")
+ 	os.Setenv("RATE_LIMIT_API", "50")
+ 	os.Setenv("TRUSTED_PROXIES", "10.0.0.0/8, 172.16.0.0/12")
+ 	defer os.Unsetenv("TERMVAULT_PORT")
+ 	defer os.Unsetenv("TERMVAULT_HOST")

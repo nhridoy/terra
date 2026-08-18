@@ -1,0 +1,275 @@
+# Review package: e0bb241..1a860fb
+
+## Commits
+1a860fb feat: pending verification state and verify/resend actions
+
+## Files changed
+ client/src/lib/api/auth.ts          |  1 +
+ client/src/stores/auth/authStore.ts | 91 ++++++++++++++++++++++++++++++++++---
+ 2 files changed, 85 insertions(+), 7 deletions(-)
+
+## Diff
+diff --git a/client/src/lib/api/auth.ts b/client/src/lib/api/auth.ts
+index 00f04b1..00583bf 100644
+--- a/client/src/lib/api/auth.ts
++++ b/client/src/lib/api/auth.ts
+@@ -45,20 +45,21 @@ export function setRefreshTokenGetter(fn: () => string | null): void {
+ export function setRefreshTokenSetter(
+   fn: (token: string | null) => void,
+ ): void {
+   setRefreshTokenFn = fn;
+ }
+ 
+ export interface ApiError {
+   code: string;
+   message: string;
+   requestId?: string;
++  email?: string;
+ }
+ 
+ export class AuthApiError extends Error {
+   constructor(
+     public status: number,
+     public apiError: ApiError,
+   ) {
+     super(apiError.message);
+     this.name = "AuthApiError";
+   }
+diff --git a/client/src/stores/auth/authStore.ts b/client/src/stores/auth/authStore.ts
+index 07601b8..6a5c53a 100644
+--- a/client/src/stores/auth/authStore.ts
++++ b/client/src/stores/auth/authStore.ts
+@@ -1,13 +1,14 @@
+ import { load } from "@tauri-apps/plugin-store";
+ import { create } from "zustand";
+ import {
++  AuthApiError,
+   authApi,
+   loadApiUrl,
+   setRefreshTokenGetter,
+   setRefreshTokenSetter,
+   type TokenPair,
+   type User,
+ } from "../../lib/api/auth";
+ import { getDeviceId } from "../../lib/common/device";
+ import {
+   buildKeyringRows,
+@@ -51,20 +52,21 @@ setRefreshTokenSetter((token) => {
+ interface AuthState {
+   user: User | null;
+   tokens: TokenPair | null;
+   isAuthenticated: boolean;
+   isUnlocked: boolean;
+   unlockPending: boolean;
+   isInitialized: boolean;
+   isLoading: boolean;
+   error: string | null;
+   pendingOAuth: { provider: string; setupCode: string; userId: string } | null;
++  pendingVerificationEmail: string | null;
+   alwaysAsk: boolean;
+ 
+   prelogin: (email: string) => Promise<{
+     nonce: string;
+     kdf: { m: number; t: number; p: number };
+     serverSalt: string;
+     saltCl: string;
+   }>;
+   register: (email: string, name: string, password: string) => Promise<void>;
+   login: (email: string, password: string) => Promise<void>;
+@@ -81,20 +83,23 @@ interface AuthState {
+   ) => Promise<void>;
+   recovery: (recoveryCode: string, newPassword: string) => Promise<void>;
+   pendingRecoveryCode: string | null;
+   pendingRecoveryContext: "signup" | "recovery" | null;
+   pendingRecoveryEmail: string | null;
+   clearRecoveryCode: () => void;
+   clearError: () => void;
+   restoreSession: () => Promise<void>;
+   oauthStartFlow: (provider: string) => Promise<{ needsSetup: boolean }>;
+   oauthSetup: (password: string) => Promise<void>;
++  verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
++  resendVerification: (email: string) => Promise<void>;
++  clearPendingVerification: () => void;
+   setAlwaysAsk: (flag: boolean) => Promise<void>;
+ }
+ 
+ async function persistTokens(tokens: TokenPair | null): Promise<void> {
+   // Set in-memory first so apiFetch auto-refresh has it immediately
+   setRefreshToken(tokens?.refresh_token ?? null);
+   try {
+     if (tokens?.refresh_token) {
+       await saveRefreshToken(tokens.refresh_token);
+     } else {
+@@ -156,20 +161,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+   isAuthenticated: false,
+   isUnlocked: false,
+   unlockPending: false,
+   isInitialized: false,
+   isLoading: false,
+   error: null,
+   pendingRecoveryCode: null,
+   pendingRecoveryContext: null,
+   pendingRecoveryEmail: null,
+   pendingOAuth: null,
++  pendingVerificationEmail: null,
+   alwaysAsk: false,
+ 
+   prelogin: async (email: string) => {
+     const res = await authApi.prelogin(email);
+     return {
+       nonce: res.nonce,
+       kdf: res.kdf,
+       serverSalt: res.server_salt,
+       saltCl: res.salt_cl,
+     };
+@@ -195,51 +201,112 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+         password_hash: proof.verifier,
+         recovery_code: material.recovery_code,
+         public_key: material.public_key,
+         keyring,
+         nonce: prelogin.nonce,
+         kdf: { m: 32768, t: 2, p: 1 },
+         server_salt: prelogin.server_salt,
+         salt_cl: material.salt_cl,
+       });
+ 
++      if (res.verification_required) {
++        set({ pendingVerificationEmail: email, isLoading: false });
++        return;
++      }
++
++      // Verification not required: tokens are guaranteed by the server contract
++      const pair = res as TokenPair;
+       set({
+         user: res.user,
+-        tokens: {
+-          access_token: res.access_token,
+-          refresh_token: res.refresh_token,
+-        },
++        tokens: pair,
+         isAuthenticated: true,
+         isUnlocked: true,
+         pendingRecoveryCode: material.recovery_code,
+         pendingRecoveryContext: "signup",
+         isLoading: false,
+       });
+-      await persistTokens({
++      await persistTokens(pair);
++      if (!get().alwaysAsk) {
++        await savePassword(password);
++      }
++    } catch (err) {
++      const message =
++        typeof err === "string"
++          ? err
++          : err instanceof Error
++            ? err.message
++            : "Registration failed";
++      set({ error: message, isLoading: false });
++      throw err;
++    }
++  },
++
++  verifyEmail: async (email: string, otp: string, password?: string) => {
++    set({ isLoading: true, error: null });
++    try {
++      const res = await authApi.verifyEmail({
++        email,
++        otp,
++        device_id: await getDeviceId(),
++      });
++
++      if (res.keyring) {
++        await unwrapDek(res.keyring.dek_wrapped_by_kek);
++      }
++
++      const newTokens = {
+         access_token: res.access_token,
+         refresh_token: res.refresh_token,
++      };
++      set({
++        user: res.user,
++        tokens: newTokens,
++        isAuthenticated: true,
++        isUnlocked: true,
++        pendingVerificationEmail: null,
++        isLoading: false,
+       });
+-      if (!get().alwaysAsk) {
++      await persistTokens(newTokens);
++      if (password && !get().alwaysAsk) {
+         await savePassword(password);
+       }
+     } catch (err) {
+       const message =
+         typeof err === "string"
+           ? err
+           : err instanceof Error
+             ? err.message
+-            : "Registration failed";
++            : "Verification failed";
++      set({ error: message, isLoading: false });
++      throw err;
++    }
++  },
++
++  resendVerification: async (email: string) => {
++    set({ isLoading: true, error: null });
++    try {
++      await authApi.resendVerification(email);
++      set({ isLoading: false });
++    } catch (err) {
++      const message =
++        typeof err === "string"
++          ? err
++          : err instanceof Error
++            ? err.message
++            : "Resend failed";
+       set({ error: message, isLoading: false });
+       throw err;
+     }
+   },
+ 
++  clearPendingVerification: () => set({ pendingVerificationEmail: null }),
++
+   login: async (email: string, password: string) => {
+     set({ isLoading: true, error: null });
+     try {
+       const prelogin = await authApi.prelogin(email);
+ 
+       await deriveKek(password, prelogin.salt_cl);
+       const proof = await computeLoginProof(
+         prelogin.server_salt,
+         prelogin.nonce,
+       );
+@@ -265,20 +332,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+         tokens: newTokens,
+         isAuthenticated: true,
+         isUnlocked: true,
+         isLoading: false,
+       });
+       await persistTokens(newTokens);
+       if (!get().alwaysAsk) {
+         await savePassword(password);
+       }
+     } catch (err) {
++      if (
++        err instanceof AuthApiError &&
++        err.apiError.code === "VERIFICATION_REQUIRED"
++      ) {
++        set({
++          pendingVerificationEmail: err.apiError.email ?? email,
++          isLoading: false,
++        });
++        return;
++      }
+       const message =
+         typeof err === "string"
+           ? err
+           : err instanceof Error
+             ? err.message
+             : "Login failed";
+       set({ error: message, isLoading: false });
+       throw err;
+     }
+   },

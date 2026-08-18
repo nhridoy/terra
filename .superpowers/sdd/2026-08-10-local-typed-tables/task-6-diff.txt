@@ -1,0 +1,91 @@
+diff --git a/client/src/lib/crypto/crypto.test.ts b/client/src/lib/crypto/crypto.test.ts
+index 0358977..d2f0a95 100644
+--- a/client/src/lib/crypto/crypto.test.ts
++++ b/client/src/lib/crypto/crypto.test.ts
+@@ -1,19 +1,21 @@
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+ import {
+   buildKeyringRows,
+   clearAuthTokens,
+   computeLoginProof,
+   decryptObject,
++  decryptRowData,
+   decryptSecret,
+   deriveKek,
+   encryptObject,
++  encryptRowData,
+   encryptSecret,
+   generateAccountMaterial,
+   generateRecoveryCode,
+   getCurrentUserId,
+   getStoredSalt,
+   isEncrypted,
+   lockSession,
+   recoveryUnwrapDek,
+   setAuthTokens,
+   setBaseUrl,
+@@ -344,10 +346,28 @@ describe("unlock", () => {
+ 
+     await unlock("pass", "salt", "wrapped");
+ 
+     expect(mockInvoke).toHaveBeenCalledWith("unlock", {
+       password: "pass",
+       saltCl: "salt",
+       wrappedDek: "wrapped",
+     });
+   });
+ });
++
++describe("encryptRowData / decryptRowData", () => {
++  it("encryptRowData uses table name as AAD", async () => {
++    const secret = "secret";
++    mockInvoke.mockResolvedValue(secret);
++    const encrypted = await encryptRowData("hosts", { address: "1.2.3.4" });
++    expect(mockInvoke).toHaveBeenCalledWith("encrypt_secret", {
++      plaintext: JSON.stringify({ address: "1.2.3.4" }),
++      recordType: "hosts",
++    });
++    expect(encrypted).toBe(secret);
++  });
++
++  it("decryptRowData parses payload json", async () => {
++    mockInvoke.mockResolvedValueOnce('{"port":22}');
++    expect(await decryptRowData("enc")).toEqual({ port: 22 });
++  });
++});
+diff --git a/client/src/lib/crypto/crypto.ts b/client/src/lib/crypto/crypto.ts
+index 2ceef4d..25341db 100644
+--- a/client/src/lib/crypto/crypto.ts
++++ b/client/src/lib/crypto/crypto.ts
+@@ -120,20 +120,31 @@ export async function encryptSecret(
+   plaintext: string,
+   recordType: string,
+ ): Promise<string> {
+   return invoke<string>("encrypt_secret", { plaintext, recordType });
+ }
+ 
+ export async function decryptSecret(payload: string): Promise<string> {
+   return invoke<string>("decrypt_secret", { payload });
+ }
+ 
++export async function encryptRowData(
++  table: string,
++  value: unknown,
++): Promise<string> {
++  return encryptSecret(JSON.stringify(value), table);
++}
++
++export async function decryptRowData(encrypted: string): Promise<unknown> {
++  return JSON.parse(await decryptSecret(encrypted)) as unknown;
++}
++
+ export async function unwrapDek(wrapped: string): Promise<void> {
+   return invoke<void>("unwrap_dek", { wrapped });
+ }
+ 
+ export async function recoveryUnwrapDek(
+   recoveryCode: string,
+   saltCl: string,
+   wrapped: string,
+ ): Promise<void> {
+   return invoke<void>("recovery_unwrap_dek", { recoveryCode, saltCl, wrapped });

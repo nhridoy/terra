@@ -1,0 +1,1 @@
+20d3289 feat: hostStore local-first persistence (hosts+groups via db layer)

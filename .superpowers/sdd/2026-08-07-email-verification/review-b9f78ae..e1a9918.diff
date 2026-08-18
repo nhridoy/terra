@@ -1,0 +1,136 @@
+# Review package: b9f78ae..e1a9918
+
+## Commits
+e1a9918 feat: block login for unverified accounts with 403 VERIFICATION_REQUIRED
+
+## Files changed
+ server/internal/auth/handlers.go      | 10 +++++
+ server/internal/auth/handlers_test.go | 75 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 85 insertions(+)
+
+## Diff
+diff --git a/server/internal/auth/handlers.go b/server/internal/auth/handlers.go
+index 31cd0fa..c7b35e8 100644
+--- a/server/internal/auth/handlers.go
++++ b/server/internal/auth/handlers.go
+@@ -266,20 +266,30 @@ func HandleLogin(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 			Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
+ 			return
+ 		}
+ 
+ 		expectedProof := GenerateProof(verifierBytes, nonceBytes)
+ 		if !ConstantTimeCompare(proofBytes, expectedProof) {
+ 			Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
+ 			return
+ 		}
+ 
++		if cfg.RequireEmailVerification && user.EmailVerifiedAt == nil {
++			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
++				"code":       "VERIFICATION_REQUIRED",
++				"message":    "verify your email",
++				"email":      user.Email,
++				"request_id": c.GetString("request_id"),
++			}})
++			return
++		}
++
+ 		now := time.Now()
+ 		db.Model(&user).Update("last_login_at", &now)
+ 
+ 		rtToken, err := createRefreshToken(db, user.ID, req.DeviceID, cfg)
+ 		if err != nil {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
+ 			return
+ 		}
+ 
+ 		at, _, err := GenerateTokenPair(user.ID, req.DeviceID, cfg)
+diff --git a/server/internal/auth/handlers_test.go b/server/internal/auth/handlers_test.go
+index 2c4f9fa..e323e47 100644
+--- a/server/internal/auth/handlers_test.go
++++ b/server/internal/auth/handlers_test.go
+@@ -1463,10 +1463,85 @@ func TestRecovery_RevokesAllSessions(t *testing.T) {
+ 	if w.Code != http.StatusNoContent {
+ 		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+ 	}
+ 
+ 	var activeCount int64
+ 	db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", uid).Count(&activeCount)
+ 	if activeCount != 0 {
+ 		t.Errorf("expected 0 active tokens after recovery, got %d", activeCount)
+ 	}
+ }
++
++func TestLogin_Unverified_ReturnsVerificationRequired(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID, verifier := seedUserWithVerifier(t, db, "gate@example.com")
++	var user models.User
++	db.First(&user, "id = ?", userID)
++
++	nonce := []byte("nonce-bytes")
++	nonceB64 := base64.RawStdEncoding.EncodeToString(nonce)
++	proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++
++	raw, _ := json.Marshal(map[string]string{
++		"email": "gate@example.com", "proof": proof, "nonce": nonceB64,
++	})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusForbidden {
++		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Error struct {
++			Code  string `json:"code"`
++			Email string `json:"email"`
++		} `json:"error"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Error.Code != "VERIFICATION_REQUIRED" {
++		t.Fatalf("expected VERIFICATION_REQUIRED, got %s", resp.Error.Code)
++	}
++	if resp.Error.Email != "gate@example.com" {
++		t.Fatalf("expected email in error payload, got %s", resp.Error.Email)
++	}
++
++	db.First(&user, "id = ?", userID)
++	if user.LastLoginAt != nil {
++		t.Fatal("last_login_at must not be updated for unverified user")
++	}
++	var rtCount int64
++	db.Model(&models.RefreshToken{}).Where("user_id = ?", userID).Count(&rtCount)
++	if rtCount != 0 {
++		t.Fatalf("no refresh token should be created, got %d", rtCount)
++	}
++}
++
++func TestLogin_Verified_Succeeds(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID, verifier := seedUserWithVerifier(t, db, "ok@example.com")
++	now := time.Now()
++	db.Model(&models.User{}).Where("id = ?", userID).Update("email_verified_at", &now)
++
++	nonce := []byte("nonce-bytes")
++	proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++	raw, _ := json.Marshal(map[string]string{
++		"email": "ok@example.com",
++		"proof": proof,
++		"nonce": base64.RawStdEncoding.EncodeToString(nonce),
++	})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++}

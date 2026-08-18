@@ -1,0 +1,137 @@
+# Review package: 80b6bc3..a616b36
+
+## Commits
+a616b36 feat: add email_verified_at and auth_codes attempts columns
+
+## Files changed
+ server/internal/models/auth_code.go   |  1 +
+ server/internal/models/models_test.go | 15 ++++++++++++++-
+ server/internal/models/user.go        | 35 ++++++++++++++++++-----------------
+ 3 files changed, 33 insertions(+), 18 deletions(-)
+
+## Diff
+diff --git a/server/internal/models/auth_code.go b/server/internal/models/auth_code.go
+index 1fc69f4..645d5dc 100644
+--- a/server/internal/models/auth_code.go
++++ b/server/internal/models/auth_code.go
+@@ -6,17 +6,18 @@ import (
+ 	"github.com/google/uuid"
+ )
+ 
+ type AuthCode struct {
+ 	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+ 	CodeHash  string     `gorm:"uniqueIndex:idx_auth_codes_code_hash;not null" json:"-"`
+ 	Purpose   string     `gorm:"not null" json:"purpose"`
+ 	UserID    uuid.UUID  `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE" json:"user_id"`
+ 	DeviceID  string     `gorm:"not null" json:"device_id"`
+ 	ExpiresAt time.Time  `gorm:"not null;index" json:"expires_at"`
++	Attempts  int        `gorm:"not null;default:0" json:"-"`
+ 	UsedAt    *time.Time `json:"used_at,omitempty"`
+ 	CreatedAt time.Time  `json:"created_at"`
+ }
+ 
+ func (AuthCode) TableName() string {
+ 	return "auth_codes"
+ }
+diff --git a/server/internal/models/models_test.go b/server/internal/models/models_test.go
+index 4a136ca..41b6355 100644
+--- a/server/internal/models/models_test.go
++++ b/server/internal/models/models_test.go
+@@ -1,29 +1,42 @@
+ package models
+ 
+ import (
+ 	"testing"
+ 
+-	"github.com/google/uuid"
+ 	gormsqlite "github.com/glebarez/sqlite"
++	"github.com/google/uuid"
+ 	"gorm.io/gorm"
+ )
+ 
+ func setupTestDB(t *testing.T) *gorm.DB {
+ 	t.Helper()
+ 	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+ 	if err != nil {
+ 		t.Fatalf("failed to open test db: %v", err)
+ 	}
+ 	return db
+ }
+ 
++func TestEmailVerificationColumns(t *testing.T) {
++	db := setupTestDB(t)
++	if err := AutoMigrate(db); err != nil {
++		t.Fatalf("AutoMigrate failed: %v", err)
++	}
++	if !db.Migrator().HasColumn("users", "email_verified_at") {
++		t.Errorf("users.email_verified_at column missing after AutoMigrate")
++	}
++	if !db.Migrator().HasColumn("auth_codes", "attempts") {
++		t.Errorf("auth_codes.attempts column missing after AutoMigrate")
++	}
++}
++
+ func TestAutoMigrate(t *testing.T) {
+ 	db := setupTestDB(t)
+ 
+ 	err := AutoMigrate(db)
+ 	if err != nil {
+ 		t.Fatalf("AutoMigrate failed: %v", err)
+ 	}
+ 
+ 	var tables []string
+ 	db.Raw("SELECT name FROM sqlite_master WHERE type='table'").Pluck("name", &tables)
+diff --git a/server/internal/models/user.go b/server/internal/models/user.go
+index fa7afb9..6c97fb5 100644
+--- a/server/internal/models/user.go
++++ b/server/internal/models/user.go
+@@ -1,31 +1,32 @@
+ package models
+ 
+ import (
+ 	"time"
+ 
+ 	"github.com/google/uuid"
+ )
+ 
+ type User struct {
+-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+-	Email        string     `gorm:"uniqueIndex:idx_users_email;not null" json:"email"`
+-	FullName     string     `gorm:"not null" json:"full_name"`
+-	AuthProvider string     `gorm:"not null;default:'password'" json:"auth_provider"`
+-	ProviderSub  *string    `gorm:"uniqueIndex:idx_users_auth_provider_provider_sub" json:"provider_sub,omitempty"`
+-	AuthVerifier *string    `json:"-"`
+-	AuthSalt     *string    `json:"-"`
+-	SaltCL       *string    `json:"salt_cl,omitempty"`
+-	KDFM         int        `gorm:"not null;default:67108864" json:"kdf_m"`
+-	KDFT         int        `gorm:"not null;default:3" json:"kdf_t"`
+-	KDFP         int        `gorm:"not null;default:1" json:"kdf_p"`
+-	PublicKey    *string    `json:"public_key,omitempty"`
+-	RecoveryHash *string    `json:"-"`
+-	Initialized  bool       `gorm:"not null;default:false" json:"initialized"`
+-	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+-	CreatedAt    time.Time  `json:"created_at"`
+-	UpdatedAt    time.Time  `json:"updated_at"`
++	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
++	Email           string     `gorm:"uniqueIndex:idx_users_email;not null" json:"email"`
++	FullName        string     `gorm:"not null" json:"full_name"`
++	AuthProvider    string     `gorm:"not null;default:'password'" json:"auth_provider"`
++	ProviderSub     *string    `gorm:"uniqueIndex:idx_users_auth_provider_provider_sub" json:"provider_sub,omitempty"`
++	AuthVerifier    *string    `json:"-"`
++	AuthSalt        *string    `json:"-"`
++	SaltCL          *string    `json:"salt_cl,omitempty"`
++	KDFM            int        `gorm:"not null;default:67108864" json:"kdf_m"`
++	KDFT            int        `gorm:"not null;default:3" json:"kdf_t"`
++	KDFP            int        `gorm:"not null;default:1" json:"kdf_p"`
++	PublicKey       *string    `json:"public_key,omitempty"`
++	RecoveryHash    *string    `json:"-"`
++	Initialized     bool       `gorm:"not null;default:false" json:"initialized"`
++	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
++	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
++	CreatedAt       time.Time  `json:"created_at"`
++	UpdatedAt       time.Time  `json:"updated_at"`
+ }
+ 
+ func (User) TableName() string {
+ 	return "users"
+ }

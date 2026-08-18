@@ -1,0 +1,37 @@
+# Review package: 7366b15..e9aff1b
+
+## Commits
+e9aff1b feat: register verify-email and resend-verification routes
+
+## Files changed
+ server/cmd/termvault-server/main.go | 2 ++
+ 1 file changed, 2 insertions(+)
+
+## Diff
+diff --git a/server/cmd/termvault-server/main.go b/server/cmd/termvault-server/main.go
+index 4956ae1..8cebc58 100644
+--- a/server/cmd/termvault-server/main.go
++++ b/server/cmd/termvault-server/main.go
+@@ -45,20 +45,22 @@ func main() {
+ 	})
+ 
+ 	apiAuth := r.Group("/api/v1/auth")
+ 	apiAuth.POST("/prelogin", auth.HandlePrelogin(db, cfg))
+ 	apiAuth.POST("/register", auth.HandleRegister(db, cfg))
+ 	apiAuth.POST("/login", auth.HandleLogin(db, cfg))
+ 	apiAuth.POST("/refresh", auth.HandleRefresh(db, cfg))
+ 	apiAuth.POST("/logout", auth.HandleLogout(db))
+ 	apiAuth.POST("/recovery", auth.HandleRecovery(db, cfg))
+ 	apiAuth.POST("/recovery/prefetch", auth.HandleRecoveryPrefetch(db))
++	apiAuth.POST("/verify-email", auth.RateLimit(cfg.RateLimitAuth), auth.HandleVerifyEmail(db, cfg))
++	apiAuth.POST("/resend-verification", auth.RateLimit(cfg.RateLimitAuth), auth.HandleResendVerification(db, cfg))
+ 	apiAuth.GET("/oauth/start/:provider", auth.HandleOAuthStart(db, cfg))
+ 	apiAuth.GET("/oauth/callback/:provider", auth.HandleOAuthCallback(db, cfg))
+ 	apiAuth.POST("/oauth/exchange", auth.HandleOAuthExchange(db, cfg))
+ 	apiAuth.POST("/oauth/setup", auth.HandleOAuthSetup(db, cfg))
+ 
+ 	protected := r.Group("/api/v1")
+ 	protected.Use(auth.JWTMiddleware(cfg))
+ 	protected.GET("/me", auth.HandleMe(db))
+ 	protected.GET("/auth/keyring", auth.HandleKeyring(db))
+ 	protected.POST("/auth/password-change", auth.HandlePasswordChange(db, cfg))

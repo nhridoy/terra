@@ -1,0 +1,301 @@
+diff --git a/client/src-tauri/src/db.rs b/client/src-tauri/src/db.rs
+index 2699475..11204fe 100644
+--- a/client/src-tauri/src/db.rs
++++ b/client/src-tauri/src/db.rs
+@@ -419,21 +419,21 @@ fn row_vals(row: &SyncRow, cols: &str) -> Vec<rusqlite::types::Value> {
+         }
+         _ => {
+             add(&mut v, row.name.as_ref());
+             v.push(row.sort_order.into());
+             v.push(row.data.clone().into());
+         }
+     }
+     v
+ }
+ 
+-fn row_from(table: Table, row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncRow> {
++fn row_from(_table: Table, row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncRow> {
+     // Envelope by position (0-5); whitelist columns by name ΓÇö rusqlite resolves
+     // named columns at query time, so optional columns absent from a table are
+     // read as None via .ok() (get by name errors when the name is not in the
+     // result set).
+     let opt = |name: &str| -> Option<String> { row.get::<_, Option<String>>(name).ok().flatten() };
+     Ok(SyncRow {
+         id: row.get(0)?,
+         revision: row.get(1)?,
+         vault_id: row.get(2)?,
+         created_at: row.get(3)?,
+@@ -551,20 +551,22 @@ pub fn outbox_pending(db: &LocalDb) -> Result<Vec<OutboxEntry>, String> {
+     let rows = stmt
+         .query_map([], |r| {
+             Ok(OutboxEntry { table_name: r.get(0)?, record_id: r.get(1)?, queued_at: r.get(2)? })
+         })
+         .map_err(|e| e.to_string())?
+         .filter_map(|r| r.ok())
+         .collect::<Vec<_>>();
+     Ok(rows)
+ }
+ 
++// used by the Plan #4 sync engine and db tests
++#[allow(dead_code)]
+ pub fn outbox_remove(db: &LocalDb, table: Table, id: &str) -> Result<(), String> {
+     let conn = db.conn.lock().map_err(|e| e.to_string())?;
+     conn.execute("DELETE FROM outbox WHERE table_name = ?1 AND record_id = ?2", rusqlite::params![table.as_str(), id])
+         .map_err(|e| format!("outbox_remove: {e}"))?;
+     Ok(())
+ }
+ 
+ pub fn get_sync_row(db: &LocalDb, table: Table, id: &str) -> Result<Option<SyncRow>, String> {
+     let conn = db.conn.lock().map_err(|e| e.to_string())?;
+     get_sync_row_unlocked(&conn, table, id)
+diff --git a/client/src/stores/hosts/hostStore.test.ts b/client/src/stores/hosts/hostStore.test.ts
+index 342d717..e29c855 100644
+--- a/client/src/stores/hosts/hostStore.test.ts
++++ b/client/src/stores/hosts/hostStore.test.ts
+@@ -68,20 +68,21 @@ describe("hostStore", () => {
+ 
+   it("createHost encrypts payload with AAD hosts and upserts", async () => {
+     mockEncrypt.mockResolvedValue("enc");
+     mockUpsert.mockResolvedValue({
+       id: "new",
+       revision: 1,
+       vault_id: "v1",
+       created_at: 1,
+       updated_at: 1,
+       deleted_at: null,
++      sort_order: 0,
+       data: "enc",
+     });
+     useVaultStore.setState({ currentVaultId: "v1" });
+     await useHostStore
+       .getState()
+       .createHost({ name: "prod", address: "1.2.3.4" });
+     expect(mockEncrypt).toHaveBeenCalledWith(
+       "hosts",
+       expect.objectContaining({
+         address: "1.2.3.4",
+@@ -135,21 +136,30 @@ describe("hostStore", () => {
+           id: "h1",
+           name: "x",
+           address: "a",
+           port: 22,
+           tags: [],
+           sortOrder: 0,
+           createdAt: "",
+           updatedAt: "",
+         },
+       ],
+-      selectedHost: { id: "h1" },
++      selectedHost: {
++        id: "h1",
++        name: "x",
++        address: "a",
++        port: 22,
++        tags: [],
++        sortOrder: 0,
++        createdAt: "",
++        updatedAt: "",
++      },
+     });
+     await useHostStore.getState().deleteHost("h1");
+     expect(mockDelete).toHaveBeenCalledWith("hosts", "h1");
+     expect(useHostStore.getState().hosts).toEqual([]);
+     expect(useHostStore.getState().selectedHost).toBeNull();
+   });
+ 
+   it("getCredentialsForHost resolves key auth via keyStore", async () => {
+     mockGet.mockResolvedValue({
+       id: "h1",
+@@ -227,20 +237,21 @@ describe("hostStore", () => {
+ 
+   it("createGroup upserts with data encrypted '{}'", async () => {
+     mockEncrypt.mockResolvedValue("{}");
+     mockUpsert.mockResolvedValue({
+       id: "new",
+       revision: 1,
+       vault_id: "v1",
+       created_at: 1,
+       updated_at: 1,
+       deleted_at: null,
++      sort_order: 0,
+       data: "{}",
+     });
+     useVaultStore.setState({ currentVaultId: "v1" });
+     await useHostStore.getState().createGroup({ name: "prod" });
+     expect(mockEncrypt).toHaveBeenCalledWith("groups", {});
+     expect(mockUpsert).toHaveBeenCalledWith(
+       "groups",
+       expect.objectContaining({ name: "prod", vault_id: "v1", data: "{}" }),
+     );
+     expect(useHostStore.getState().groups.length).toBe(1);
+diff --git a/client/src/stores/keys/keyStore.test.ts b/client/src/stores/keys/keyStore.test.ts
+index a2bcef5..281302e 100644
+--- a/client/src/stores/keys/keyStore.test.ts
++++ b/client/src/stores/keys/keyStore.test.ts
+@@ -54,66 +54,70 @@ describe("keyStore", () => {
+     expect(key.name).toBe("prod");
+     expect(key.description).toBe("prod key");
+     expect(key.keyType).toBe("ed25519");
+     expect(key.publicKey).toBe("pub");
+     expect(key.encryptedPrivateKey).toBe("PRIV");
+     expect(key.fingerprint).toBe("fp");
+     expect(key.createdAt).toBe("1000");
+   });
+ 
+   it("importKey falls back to crypto.randomUUID, encrypts payload, upserts with vault fallback", async () => {
+-    vi.spyOn(crypto, "randomUUID").mockReturnValue("uuid-123");
++    vi.spyOn(crypto, "randomUUID").mockReturnValue(
++      "123e4567-e89b-12d3-a456-426614174000",
++    );
+     mockEncrypt.mockResolvedValue("enc");
+     mockUpsert.mockResolvedValue({
+-      id: "uuid-123",
++      id: "123e4567-e89b-12d3-a456-426614174000",
+       revision: 1,
+       vault_id: "v1",
+       created_at: 1,
+       updated_at: 1,
+       deleted_at: null,
++      sort_order: 0,
+       data: "enc",
+     });
+     useVaultStore.setState({ currentVaultId: "v1" });
+     await useKeyStore.getState().importKey({
+       name: "mykey",
+       publicKey: "pub",
+       encryptedPrivateKey: "PRIV",
+     });
+     expect(mockEncrypt).toHaveBeenCalledWith(
+       "keys",
+       expect.objectContaining({
+         keyType: "ed25519",
+         publicKey: "pub",
+         privateKey: "PRIV",
+       }),
+     );
+     expect(mockUpsert).toHaveBeenCalledWith(
+       "keys",
+       expect.objectContaining({
+-        id: "uuid-123",
++        id: "123e4567-e89b-12d3-a456-426614174000",
+         vault_id: "v1",
+         name: "mykey",
+         data: "enc",
+       }),
+     );
+     expect(useKeyStore.getState().keys.length).toBe(1);
+   });
+ 
+   it("importKey keeps sensitive key material out of plaintext columns", async () => {
+     mockEncrypt.mockResolvedValue("enc");
+     mockUpsert.mockResolvedValue({
+-      id: "uuid-123",
++      id: "123e4567-e89b-12d3-a456-426614174000",
+       revision: 1,
+       vault_id: "v1",
+       created_at: 1,
+       updated_at: 1,
+       deleted_at: null,
++      sort_order: 0,
+       data: "enc",
+     });
+     useVaultStore.setState({ currentVaultId: "v1" });
+     await useKeyStore.getState().importKey({
+       name: "mykey",
+       keyType: "rsa",
+       publicKey: "pub",
+       encryptedPrivateKey: "PRIV",
+       fingerprint: "fp",
+     });
+@@ -131,26 +135,27 @@ describe("keyStore", () => {
+         name: "PRIV",
+         description: "PRIV",
+         sort_order: "PRIV",
+       }),
+     );
+   });
+ 
+   it("generateKey encrypts empty key material and upserts", async () => {
+     mockEncrypt.mockResolvedValue("enc");
+     mockUpsert.mockResolvedValue({
+-      id: "uuid-123",
++      id: "123e4567-e89b-12d3-a456-426614174000",
+       revision: 1,
+       vault_id: "v1",
+       created_at: 1,
+       updated_at: 1,
+       deleted_at: null,
++      sort_order: 0,
+       data: "enc",
+     });
+     useVaultStore.setState({ currentVaultId: "v1" });
+     await useKeyStore.getState().generateKey("gen-key", "ed25519");
+     expect(mockEncrypt).toHaveBeenCalledWith(
+       "keys",
+       expect.objectContaining({
+         keyType: "ed25519",
+         publicKey: "",
+         privateKey: "",
+@@ -172,21 +177,28 @@ describe("keyStore", () => {
+       keys: [
+         {
+           id: "k1",
+           name: "x",
+           keyType: "ed25519",
+           publicKey: "",
+           encryptedPrivateKey: "",
+           createdAt: "",
+         },
+       ],
+-      selectedKey: { id: "k1" },
++      selectedKey: {
++        id: "k1",
++        name: "x",
++        keyType: "ed25519",
++        publicKey: "",
++        encryptedPrivateKey: "",
++        createdAt: "",
++      },
+     });
+     await useKeyStore.getState().deleteKey("k1");
+     expect(mockDelete).toHaveBeenCalledWith("keys", "k1");
+     expect(useKeyStore.getState().keys).toEqual([]);
+     expect(useKeyStore.getState().selectedKey).toBeNull();
+   });
+ 
+   it("getCredentialsForKey decrypts and returns the private key", async () => {
+     mockGet.mockResolvedValue({ ...keyRow, data: "enc" });
+     mockDecrypt.mockResolvedValue({
+diff --git a/client/src/stores/snippets/snippetStore.test.ts b/client/src/stores/snippets/snippetStore.test.ts
+index 83d60fc..d79d3e0 100644
+--- a/client/src/stores/snippets/snippetStore.test.ts
++++ b/client/src/stores/snippets/snippetStore.test.ts
+@@ -169,21 +169,27 @@ describe("snippetStore", () => {
+     useSnippetStore.setState({
+       snippets: [
+         {
+           id: "s1",
+           name: "x",
+           command: "ls",
+           tags: [],
+           createdAt: "",
+         },
+       ],
+-      selectedSnippet: { id: "s1" },
++      selectedSnippet: {
++        id: "s1",
++        name: "x",
++        command: "ls",
++        tags: [],
++        createdAt: "",
++      },
+     });
+     await useSnippetStore.getState().deleteSnippet("s1");
+     expect(mockDelete).toHaveBeenCalledWith("snippets", "s1");
+     expect(useSnippetStore.getState().snippets).toEqual([]);
+     expect(useSnippetStore.getState().selectedSnippet).toBeNull();
+   });
+ 
+   it("getFilteredSnippets filters by search query", async () => {
+     useSnippetStore.setState({
+       snippets: [

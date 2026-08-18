@@ -1,0 +1,4978 @@
+# Whole-branch review package: 87337ac..4974c1d
+
+## Commits
+4974c1d docs: document email verification configuration
+7723e1b test: assert keychain save on verified login and pending-state clear on logout
+b80ca9c test: auth store verification actions
+0ec22a9 feat: otp entry panel on login and register pages
+c60b15a fix: clear pending verification state on teardown and login
+1a860fb feat: pending verification state and verify/resend actions
+e0bb241 feat: client api for verify-email and resend
+a363294 docs: 403 verification_required carries email inside error payload
+6f71bcb feat: oauth users auto-verified
+e9aff1b feat: register verify-email and resend-verification routes
+7366b15 feat: resend verification otp with 60s cooldown
+7a35664 feat: verify email otp endpoint with attempts cap
+e1a9918 feat: block login for unverified accounts with 403 VERIFICATION_REQUIRED
+b9f78ae test: cover register verification re-issue and verified-user paths
+1464de6 refactor: extract register verification helper
+8c5a38f feat: gate register behind email verification when enabled
+9881b8a feat: otp issue and lookup helpers
+0d4261d feat: smtp email sender with console fallback
+a616b36 feat: add email_verified_at and auth_codes attempts columns
+80b6bc3 feat: parse REQUIRE_EMAIL_VERIFICATION and SMTP settings
+444b321 docs: email verification implementation plan
+d8b5bd5 docs: replace otp on resend (delete + insert) instead of revoke
+c2801d5 docs: email verification design spec
+
+## Files changed
+ AGENTS.md                                          |    6 +
+ .../components/auth/forms/EmailVerification.tsx    |  114 ++
+ client/src/lib/api/auth.ts                         |   23 +-
+ client/src/pages/auth/LoginPage.tsx                |  125 +-
+ client/src/pages/auth/RegisterPage.tsx             |  143 +-
+ client/src/stores/auth/authStore.test.ts           |  271 +++
+ client/src/stores/auth/authStore.ts                |   93 +-
+ .../plans/2026-08-07-email-verification.md         | 2002 ++++++++++++++++++++
+ .../specs/2026-08-07-email-verification-design.md  |  137 ++
+ server/.env.example                                |   90 +
+ server/cmd/termvault-server/main.go                |    2 +
+ server/internal/auth/email_verify.go               |   60 +
+ server/internal/auth/email_verify_test.go          |   75 +
+ server/internal/auth/handlers.go                   |  173 +-
+ server/internal/auth/handlers_test.go              |  502 ++++-
+ server/internal/auth/oauth.go                      |  104 +-
+ server/internal/auth/oauth_test.go                 |   70 +-
+ server/internal/config/config.go                   |   91 +-
+ server/internal/config/config_test.go              |   24 +
+ server/internal/email/sender.go                    |   51 +
+ server/internal/email/sender_test.go               |   23 +
+ server/internal/models/auth_code.go                |    1 +
+ server/internal/models/models_test.go              |   15 +-
+ server/internal/models/user.go                     |   35 +-
+ 24 files changed, 4001 insertions(+), 229 deletions(-)
+
+## Diff
+diff --git a/AGENTS.md b/AGENTS.md
+index 47f9f1d..0844d93 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -88,10 +88,16 @@ cd server && go test ./...
+ | `OAUTH_GOOGLE_CLIENT_ID` | Google OAuth client ID | empty (Google login disabled) |
+ | `OAUTH_GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
+ | `OAUTH_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty (GitHub login disabled) |
+ | `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
+ | `TERMVAULT_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
++| `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
++| `SMTP_HOST` | SMTP server hostname for verification emails (empty = OTP logged to console) | empty |
++| `SMTP_PORT` | SMTP server port | `587` |
++| `SMTP_USERNAME` | SMTP auth username | empty |
++| `SMTP_PASSWORD` | SMTP auth password | empty |
++| `SMTP_FROM` | From address for verification emails | empty |
+ 
+ ### Client
+ 
+ | Variable | Description | Default |
+ |----------|-------------|---------|
+diff --git a/client/src/components/auth/forms/EmailVerification.tsx b/client/src/components/auth/forms/EmailVerification.tsx
+new file mode 100644
+index 0000000..a2aa846
+--- /dev/null
++++ b/client/src/components/auth/forms/EmailVerification.tsx
+@@ -0,0 +1,114 @@
++import { useState } from "react";
++import { Alert } from "@/components/ui/Alert";
++import { Button } from "@/components/ui/Button";
++import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
++import Input from "@/components/ui/Input";
++import { useAuthStore } from "@/stores/auth/authStore";
++
++export default function EmailVerification({
++  onBackToLogin,
++  password,
++}: {
++  onBackToLogin: () => void;
++  password?: string;
++}) {
++  const {
++    pendingVerificationEmail,
++    verifyEmail,
++    resendVerification,
++    isLoading,
++    error,
++    clearError,
++  } = useAuthStore();
++  const [otp, setOtp] = useState("");
++  const [cooldown, setCooldown] = useState(0);
++
++  const email = pendingVerificationEmail ?? "";
++
++  const handleResend = async () => {
++    clearError();
++    setCooldown(60);
++    const timer = setInterval(() => {
++      setCooldown((s) => {
++        if (s <= 1) {
++          clearInterval(timer);
++          return 0;
++        }
++        return s - 1;
++      });
++    }, 1000);
++    await resendVerification(email);
++  };
++
++  const handleVerify = async () => {
++    clearError();
++    await verifyEmail(email, otp.trim(), password);
++  };
++
++  return (
++    <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
++      <h2 className="text-xl font-semibold text-white mb-2">
++        Verify your email
++      </h2>
++      <p className="text-dark-400 text-sm mb-6">
++        Enter the 6-digit code sent to{" "}
++        <span className="text-white">{email}</span>
++      </p>
++
++      {error && (
++        <div className="mb-4">
++          <Alert variant="error">{error}</Alert>
++        </div>
++      )}
++
++      <div className="space-y-4">
++        <Field>
++          <FieldContent>
++            <FieldLabel htmlFor="otp">Verification code</FieldLabel>
++            <Input
++              id="otp"
++              name="otp"
++              placeholder="123456"
++              inputMode="numeric"
++              maxLength={6}
++              value={otp}
++              onChange={(e) =>
++                setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
++              }
++            />
++          </FieldContent>
++        </Field>
++
++        <Button
++          type="button"
++          disabled={isLoading || otp.length !== 6}
++          variant="default"
++          size="sm"
++          className="w-full"
++          onClick={handleVerify}
++        >
++          {isLoading ? "Verifying..." : "Verify"}
++        </Button>
++
++        <Button
++          type="button"
++          disabled={cooldown > 0}
++          variant="outline"
++          size="sm"
++          className="w-full"
++          onClick={handleResend}
++        >
++          {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
++        </Button>
++
++        <button
++          type="button"
++          onClick={onBackToLogin}
++          className="w-full text-center text-primary-500 hover:text-primary-400 text-sm"
++        >
++          Back to sign in
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/client/src/lib/api/auth.ts b/client/src/lib/api/auth.ts
+index a2d53e9..00583bf 100644
+--- a/client/src/lib/api/auth.ts
++++ b/client/src/lib/api/auth.ts
+@@ -50,10 +50,11 @@ export function setRefreshTokenSetter(
+ 
+ export interface ApiError {
+   code: string;
+   message: string;
+   requestId?: string;
++  email?: string;
+ }
+ 
+ export class AuthApiError extends Error {
+   constructor(
+     public status: number,
+@@ -182,12 +183,18 @@ export interface RegisterRequest {
+   kdf: { m: number; t: number; p: number };
+   server_salt: string;
+   salt_cl: string;
+ }
+ 
+-export interface RegisterResponse extends TokenPair {
++export interface RegisterResponse extends Partial<TokenPair> {
+   user: User;
++  verification_required?: boolean;
++}
++
++export interface VerifyEmailResponse extends TokenPair {
++  user: User;
++  keyring?: KeyringRows;
+ }
+ 
+ export interface RecoveryPrefetchResponse {
+   nonce: string;
+   email: string;
+@@ -204,10 +211,24 @@ export const authApi = {
+ 
+   async register(req: RegisterRequest): Promise<RegisterResponse> {
+     return apiFetch("POST", "/api/v1/auth/register", req);
+   },
+ 
++  async verifyEmail(params: {
++    email: string;
++    otp: string;
++    device_id: string;
++  }): Promise<VerifyEmailResponse> {
++    return apiFetch("POST", "/api/v1/auth/verify-email", params);
++  },
++
++  async resendVerification(email: string): Promise<{
++    verification_required: boolean;
++  }> {
++    return apiFetch("POST", "/api/v1/auth/resend-verification", { email });
++  },
++
+   async login(params: {
+     email: string;
+     proof: string;
+     nonce: string;
+     device_id: string;
+diff --git a/client/src/pages/auth/LoginPage.tsx b/client/src/pages/auth/LoginPage.tsx
+index e93d8b1..939556b 100644
+--- a/client/src/pages/auth/LoginPage.tsx
++++ b/client/src/pages/auth/LoginPage.tsx
+@@ -1,8 +1,10 @@
+ import { zodResolver } from "@hookform/resolvers/zod";
++import { useState } from "react";
+ import { useForm } from "react-hook-form";
+ import { Link } from "react-router";
++import EmailVerification from "@/components/auth/forms/EmailVerification";
+ import OAuthLogin from "@/components/auth/forms/OAuthLogin";
+ import ServerConfig from "@/components/auth/forms/ServerConfig";
+ import { Alert } from "@/components/ui/Alert";
+ import { Button } from "@/components/ui/Button";
+ import { FormInput } from "@/components/ui/forms/FormInput";
+@@ -13,11 +15,19 @@ import {
+   requiredFields,
+ } from "@/lib/schema/auth/loginFormSchema";
+ import { useAuthStore } from "@/stores/auth/authStore";
+ 
+ export default function LoginPage() {
+-  const { login, isLoading, error, clearError } = useAuthStore();
++  const {
++    login,
++    isLoading,
++    error,
++    clearError,
++    pendingVerificationEmail,
++    clearPendingVerification,
++  } = useAuthStore();
++  const [password, setPassword] = useState("");
+   const {
+     control,
+     handleSubmit,
+     formState: { isValid },
+   } = useForm<LoginFormSchema>({
+@@ -25,10 +35,11 @@ export default function LoginPage() {
+     resolver: zodResolver(loginFormSchema),
+   });
+ 
+   const onSubmit = async (data: LoginFormSchema) => {
+     clearError();
++    setPassword(data.password);
+     await login(data.email, data.password);
+   };
+ 
+   return (
+     <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
+@@ -40,69 +51,79 @@ export default function LoginPage() {
+           <h1 className="text-3xl font-bold text-white">TermVault</h1>
+           <p className="text-dark-400 mt-2">Self-hosted SSH client</p>
+         </div>
+ 
+         <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
+-          <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
+-
+-          {error && (
+-            <div className="mb-4">
+-              <Alert variant="error">{error}</Alert>
+-            </div>
++          {pendingVerificationEmail && (
++            <EmailVerification
++              onBackToLogin={clearPendingVerification}
++              password={password}
++            />
+           )}
++          {!pendingVerificationEmail && (
++            <>
++              <h2 className="text-xl font-semibold text-white mb-6">Sign In</h2>
+ 
+-          <OAuthLogin />
++              {error && (
++                <div className="mb-4">
++                  <Alert variant="error">{error}</Alert>
++                </div>
++              )}
+ 
+-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+-            <FormInput
+-              control={control}
+-              name="email"
+-              label="Email"
+-              placeholder="you@example.com"
+-              required={requiredFields.includes("email")}
+-            />
++              <OAuthLogin />
+ 
+-            <FormInput
+-              control={control}
+-              name="password"
+-              label="Password"
+-              type="password"
+-              placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
+-              required={requiredFields.includes("password")}
+-            />
++              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
++                <FormInput
++                  control={control}
++                  name="email"
++                  label="Email"
++                  placeholder="you@example.com"
++                  required={requiredFields.includes("email")}
++                />
+ 
+-            <div className="text-right">
+-              <Link
+-                to="/recovery"
+-                className="text-primary-500 hover:text-primary-400 text-xs"
+-              >
+-                Forgot password?
+-              </Link>
+-            </div>
++                <FormInput
++                  control={control}
++                  name="password"
++                  label="Password"
++                  type="password"
++                  placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
++                  required={requiredFields.includes("password")}
++                />
+ 
+-            <Button
+-              type="submit"
+-              disabled={isLoading || !isValid}
+-              variant="default"
+-              size="sm"
+-              className="w-full"
+-            >
+-              {isLoading ? "Loading..." : "Sign In"}
+-            </Button>
+-          </form>
++                <div className="text-right">
++                  <Link
++                    to="/recovery"
++                    className="text-primary-500 hover:text-primary-400 text-xs"
++                  >
++                    Forgot password?
++                  </Link>
++                </div>
+ 
+-          <div className="mt-6 text-center">
+-            <Link
+-              to="/register"
+-              onClick={() => clearError()}
+-              className="text-primary-500 hover:text-primary-400 text-sm"
+-            >
+-              Don't have an account? Create one
+-            </Link>
+-          </div>
++                <Button
++                  type="submit"
++                  disabled={isLoading || !isValid}
++                  variant="default"
++                  size="sm"
++                  className="w-full"
++                >
++                  {isLoading ? "Loading..." : "Sign In"}
++                </Button>
++              </form>
+ 
+-          <ServerConfig />
++              <div className="mt-6 text-center">
++                <Link
++                  to="/register"
++                  onClick={() => clearError()}
++                  className="text-primary-500 hover:text-primary-400 text-sm"
++                >
++                  Don't have an account? Create one
++                </Link>
++              </div>
++
++              <ServerConfig />
++            </>
++          )}
+         </div>
+       </div>
+     </div>
+   );
+ }
+diff --git a/client/src/pages/auth/RegisterPage.tsx b/client/src/pages/auth/RegisterPage.tsx
+index ee5bfe2..d2b163c 100644
+--- a/client/src/pages/auth/RegisterPage.tsx
++++ b/client/src/pages/auth/RegisterPage.tsx
+@@ -1,8 +1,10 @@
+ import { zodResolver } from "@hookform/resolvers/zod";
++import { useState } from "react";
+ import { useForm } from "react-hook-form";
+ import { Link } from "react-router";
++import EmailVerification from "@/components/auth/forms/EmailVerification";
+ import OAuthLogin from "@/components/auth/forms/OAuthLogin";
+ import ServerConfig from "@/components/auth/forms/ServerConfig";
+ import { Alert } from "@/components/ui/Alert";
+ import { Button } from "@/components/ui/Button";
+ import { FormInput } from "@/components/ui/forms/FormInput";
+@@ -13,18 +15,27 @@ import {
+   requiredFields,
+ } from "@/lib/schema/auth/registerFormSchema";
+ import { useAuthStore } from "@/stores/auth/authStore";
+ 
+ export default function RegisterPage() {
+-  const { register, isLoading, error, clearError } = useAuthStore();
++  const {
++    register,
++    isLoading,
++    error,
++    clearError,
++    pendingVerificationEmail,
++    clearPendingVerification,
++  } = useAuthStore();
++  const [password, setPassword] = useState("");
+   const { control, handleSubmit } = useForm<RegisterFormSchema>({
+     defaultValues: registerFormDefaultValues,
+     resolver: zodResolver(registerFormSchema),
+   });
+ 
+   const onSubmit = async (data: RegisterFormSchema) => {
+     clearError();
++    setPassword(data.password);
+     await register(data.email, data.full_name, data.password);
+   };
+ 
+   return (
+     <div className="min-h-screen bg-dark-950 flex items-center justify-center p-4">
+@@ -36,79 +47,89 @@ export default function RegisterPage() {
+           <h1 className="text-3xl font-bold text-white">TermVault</h1>
+           <p className="text-dark-400 mt-2">Self-hosted SSH client</p>
+         </div>
+ 
+         <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
+-          <h2 className="text-xl font-semibold text-white mb-6">
+-            Create Account
+-          </h2>
+-
+-          {error && (
+-            <div className="mb-4">
+-              <Alert variant="error">{error}</Alert>
+-            </div>
++          {pendingVerificationEmail && (
++            <EmailVerification
++              onBackToLogin={clearPendingVerification}
++              password={password}
++            />
+           )}
++          {!pendingVerificationEmail && (
++            <>
++              <h2 className="text-xl font-semibold text-white mb-6">
++                Create Account
++              </h2>
+ 
+-          <OAuthLogin />
++              {error && (
++                <div className="mb-4">
++                  <Alert variant="error">{error}</Alert>
++                </div>
++              )}
+ 
+-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+-            <FormInput
+-              control={control}
+-              name="email"
+-              label="Email"
+-              placeholder="you@example.com"
+-              required={requiredFields.includes("email")}
+-            />
++              <OAuthLogin />
+ 
+-            <FormInput
+-              control={control}
+-              name="full_name"
+-              label="Full Name"
+-              placeholder="John Doe"
+-              required={requiredFields.includes("full_name")}
+-            />
++              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
++                <FormInput
++                  control={control}
++                  name="email"
++                  label="Email"
++                  placeholder="you@example.com"
++                  required={requiredFields.includes("email")}
++                />
+ 
+-            <FormInput
+-              control={control}
+-              name="password"
+-              label="Password"
+-              type="password"
+-              placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
+-              required={requiredFields.includes("password")}
+-            />
++                <FormInput
++                  control={control}
++                  name="full_name"
++                  label="Full Name"
++                  placeholder="John Doe"
++                  required={requiredFields.includes("full_name")}
++                />
+ 
+-            <FormInput
+-              control={control}
+-              name="confirmPassword"
+-              label="Confirm Password"
+-              type="password"
+-              placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
+-              required={requiredFields.includes("confirmPassword")}
+-            />
++                <FormInput
++                  control={control}
++                  name="password"
++                  label="Password"
++                  type="password"
++                  placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
++                  required={requiredFields.includes("password")}
++                />
+ 
+-            <Button
+-              type="submit"
+-              disabled={isLoading}
+-              variant="default"
+-              size="sm"
+-              className="w-full"
+-            >
+-              {isLoading ? "Loading..." : "Create Account"}
+-            </Button>
+-          </form>
++                <FormInput
++                  control={control}
++                  name="confirmPassword"
++                  label="Confirm Password"
++                  type="password"
++                  placeholder="ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó"
++                  required={requiredFields.includes("confirmPassword")}
++                />
+ 
+-          <div className="mt-6 text-center">
+-            <Link
+-              to="/login"
+-              onClick={() => clearError()}
+-              className="text-primary-500 hover:text-primary-400 text-sm"
+-            >
+-              Already have an account? Sign in
+-            </Link>
+-          </div>
++                <Button
++                  type="submit"
++                  disabled={isLoading}
++                  variant="default"
++                  size="sm"
++                  className="w-full"
++                >
++                  {isLoading ? "Loading..." : "Create Account"}
++                </Button>
++              </form>
+ 
+-          <ServerConfig />
++              <div className="mt-6 text-center">
++                <Link
++                  to="/login"
++                  onClick={() => clearError()}
++                  className="text-primary-500 hover:text-primary-400 text-sm"
++                >
++                  Already have an account? Sign in
++                </Link>
++              </div>
++
++              <ServerConfig />
++            </>
++          )}
+         </div>
+       </div>
+     </div>
+   );
+ }
+diff --git a/client/src/stores/auth/authStore.test.ts b/client/src/stores/auth/authStore.test.ts
+new file mode 100644
+index 0000000..66d0015
+--- /dev/null
++++ b/client/src/stores/auth/authStore.test.ts
+@@ -0,0 +1,271 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const { setRefreshToken, getRefreshToken } = vi.hoisted(() => ({
++  setRefreshToken: vi.fn(),
++  getRefreshToken: vi.fn(() => null),
++}));
++
++vi.mock("@tauri-apps/plugin-store", () => ({
++  load: vi.fn(() => ({
++    get: vi.fn(async () => null),
++    set: vi.fn(async () => {}),
++    save: vi.fn(async () => {}),
++  })),
++}));
++
++vi.mock("../../lib/api/auth", () => ({
++  authApi: {
++    register: vi.fn(),
++    login: vi.fn(),
++    prelogin: vi.fn(),
++    verifyEmail: vi.fn(),
++    resendVerification: vi.fn(),
++    logout: vi.fn(),
++  },
++  loadApiUrl: vi.fn(async () => {}),
++  setRefreshTokenGetter: vi.fn(),
++  setRefreshTokenSetter: vi.fn(),
++  AuthApiError: class AuthApiError extends Error {
++    constructor(
++      public status: number,
++      public apiError: { code: string; message: string; email?: string },
++    ) {
++      super(apiError.message);
++    }
++  },
++}));
++
++vi.mock("../../lib/crypto/crypto", () => ({
++  generateAccountMaterial: vi.fn(async () => ({
++    recovery_code: "rc",
++    public_key: "pk",
++    salt_cl: "sc",
++  })),
++  deriveKek: vi.fn(async () => {}),
++  buildKeyringRows: vi.fn(async () => ({
++    dek_wrapped_by_kek: "kek",
++    dek_wrapped_by_recovery: "rec",
++    private_key_wrapped_by_dek: "pk",
++  })),
++  computeLoginProof: vi.fn(async () => ({
++    proof: "proof",
++    verifier: "verifier",
++  })),
++  unwrapDek: vi.fn(async () => {}),
++  lockSession: vi.fn(async () => {}),
++  clearKeychain: vi.fn(async () => {}),
++  setRefreshToken,
++  getRefreshToken,
++  saveRefreshToken: vi.fn(async () => {}),
++  loadRefreshToken: vi.fn(async () => null),
++  signChallenge: vi.fn(async () => "sig"),
++}));
++
++vi.mock("../../lib/db/db", () => ({
++  wipeLocalData: vi.fn(async () => {}),
++}));
++
++vi.mock("../../lib/keychain/keychain", () => ({
++  deletePassword: vi.fn(async () => {}),
++  loadPassword: vi.fn(async () => null),
++  savePassword: vi.fn(async () => {}),
++}));
++
++vi.mock("../../lib/common/device", () => ({
++  getDeviceId: vi.fn(async () => "dev-1"),
++}));
++
++import { AuthApiError, authApi } from "../../lib/api/auth";
++import { savePassword } from "../../lib/keychain/keychain";
++import { useAuthStore } from "./authStore";
++
++const preloginResponse = {
++  nonce: "n",
++  kdf: { m: 32768, t: 2, p: 1 },
++  server_salt: "ss",
++  salt_cl: "sc",
++};
++
++const user = {
++  id: "u1",
++  email: "new@example.com",
++  initialized: true,
++  auth_provider: "password",
++  created_at: "2026-01-01",
++};
++
++describe("authStore email verification", () => {
++  beforeEach(() => {
++    useAuthStore.setState({
++      user: null,
++      tokens: null,
++      isAuthenticated: false,
++      isUnlocked: false,
++      pendingVerificationEmail: null,
++      error: null,
++      isLoading: false,
++    });
++    vi.clearAllMocks();
++  });
++
++  it("register with verification_required sets pending email and no tokens", async () => {
++    vi.mocked(authApi.prelogin).mockResolvedValue(preloginResponse);
++    vi.mocked(authApi.register).mockResolvedValue({
++      user,
++      verification_required: true,
++    });
++
++    await useAuthStore.getState().register("new@example.com", "New User", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBe("new@example.com");
++    expect(s.isAuthenticated).toBe(false);
++    expect(s.tokens).toBeNull();
++  });
++
++  it("login with VERIFICATION_REQUIRED sets pending email", async () => {
++    vi.mocked(authApi.prelogin).mockResolvedValue(preloginResponse);
++    vi.mocked(authApi.login).mockRejectedValue(
++      new AuthApiError(403, {
++        code: "VERIFICATION_REQUIRED",
++        message: "verify your email",
++        email: "gate@example.com",
++      }),
++    );
++
++    await useAuthStore.getState().login("gate@example.com", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBe("gate@example.com");
++    expect(s.isAuthenticated).toBe(false);
++  });
++
++  it("login success clears any pending verification email", async () => {
++    useAuthStore.setState({ pendingVerificationEmail: "gate@example.com" });
++    vi.mocked(authApi.prelogin).mockResolvedValue(preloginResponse);
++    vi.mocked(authApi.login).mockResolvedValue({
++      access_token: "at",
++      refresh_token: "rt",
++      user,
++      keyring: {
++        dek_wrapped_by_kek: "kek",
++        dek_wrapped_by_recovery: "rec",
++        private_key_wrapped_by_dek: "pk",
++      },
++    });
++
++    await useAuthStore.getState().login("gate@example.com", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.isAuthenticated).toBe(true);
++    expect(s.isUnlocked).toBe(true);
++    expect(s.pendingVerificationEmail).toBeNull();
++  });
++
++  it("verifyEmail succeeds and authenticates", async () => {
++    vi.mocked(authApi.verifyEmail).mockResolvedValue({
++      access_token: "at",
++      refresh_token: "rt",
++      user,
++      keyring: {
++        dek_wrapped_by_kek: "kek",
++        dek_wrapped_by_recovery: "rec",
++        private_key_wrapped_by_dek: "pk",
++      },
++    });
++
++    await useAuthStore
++      .getState()
++      .verifyEmail("new@example.com", "123456", "pw");
++
++    expect(savePassword).toHaveBeenCalledWith("pw");
++    const s = useAuthStore.getState();
++    expect(s.isAuthenticated).toBe(true);
++    expect(s.isUnlocked).toBe(true);
++    expect(s.pendingVerificationEmail).toBeNull();
++    expect(s.tokens).toEqual({
++      access_token: "at",
++      refresh_token: "rt",
++    });
++  });
++
++  it("verifyEmail failure sets error and rethrows", async () => {
++    vi.mocked(authApi.verifyEmail).mockRejectedValue(
++      new AuthApiError(400, {
++        code: "INVALID_OTP",
++        message: "bad otp",
++      }),
++    );
++
++    await expect(
++      useAuthStore.getState().verifyEmail("new@example.com", "000000", "pw"),
++    ).rejects.toThrow("bad otp");
++
++    const s = useAuthStore.getState();
++    expect(s.error).toBe("bad otp");
++    expect(s.isLoading).toBe(false);
++    expect(s.pendingVerificationEmail).toBeNull();
++  });
++
++  it("logout clears a pending verification session", async () => {
++    useAuthStore.setState({
++      user,
++      tokens: { access_token: "at", refresh_token: "rt" },
++      isAuthenticated: true,
++      isUnlocked: true,
++      pendingVerificationEmail: "new@example.com",
++    });
++
++    await useAuthStore.getState().logout();
++
++    expect(authApi.logout).toHaveBeenCalledWith("rt");
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBeNull();
++    expect(s.isAuthenticated).toBe(false);
++    expect(s.isUnlocked).toBe(false);
++    expect(s.user).toBeNull();
++    expect(s.tokens).toBeNull();
++  });
++
++  it("resendVerification calls the API and keeps the pending email", async () => {
++    useAuthStore.setState({ pendingVerificationEmail: "new@example.com" });
++    vi.mocked(authApi.resendVerification).mockResolvedValue({
++      verification_required: true,
++    });
++
++    await useAuthStore.getState().resendVerification("new@example.com");
++
++    expect(authApi.resendVerification).toHaveBeenCalledWith("new@example.com");
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBe("new@example.com");
++    expect(s.isLoading).toBe(false);
++    expect(s.error).toBeNull();
++  });
++
++  it("resendVerification failure sets error and rethrows", async () => {
++    useAuthStore.setState({ pendingVerificationEmail: "new@example.com" });
++    vi.mocked(authApi.resendVerification).mockRejectedValue(
++      new AuthApiError(429, {
++        code: "RATE_LIMITED",
++        message: "too many requests",
++      }),
++    );
++
++    await expect(
++      useAuthStore.getState().resendVerification("new@example.com"),
++    ).rejects.toThrow("too many requests");
++
++    const s = useAuthStore.getState();
++    expect(s.error).toBe("too many requests");
++    expect(s.isLoading).toBe(false);
++    expect(s.pendingVerificationEmail).toBe("new@example.com");
++  });
++
++  it("clearPendingVerification resets the pending email", () => {
++    useAuthStore.setState({ pendingVerificationEmail: "new@example.com" });
++
++    useAuthStore.getState().clearPendingVerification();
++
++    expect(useAuthStore.getState().pendingVerificationEmail).toBeNull();
++  });
++});
+diff --git a/client/src/stores/auth/authStore.ts b/client/src/stores/auth/authStore.ts
+index 07601b8..c3bc38c 100644
+--- a/client/src/stores/auth/authStore.ts
++++ b/client/src/stores/auth/authStore.ts
+@@ -1,8 +1,9 @@
+ import { load } from "@tauri-apps/plugin-store";
+ import { create } from "zustand";
+ import {
++  AuthApiError,
+   authApi,
+   loadApiUrl,
+   setRefreshTokenGetter,
+   setRefreshTokenSetter,
+   type TokenPair,
+@@ -56,10 +57,11 @@ interface AuthState {
+   unlockPending: boolean;
+   isInitialized: boolean;
+   isLoading: boolean;
+   error: string | null;
+   pendingOAuth: { provider: string; setupCode: string; userId: string } | null;
++  pendingVerificationEmail: string | null;
+   alwaysAsk: boolean;
+ 
+   prelogin: (email: string) => Promise<{
+     nonce: string;
+     kdf: { m: number; t: number; p: number };
+@@ -86,10 +88,13 @@ interface AuthState {
+   clearRecoveryCode: () => void;
+   clearError: () => void;
+   restoreSession: () => Promise<void>;
+   oauthStartFlow: (provider: string) => Promise<{ needsSetup: boolean }>;
+   oauthSetup: (password: string) => Promise<void>;
++  verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
++  resendVerification: (email: string) => Promise<void>;
++  clearPendingVerification: () => void;
+   setAlwaysAsk: (flag: boolean) => Promise<void>;
+ }
+ 
+ async function persistTokens(tokens: TokenPair | null): Promise<void> {
+   // Set in-memory first so apiFetch auto-refresh has it immediately
+@@ -119,10 +124,11 @@ async function teardownSession(): Promise<void> {
+     user: null,
+     tokens: null,
+     isAuthenticated: false,
+     isUnlocked: false,
+     pendingOAuth: null,
++    pendingVerificationEmail: null,
+   });
+   await persistTokens(null);
+   try {
+     await wipeLocalData();
+   } catch {
+@@ -161,10 +167,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+   error: null,
+   pendingRecoveryCode: null,
+   pendingRecoveryContext: null,
+   pendingRecoveryEmail: null,
+   pendingOAuth: null,
++  pendingVerificationEmail: null,
+   alwaysAsk: false,
+ 
+   prelogin: async (email: string) => {
+     const res = await authApi.prelogin(email);
+     return {
+@@ -200,41 +207,102 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+         kdf: { m: 32768, t: 2, p: 1 },
+         server_salt: prelogin.server_salt,
+         salt_cl: material.salt_cl,
+       });
+ 
++      if (res.verification_required) {
++        set({ pendingVerificationEmail: email, isLoading: false });
++        return;
++      }
++
++      // Verification not required: tokens are guaranteed by the server contract
++      const pair = res as TokenPair;
+       set({
+         user: res.user,
+-        tokens: {
+-          access_token: res.access_token,
+-          refresh_token: res.refresh_token,
+-        },
++        tokens: pair,
+         isAuthenticated: true,
+         isUnlocked: true,
+         pendingRecoveryCode: material.recovery_code,
+         pendingRecoveryContext: "signup",
+         isLoading: false,
+       });
+-      await persistTokens({
++      await persistTokens(pair);
++      if (!get().alwaysAsk) {
++        await savePassword(password);
++      }
++    } catch (err) {
++      const message =
++        typeof err === "string"
++          ? err
++          : err instanceof Error
++            ? err.message
++            : "Registration failed";
++      set({ error: message, isLoading: false });
++      throw err;
++    }
++  },
++
++  verifyEmail: async (email: string, otp: string, password?: string) => {
++    set({ isLoading: true, error: null });
++    try {
++      const res = await authApi.verifyEmail({
++        email,
++        otp,
++        device_id: await getDeviceId(),
++      });
++
++      if (res.keyring) {
++        await unwrapDek(res.keyring.dek_wrapped_by_kek);
++      }
++
++      const newTokens = {
+         access_token: res.access_token,
+         refresh_token: res.refresh_token,
++      };
++      set({
++        user: res.user,
++        tokens: newTokens,
++        isAuthenticated: true,
++        isUnlocked: true,
++        pendingVerificationEmail: null,
++        isLoading: false,
+       });
+-      if (!get().alwaysAsk) {
++      await persistTokens(newTokens);
++      if (password && !get().alwaysAsk) {
+         await savePassword(password);
+       }
+     } catch (err) {
+       const message =
+         typeof err === "string"
+           ? err
+           : err instanceof Error
+             ? err.message
+-            : "Registration failed";
++            : "Verification failed";
++      set({ error: message, isLoading: false });
++      throw err;
++    }
++  },
++
++  resendVerification: async (email: string) => {
++    set({ isLoading: true, error: null });
++    try {
++      await authApi.resendVerification(email);
++      set({ isLoading: false });
++    } catch (err) {
++      const message =
++        typeof err === "string"
++          ? err
++          : err instanceof Error
++            ? err.message
++            : "Resend failed";
+       set({ error: message, isLoading: false });
+       throw err;
+     }
+   },
+ 
++  clearPendingVerification: () => set({ pendingVerificationEmail: null }),
++
+   login: async (email: string, password: string) => {
+     set({ isLoading: true, error: null });
+     try {
+       const prelogin = await authApi.prelogin(email);
+ 
+@@ -263,17 +331,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+       set({
+         user: res.user,
+         tokens: newTokens,
+         isAuthenticated: true,
+         isUnlocked: true,
++        pendingVerificationEmail: null,
+         isLoading: false,
+       });
+       await persistTokens(newTokens);
+       if (!get().alwaysAsk) {
+         await savePassword(password);
+       }
+     } catch (err) {
++      if (
++        err instanceof AuthApiError &&
++        err.apiError.code === "VERIFICATION_REQUIRED"
++      ) {
++        set({
++          pendingVerificationEmail: err.apiError.email ?? email,
++          isLoading: false,
++        });
++        return;
++      }
+       const message =
+         typeof err === "string"
+           ? err
+           : err instanceof Error
+             ? err.message
+diff --git a/docs/superpowers/plans/2026-08-07-email-verification.md b/docs/superpowers/plans/2026-08-07-email-verification.md
+new file mode 100644
+index 0000000..8ae1a04
+--- /dev/null
++++ b/docs/superpowers/plans/2026-08-07-email-verification.md
+@@ -0,0 +1,2002 @@
++# Email Verification for Password Signups ΓÇö Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** Gate new email/password signups behind a 6-digit OTP emailed to the user, toggleable via one env var (off by default), with no tokens ever minted for unverified accounts.
++
++**Architecture:** Server-side only gating ΓÇö `users.email_verified_at` column, one-time 6-digit OTPs stored hashed in the existing `auth_codes` table (`Purpose="email_verify"`, delete+insert on re-issue), delivered via a new stdlib `net/smtp` package with console-log fallback when SMTP is unconfigured. Client shows an OTP entry panel (auth store `pendingVerificationEmail`) reached from register (verification_required) or login (403 VERIFICATION_REQUIRED). OAuth users are auto-verified.
++
++**Tech Stack:** Go (gin, GORM, stdlib net/smtp), React + Zustand (client), Vitest, Biome, Tauri.
++
++**Spec:** `docs/superpowers/specs/2026-08-07-email-verification-design.md`
++
++## Global Constraints
++
++- `REQUIRE_EMAIL_VERIFICATION` env: strict bool ΓÇö accepted `true`, `1`, `yes` (case-insensitive); unset/anything else = **off**.
++- Verification applies ONLY to `AuthProvider = "password"` users. OAuth users are exempt (verified at creation).
++- Unverified password accounts must NEVER receive access/refresh tokens from any handler.
++- OTP: 6 decimal digits, 15-minute expiry, sha256-hashed at rest, constant-time compare, max 5 attempts (5th failure deletes the row), one live `email_verify` row per user (re-issue = delete old row + insert fresh).
++- Resend cooldown: 60s per user (live row `CreatedAt` within 60s ΓåÆ 429). Resend/verify endpoints ride `RATE_LIMIT_AUTH`.
++- Client: `pnpm biome check .` (double quotes, no semicolons), `pnpm vitest`, `tsc`. Server: `go vet ./... && go test ./... -count=1`. Tauri: `cargo check`, `cargo test`.
++- No new Go module dependencies (`net/smtp` only).
++
++---
++
++### Task 1: Config ΓÇö verification toggle + SMTP settings
++
++**Files:**
++- Modify: `server/internal/config/config.go:12-30` (Config struct), `:38-66` (Load)
++- Test: `server/internal/config/config_test.go`
++
++**Interfaces:**
++- Produces: `Config.RequireEmailVerification bool`, `Config.SMTPHost string`, `Config.SMTPPort int`, `Config.SMTPUsername string`, `Config.SMTPPassword string`, `Config.SMTPFrom string`; helper `parseBoolEnv(key string, fallback bool) bool` in package `config`.
++
++- [ ] **Step 1: Write the failing tests**
++
++```go
++// in TestLoadDefaults, after existing assertions:
++if cfg.RequireEmailVerification {
++    t.Errorf("expected email verification off by default")
++}
++if cfg.SMTPPort != 587 {
++    t.Errorf("expected default SMTP port 587, got %d", cfg.SMTPPort)
++}
++
++// new test func
++func TestLoadEmailVerificationToggle(t *testing.T) {
++    cases := []struct {
++        val  string
++        want bool
++    }{
++        {"true", true}, {"TRUE", true}, {"1", true}, {"yes", true},
++        {"false", false}, {"0", false}, {"", false}, {"banana", false},
++    }
++    for _, c := range cases {
++        os.Setenv("REQUIRE_EMAIL_VERIFICATION", c.val)
++        cfg := Load()
++        if cfg.RequireEmailVerification != c.want {
++            t.Errorf("REQUIRE_EMAIL_VERIFICATION=%q: got %v want %v", c.val, cfg.RequireEmailVerification, c.want)
++        }
++    }
++    os.Unsetenv("REQUIRE_EMAIL_VERIFICATION")
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/config/ -run "TestLoadDefaults|TestLoadEmailVerificationToggle" -count=1`
++Expected: FAIL ΓÇö `RequireEmailVerification` and `SMTPPort` don't exist yet.
++
++- [ ] **Step 3: Implement**
++
++In `config.go`, add to struct:
++
++```go
++RequireEmailVerification bool
++SMTPHost                string
++SMTPPort                int
++SMTPUsername            string
++SMTPPassword            string
++SMTPFrom                string
++```
++
++In `Load()`, after the existing `getEnv` defaults:
++
++```go
++cfg.RequireEmailVerification = parseBoolEnv("REQUIRE_EMAIL_VERIFICATION", false)
++cfg.SMTPHost = os.Getenv("SMTP_HOST")
++cfg.SMTPPort = 587
++if v := os.Getenv("SMTP_PORT"); v != "" {
++    if n, err := parseIntSafe(v, 587); err == nil {
++        cfg.SMTPPort = n
++    }
++}
++cfg.SMTPUsername = os.Getenv("SMTP_USERNAME")
++cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
++cfg.SMTPFrom = os.Getenv("SMTP_FROM")
++```
++
++Add at the bottom of the file:
++
++```go
++func parseBoolEnv(key string, fallback bool) bool {
++    v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
++    switch v {
++    case "true", "1", "yes":
++        return true
++    case "false", "0", "no":
++        return false
++    }
++    return fallback
++}
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/config/ -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/config/config.go server/internal/config/config_test.go
++git commit -m "feat: parse REQUIRE_EMAIL_VERIFICATION and SMTP settings"
++```
++
++---
++
++### Task 2: Models ΓÇö `email_verified_at` + `Attempts`
++
++**Files:**
++- Modify: `server/internal/models/user.go:9-27`
++- Modify: `server/internal/models/auth_code.go:9-18`
++- Test: `server/internal/models/models_test.go`
++
++**Interfaces:**
++- Produces: `models.User.EmailVerifiedAt *time.Time` (json `email_verified_at,omitempty`); `models.AuthCode.Attempts int` (json `-`).
++
++- [ ] **Step 1: Write the failing test**
++
++```go
++// in models_test.go, new test func
++func TestEmailVerificationColumns(t *testing.T) {
++    db := setupDB(t) // reuse existing helper from models_test.go
++    if !db.Migrator().HasColumn("users", "email_verified_at") {
++        t.Errorf("users.email_verified_at column missing after AutoMigrate")
++    }
++    if !db.Migrator().HasColumn("auth_codes", "attempts") {
++        t.Errorf("auth_codes.attempts column missing after AutoMigrate")
++    }
++}
++```
++
++(Check the existing helper name in `models_test.go` ΓÇö if it differs, use that name.)
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `go test ./internal/models/ -run TestEmailVerificationColumns -count=1`
++Expected: FAIL ΓÇö columns missing.
++
++- [ ] **Step 3: Implement**
++
++In `user.go`:
++
++```go
++EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
++```
++
++(Add after `LastLoginAt`.)
++
++In `auth_code.go`:
++
++```go
++Attempts   int        `gorm:"not null;default:0" json:"-"`
++```
++
++(Add after `ExpiresAt`.)
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `go test ./internal/models/ -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/models/user.go server/internal/models/auth_code.go server/internal/models/models_test.go
++git commit -m "feat: add email_verified_at and auth_codes attempts columns"
++```
++
++---
++
++### Task 3: Email package ΓÇö SMTP sender with console fallback
++
++**Files:**
++- Create: `server/internal/email/sender.go`
++- Create: `server/internal/email/sender_test.go`
++
++**Interfaces:**
++- Produces:
++  - `type Sender struct { Host string; Port int; Username, Password, From string }`
++  - `func New(host string, port int, username, password, from string) *Sender`
++  - `func (s *Sender) Enabled() bool` ΓÇö true iff `Host != ""`.
++  - `func (s *Sender) SendOtp(to, code string) error` ΓÇö disabled: logs `slog.Info("verification otp", "email", to, "code", code)` and returns nil; enabled: `net/smtp.SendMail` with `smtp.PlainAuth` (only when Username set), plain-text + minimal HTML body "Your TermVault verification code is: <code>".
++
++- [ ] **Step 1: Write the failing tests**
++
++```go
++package email
++
++import "testing"
++
++func TestSendOtp_DisabledLogsAndSucceeds(t *testing.T) {
++    s := New("", 587, "", "", "")
++    if s.Enabled() {
++        t.Fatal("expected disabled sender when host empty")
++    }
++    if err := s.SendOtp("user@example.com", "123456"); err != nil {
++        t.Fatalf("disabled sender should not error: %v", err)
++    }
++}
++
++func TestNew_DefaultPort(t *testing.T) {
++    s := New("smtp.example.com", 587, "u", "p", "no-reply@example.com")
++    if !s.Enabled() {
++        t.Fatal("expected enabled sender when host set")
++    }
++    if s.Port != 587 || s.Username != "u" || s.From != "no-reply@example.com" {
++        t.Fatalf("sender fields not preserved: %+v", s)
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/email/ -count=1`
++Expected: FAIL ΓÇö package `email` does not exist / functions undefined.
++
++- [ ] **Step 3: Implement**
++
++```go
++package email
++
++import (
++    "fmt"
++    "log/slog"
++    "net/smtp"
++)
++
++type Sender struct {
++    Host     string
++    Port     int
++    Username string
++    Password string
++    From     string
++}
++
++func New(host string, port int, username, password, from string) *Sender {
++    return &Sender{Host: host, Port: port, Username: username, Password: password, From: from}
++}
++
++func (s *Sender) Enabled() bool {
++    return s.Host != ""
++}
++
++func (s *Sender) SendOtp(to, code string) error {
++    subject := "Your TermVault verification code"
++    plain := fmt.Sprintf("Your TermVault verification code is: %s\n\nIt expires in 15 minutes.", code)
++    html := fmt.Sprintf("<p>Your TermVault verification code is:</p><p style=\"font-size:24px;font-weight:bold\">%s</p><p>It expires in 15 minutes.</p>", code)
++
++    if !s.Enabled() {
++        slog.Info("verification otp", "email", to, "code", code)
++        return nil
++    }
++
++    msg := []byte("From: " + s.From + "\r\n" +
++        "To: " + to + "\r\n" +
++        "Subject: " + subject + "\r\n" +
++        "MIME-Version: 1.0\r\n" +
++        "Content-Type: text/html; charset=UTF-8\r\n" +
++        "\r\n" +
++        html)
++
++    addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
++    var auth smtp.Auth
++    if s.Username != "" {
++        auth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
++    }
++    if err := smtp.SendMail(addr, auth, s.From, []string{to}, msg); err != nil {
++        return fmt.Errorf("send verification email: %w", err)
++    }
++    return nil
++}
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/email/ -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/email/
++git commit -m "feat: smtp email sender with console fallback"
++```
++
++---
++
++### Task 4: OTP issue/lookup helpers
++
++**Files:**
++- Create: `server/internal/auth/email_verify.go`
++- Test: `server/internal/auth/email_verify_test.go`
++
++**Interfaces:**
++- Consumes: `models.AuthCode` (with `Attempts`), `models.AutoMigrate`, `setupTestDB` pattern from `handlers_test.go` (replicate locally in this test file).
++- Produces (package `auth`):
++  - `const emailVerifyPurpose = "email_verify"`
++  - `const otpTTL = 15 * time.Minute`
++  - `const maxOtpAttempts = 5`
++  - `func generateOtp() (string, error)` ΓÇö 6 decimal digits via `crypto/rand.Int`
++  - `func issueEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (string, error)` ΓÇö `DELETE` all `email_verify` rows for user, insert fresh hashed row (hash = `hashToken(otp)`), returns plaintext OTP
++  - `func findEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (*models.AuthCode, error)` ΓÇö most recent `email_verify` row for user (no expiry filter ΓÇö caller decides), `ErrNotFound` style: return `gorm.ErrRecordNotFound` from `db.First`
++
++- [ ] **Step 1: Write the failing tests**
++
++```go
++package auth
++
++import (
++    "testing"
++
++    gormsqlite "github.com/glebarez/sqlite"
++    "github.com/google/uuid"
++    "github.com/termvault/termvault/internal/models"
++    "gorm.io/gorm"
++)
++
++func setupVerifyDB(t *testing.T) *gorm.DB {
++    t.Helper()
++    db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
++    if err != nil {
++        t.Fatalf("open test db: %v", err)
++    }
++    if err := models.AutoMigrate(db); err != nil {
++        t.Fatalf("migrate: %v", err)
++    }
++    return db
++}
++
++func TestGenerateOtp_IsSixDigits(t *testing.T) {
++    for i := 0; i < 50; i++ {
++        otp, err := generateOtp()
++        if err != nil {
++            t.Fatal(err)
++        }
++        if len(otp) != 6 {
++            t.Fatalf("expected 6 digits, got %q", otp)
++        }
++        for _, ch := range otp {
++            if ch < '0' || ch > '9' {
++                t.Fatalf("non-digit in otp %q", otp)
++            }
++        }
++    }
++}
++
++func TestIssueEmailVerifyCode_ReplacesOldRow(t *testing.T) {
++    db := setupVerifyDB(t)
++    userID := uuid.New()
++    first, err := issueEmailVerifyCode(db, userID)
++    if err != nil {
++        t.Fatal(err)
++    }
++    second, err := issueEmailVerifyCode(db, userID)
++    if err != nil {
++        t.Fatal(err)
++    }
++    if first == second {
++        t.Fatal("expected different otps")
++    }
++    var count int64
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&count)
++    if count != 1 {
++        t.Fatalf("expected exactly 1 row after re-issue, got %d", count)
++    }
++    code, err := findEmailVerifyCode(db, userID)
++    if err != nil {
++        t.Fatal(err)
++    }
++    if code.CodeHash == second {
++        t.Fatal("expected hashed code, got plaintext")
++    }
++}
++
++func TestFindEmailVerifyCode_None(t *testing.T) {
++    db := setupVerifyDB(t)
++    _, err := findEmailVerifyCode(db, uuid.New())
++    if err != gorm.ErrRecordNotFound {
++        t.Fatalf("expected ErrRecordNotFound, got %v", err)
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/auth/ -run "TestGenerateOtp|TestIssueEmailVerifyCode|TestFindEmailVerifyCode" -count=1`
++Expected: FAIL ΓÇö functions undefined.
++
++- [ ] **Step 3: Implement**
++
++```go
++package auth
++
++import (
++    "crypto/rand"
++    "crypto/sha256"
++    "encoding/base64"
++    "fmt"
++    "math/big"
++    "time"
++
++    "github.com/google/uuid"
++    "github.com/termvault/termvault/internal/models"
++    "gorm.io/gorm"
++)
++
++const emailVerifyPurpose = "email_verify"
++const otpTTL = 15 * time.Minute
++const maxOtpAttempts = 5
++
++func generateOtp() (string, error) {
++    n, err := rand.Int(rand.Reader, big.NewInt(1000000))
++    if err != nil {
++        return "", fmt.Errorf("generate otp: %w", err)
++    }
++    return fmt.Sprintf("%06d", n.Int64()), nil
++}
++
++func issueEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (string, error) {
++    if err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++        Delete(&models.AuthCode{}).Error; err != nil {
++        return "", fmt.Errorf("clear old verification codes: %w", err)
++    }
++
++    otp, err := generateOtp()
++    if err != nil {
++        return "", err
++    }
++    hash := sha256.Sum256([]byte(otp))
++    code := models.AuthCode{
++        CodeHash:  base64.RawStdEncoding.EncodeToString(hash[:]),
++        Purpose:   emailVerifyPurpose,
++        UserID:    userID,
++        DeviceID:  "",
++        ExpiresAt: time.Now().Add(otpTTL),
++    }
++    if err := db.Create(&code).Error; err != nil {
++        return "", fmt.Errorf("store verification code: %w", err)
++    }
++    return otp, nil
++}
++
++func findEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (*models.AuthCode, error) {
++    var code models.AuthCode
++    err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++        Order("created_at DESC").First(&code).Error
++    if err != nil {
++        return nil, err
++    }
++    return &code, nil
++}
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/auth/ -run "TestGenerateOtp|TestIssueEmailVerifyCode|TestFindEmailVerifyCode" -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/email_verify.go server/internal/auth/email_verify_test.go
++git commit -m "feat: otp issue and lookup helpers"
++```
++
++---
++
++### Task 5: Register gate ΓÇö verification_required response, no tokens
++
++**Files:**
++- Modify: `server/internal/auth/handlers.go` (`HandleRegister`, lines 89-198)
++- Modify: `server/internal/auth/oauth.go` is NOT touched here (Task 10)
++- Test: `server/internal/auth/handlers_test.go`
++
++**Interfaces:**
++- Consumes: `emailVerifyPurpose`, `issueEmailVerifyCode`, `email.New`, `config.Config.RequireEmailVerification`
++- Produces: register response variant `{ verification_required: true, user: User }` (201, no token fields) when gate on.
++
++- [ ] **Step 1: Write the failing tests**
++
++In `handlers_test.go`, add a helper + tests. Note `testConfig()` needs `RequireEmailVerification` settable ΓÇö build config locally in the test:
++
++```go
++func testConfigWithVerification() *config.Config {
++    cfg := testConfig()
++    cfg.RequireEmailVerification = true
++    return cfg
++}
++
++func registerRequestPayload(email, userID string) map[string]interface{} {
++    return map[string]interface{}{
++        "user_id":      userID,
++        "email":        email,
++        "full_name":    email,
++        "password_hash": base64.RawStdEncoding.EncodeToString([]byte("verifier-bytes")),
++        "keyring": map[string]string{
++            "dek_wrapped_by_kek":        "kek",
++            "dek_wrapped_by_recovery":   "rec",
++            "private_key_wrapped_by_dek": "pk",
++        },
++        "kdf":         map[string]int{"m": 32768, "t": 2, "p": 1},
++        "server_salt": "server-salt",
++        "salt_cl":     "salt-cl",
++    }
++}
++
++func TestRegister_VerificationRequired_NoTokens(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++
++    body := registerRequestPayload("verify@example.com", uuid.New().String())
++    raw, _ := json.Marshal(body)
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusCreated {
++        t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++    }
++    var resp struct {
++        Data struct {
++            VerificationRequired bool `json:"verification_required"`
++            AccessToken          string `json:"access_token"`
++            RefreshToken         string `json:"refresh_token"`
++        } `json:"data"`
++    }
++    if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++        t.Fatal(err)
++    }
++    if !resp.Data.VerificationRequired {
++        t.Fatal("expected verification_required true")
++    }
++    if resp.Data.AccessToken != "" || resp.Data.RefreshToken != "" {
++        t.Fatal("expected no tokens in register response")
++    }
++
++    var user models.User
++    if err := db.Where("email = ?", "verify@example.com").First(&user).Error; err != nil {
++        t.Fatal(err)
++    }
++    if user.EmailVerifiedAt != nil {
++        t.Fatal("expected user unverified")
++    }
++    var codeCount int64
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", user.ID, emailVerifyPurpose).Count(&codeCount)
++    if codeCount != 1 {
++        t.Fatalf("expected 1 verification code, got %d", codeCount)
++    }
++}
++
++func TestRegister_VerificationOff_ReturnsTokens(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfig())
++
++    body := registerRequestPayload("plain@example.com", uuid.New().String())
++    raw, _ := json.Marshal(body)
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusCreated {
++        t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++    }
++    var resp struct {
++        Data struct {
++            VerificationRequired bool   `json:"verification_required"`
++            AccessToken          string `json:"access_token"`
++        } `json:"data"`
++    }
++    if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++        t.Fatal(err)
++    }
++    if resp.Data.AccessToken == "" {
++        t.Fatal("expected access token when verification off")
++    }
++    if resp.Data.VerificationRequired {
++        t.Fatal("expected no verification_required flag")
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/auth/ -run "TestRegister_Verification" -count=1`
++Expected: FAIL ΓÇö both register paths currently return tokens.
++
++- [ ] **Step 3: Implement**
++
++In `handlers.go` top imports add:
++
++```go
++"github.com/termvault/termvault/internal/email"
++```
++
++In `HandleRegister`, replace the idempotent branch (existing-user early return at lines 103-121):
++
++```go
++if db.Where("id = ?", userID).First(&existing).Error == nil {
++    if cfg.RequireEmailVerification && existing.EmailVerifiedAt == nil {
++        otp, err := issueEmailVerifyCode(db, userID)
++        if err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++            return
++        }
++        sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++        if err := sender.SendOtp(existing.Email, otp); err != nil {
++            slog.Error("failed to send verification otp", "email", existing.Email, "error", err)
++        }
++        Success(c, http.StatusCreated, gin.H{
++            "verification_required": true,
++            "user":                  existing,
++        })
++        return
++    }
++    rt, err := createRefreshToken(db, userID, "", cfg)
++    // ... existing code unchanged from here ...
++```
++
++Add `"log/slog"` to imports.
++
++Then replace the tail of `HandleRegister` (after `models.SeedPersonalVault`, currently lines 180-196):
++
++```go
++if cfg.RequireEmailVerification {
++    otp, err := issueEmailVerifyCode(db, userID)
++    if err != nil {
++        Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++        return
++    }
++    sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++    if err := sender.SendOtp(user.Email, otp); err != nil {
++        slog.Error("failed to send verification otp", "email", user.Email, "error", err)
++    }
++    Success(c, http.StatusCreated, gin.H{
++        "verification_required": true,
++        "user":                  user,
++    })
++    return
++}
++
++rt, err := createRefreshToken(db, userID, "", cfg)
++if err != nil {
++    Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
++    return
++}
++
++at, _, err := GenerateTokenPair(userID, "", cfg)
++if err != nil {
++    Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to generate tokens")
++    return
++}
++
++Success(c, http.StatusCreated, gin.H{
++    "access_token":  at,
++    "refresh_token": rt,
++    "user":          user,
++})
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/auth/ -run "TestRegister_Verification" -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/handlers.go server/internal/auth/handlers_test.go
++git commit -m "feat: gate register behind email verification when enabled"
++```
++
++---
++
++### Task 6: Login gate ΓÇö 403 VERIFICATION_REQUIRED
++
++**Files:**
++- Modify: `server/internal/auth/handlers.go` (`HandleLogin`, after proof check ~line 247)
++- Test: `server/internal/auth/handlers_test.go`
++
++**Interfaces:**
++- Produces: 403 response `{ "error": { "code": "VERIFICATION_REQUIRED", "message": "verify your email", "email": "<email>" } }`.
++
++- [ ] **Step 1: Write the failing tests**
++
++```go
++func TestLogin_Unverified_ReturnsVerificationRequired(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++
++    userID, verifier := seedUserWithVerifier(t, db, "gate@example.com")
++    var user models.User
++    db.First(&user, "id = ?", userID)
++
++    nonce := []byte("nonce-bytes")
++    nonceB64 := base64.RawStdEncoding.EncodeToString(nonce)
++    proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++
++    raw, _ := json.Marshal(map[string]string{
++        "email": "gate@example.com", "proof": proof, "nonce": nonceB64,
++    })
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusForbidden {
++        t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
++    }
++    var resp struct {
++        Error struct {
++            Code  string `json:"code"`
++            Email string `json:"email"`
++        } `json:"error"`
++    }
++    if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++        t.Fatal(err)
++    }
++    if resp.Error.Code != "VERIFICATION_REQUIRED" {
++        t.Fatalf("expected VERIFICATION_REQUIRED, got %s", resp.Error.Code)
++    }
++    if resp.Error.Email != "gate@example.com" {
++        t.Fatalf("expected email in error payload, got %s", resp.Error.Email)
++    }
++
++    db.First(&user, "id = ?", userID)
++    if user.LastLoginAt != nil {
++        t.Fatal("last_login_at must not be updated for unverified user")
++    }
++    var rtCount int64
++    db.Model(&models.RefreshToken{}).Where("user_id = ?", userID).Count(&rtCount)
++    if rtCount != 0 {
++        t.Fatalf("no refresh token should be created, got %d", rtCount)
++    }
++}
++
++func TestLogin_Verified_Succeeds(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++
++    userID, verifier := seedUserWithVerifier(t, db, "ok@example.com")
++    now := time.Now()
++    db.Model(&models.User{}).Where("id = ?", userID).Update("email_verified_at", &now)
++
++    nonce := []byte("nonce-bytes")
++    proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++    raw, _ := json.Marshal(map[string]string{
++        "email": "ok@example.com",
++        "proof": proof,
++        "nonce": base64.RawStdEncoding.EncodeToString(nonce),
++    })
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusOK {
++        t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/auth/ -run "TestLogin_Unverified|TestLogin_Verified" -count=1`
++Expected: FAIL ΓÇö `TestLogin_Unverified` gets 200, `TestLogin_Verified` passes trivially.
++
++- [ ] **Step 3: Implement**
++
++In `HandleLogin`, immediately after the `ConstantTimeCompare` success check and before `now := time.Now()`:
++
++```go
++if cfg.RequireEmailVerification && user.EmailVerifiedAt == nil {
++    c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
++        "code":       "VERIFICATION_REQUIRED",
++        "message":    "verify your email",
++        "email":      user.Email,
++        "request_id": c.GetString("request_id"),
++    }})
++    return
++}
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/auth/ -run "TestLogin_Unverified|TestLogin_Verified" -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/handlers.go server/internal/auth/handlers_test.go
++git commit -m "feat: block login for unverified accounts with 403 VERIFICATION_REQUIRED"
++```
++
++---
++
++### Task 7: Verify handler ΓÇö OTP validation + token issuance
++
++**Files:**
++- Modify: `server/internal/auth/handlers.go`
++- Test: `server/internal/auth/handlers_test.go`
++
++**Interfaces:**
++- Consumes: `findEmailVerifyCode`, `maxOtpAttempts`, `hashToken` (exists, handlers.go:701)
++- Produces:
++  - `type verifyEmailRequest struct { Email string \`json:"email" binding:"required"\`; Otp string \`json:"otp" binding:"required"\`; DeviceID string \`json:"device_id"\` }`
++  - `HandleVerifyEmail(db *gorm.DB, cfg *config.Config) gin.HandlerFunc`
++  - Response 200: `{ access_token, refresh_token, user, keyring }` (keyring via existing `fetchKeyring(db, user.ID)`)
++  - Failures: 400 `INVALID_VERIFICATION_CODE` (bad/invalid/expired code, attempts exhausted), 400 `ALREADY_VERIFIED` (user already verified), 401 `UNAUTHORIZED` (unknown email ΓÇö do not reveal)
++
++- [ ] **Step 1: Write the failing tests**
++
++Add a test helper:
++
++```go
++func seedUnverifiedUser(t *testing.T, db *gorm.DB, email string) (uuid.UUID, string) {
++    t.Helper()
++    userID, _ := seedUserWithVerifier(t, db, email)
++    otp, err := issueEmailVerifyCode(db, userID)
++    if err != nil {
++        t.Fatal(err)
++    }
++    return userID, otp
++}
++```
++
++```go
++func verifyEmailRequest(email, otp string) *httptest.Request {
++    raw, _ := json.Marshal(map[string]string{"email": email, "otp": otp, "device_id": "dev-1"})
++    req := httptest.NewRequest("POST", "/api/v1/auth/verify-email", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    return req
++}
++
++func TestVerifyEmail_Success(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    userID, otp := seedUnverifiedUser(t, db, "verify-ok@example.com")
++
++    w := httptest.NewRecorder()
++    r.ServeHTTP(w, verifyEmailRequest("verify-ok@example.com", otp))
++
++    if w.Code != http.StatusOK {
++        t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++    }
++    var resp struct {
++        Data struct {
++            AccessToken  string `json:"access_token"`
++            RefreshToken string `json:"refresh_token"`
++            Keyring      map[string]string `json:"keyring"`
++        } `json:"data"`
++    }
++    if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++        t.Fatal(err)
++    }
++    if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
++        t.Fatal("expected tokens after verification")
++    }
++    if resp.Data.Keyring == nil {
++        t.Fatal("expected keyring in verify response")
++    }
++
++    var user models.User
++    db.First(&user, "id = ?", userID)
++    if user.EmailVerifiedAt == nil {
++        t.Fatal("expected user verified")
++    }
++    var codeCount int64
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&codeCount)
++    if codeCount != 0 {
++        t.Fatalf("expected code row deleted after verification, got %d", codeCount)
++    }
++
++    // refresh token must be usable
++    var rt models.RefreshToken
++    if err := db.Where("user_id = ?", userID).First(&rt).Error; err != nil {
++        t.Fatalf("expected refresh token row: %v", err)
++    }
++}
++
++func TestVerifyEmail_WrongCode_ExhaustsAttempts(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    userID, otp := seedUnverifiedUser(t, db, "brute@example.com")
++
++    for i := 1; i <= maxOtpAttempts; i++ {
++        w := httptest.NewRecorder()
++        r.ServeHTTP(w, verifyEmailRequest("brute@example.com", "000000"))
++        if w.Code != http.StatusBadRequest {
++            t.Fatalf("attempt %d: expected 400, got %d", i, w.Code)
++        }
++        if otp == "000000" {
++            t.Fatal("test otp collided with wrong code")
++        }
++    }
++
++    // after 5 failures the row is gone; next attempt still 400
++    w := httptest.NewRecorder()
++    r.ServeHTTP(w, verifyEmailRequest("brute@example.com", otp))
++    if w.Code != http.StatusBadRequest {
++        t.Fatalf("expected 400 after attempts exhausted, got %d", w.Code)
++    }
++    var user models.User
++    db.First(&user, "id = ?", userID)
++    if user.EmailVerifiedAt != nil {
++        t.Fatal("user must not be verified after exhausted attempts")
++    }
++    var codeCount int64
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&codeCount)
++    if codeCount != 0 {
++        t.Fatalf("expected code row deleted after 5 attempts, got %d", codeCount)
++    }
++}
++
++func TestVerifyEmail_ExpiredCode(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    userID, otp := seedUnverifiedUser(t, db, "expired@example.com")
++
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++        Update("expires_at", time.Now().Add(-time.Hour))
++
++    w := httptest.NewRecorder()
++    r.ServeHTTP(w, verifyEmailRequest("expired@example.com", otp))
++    if w.Code != http.StatusBadRequest {
++        t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
++    }
++}
++
++func TestVerifyEmail_UnknownEmail(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++
++    w := httptest.NewRecorder()
++    r.ServeHTTP(w, verifyEmailRequest("nobody@example.com", "123456"))
++    if w.Code != http.StatusUnauthorized {
++        t.Fatalf("expected 401, got %d", w.Code)
++    }
++}
++
++func TestVerifyEmail_AlreadyVerified(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    userID, _ := seedUnverifiedUser(t, db, "already@example.com")
++    now := time.Now()
++    db.Model(&models.User{}).Where("id = ?", userID).Update("email_verified_at", &now)
++
++    w := httptest.NewRecorder()
++    r.ServeHTTP(w, verifyEmailRequest("already@example.com", "123456"))
++    if w.Code != http.StatusBadRequest {
++        t.Fatalf("expected 400, got %d", w.Code)
++    }
++    var resp struct {
++        Error struct{ Code string `json:"code"` } `json:"error"`
++    }
++    json.Unmarshal(w.Body.Bytes(), &resp)
++    if resp.Error.Code != "ALREADY_VERIFIED" {
++        t.Fatalf("expected ALREADY_VERIFIED, got %s", resp.Error.Code)
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/auth/ -run "TestVerifyEmail" -count=1`
++Expected: FAIL ΓÇö route 404, handler undefined.
++
++- [ ] **Step 3: Implement**
++
++Add the request type near the other request structs in `handlers.go`:
++
++```go
++type verifyEmailRequest struct {
++    Email    string `json:"email" binding:"required"`
++    Otp      string `json:"otp" binding:"required"`
++    DeviceID string `json:"device_id"`
++}
++```
++
++Add the handler at the end of `handlers.go` (before `hashToken`):
++
++```go
++func HandleVerifyEmail(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
++    return func(c *gin.Context) {
++        var req verifyEmailRequest
++        if err := c.ShouldBindJSON(&req); err != nil {
++            Error(c, http.StatusBadRequest, "VALIDATION_ERROR", "email and otp are required")
++            return
++        }
++
++        var user models.User
++        if db.Where("email = ?", req.Email).First(&user).Error != nil {
++            Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid email")
++            return
++        }
++        if user.EmailVerifiedAt != nil {
++            Error(c, http.StatusBadRequest, "ALREADY_VERIFIED", "email already verified")
++            return
++        }
++
++        code, err := findEmailVerifyCode(db, user.ID)
++        if err != nil || code.ExpiresAt.Before(time.Now()) {
++            Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "verification code expired or missing")
++            return
++        }
++
++        hash := sha256.Sum256([]byte(req.Otp))
++        if !ConstantTimeCompare(hash[:], []byte(code.CodeHash)) {
++            code.Attempts++
++            if code.Attempts >= maxOtpAttempts {
++                db.Delete(&code)
++                Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "too many failed attempts, request a new code")
++                return
++            }
++            db.Save(&code)
++            Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "invalid verification code")
++            return
++        }
++
++        now := time.Now()
++        if err := db.Model(&user).Updates(map[string]interface{}{
++            "email_verified_at": &now,
++            "last_login_at":     &now,
++        }).Error; err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to verify email")
++            return
++        }
++        user.EmailVerifiedAt = &now
++
++        if err := db.Delete(&code).Error; err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to consume verification code")
++            return
++        }
++
++        rt, err := createRefreshToken(db, user.ID, req.DeviceID, cfg)
++        if err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
++            return
++        }
++        at, _, err := GenerateTokenPair(user.ID, req.DeviceID, cfg)
++        if err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to generate tokens")
++            return
++        }
++
++        Success(c, http.StatusOK, gin.H{
++            "access_token":  at,
++            "refresh_token": rt,
++            "user":          user,
++            "keyring":       fetchKeyring(db, user.ID),
++        })
++    }
++}
++```
++
++Register the route in the test router (`setupHandlerRouter` in `handlers_test.go`) after `/register`:
++
++```go
++auth.POST("/verify-email", HandleVerifyEmail(db, cfg))
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/auth/ -run "TestVerifyEmail" -count=1`
++Expected: PASS. (Note: `ConstantTimeCompare` takes `[]byte` ΓÇö the second arg is `[]byte(code.CodeHash)`, adjust the call accordingly.)
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/handlers.go server/internal/auth/handlers_test.go
++git commit -m "feat: verify email otp endpoint with attempts cap"
++```
++
++---
++
++### Task 8: Resend handler ΓÇö 60s cooldown, replace code
++
++**Files:**
++- Modify: `server/internal/auth/handlers.go`
++- Test: `server/internal/auth/handlers_test.go`
++
++**Interfaces:**
++- Produces: `HandleResendVerification(db *gorm.DB, cfg *config.Config) gin.HandlerFunc` ΓÇö 200 `{ verification_required: true }`; 429 `TOO_MANY_REQUESTS` within 60s cooldown.
++
++- [ ] **Step 1: Write the failing tests**
++
++```go
++func TestResendVerification_ReplacesCode(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    userID, otp := seedUnverifiedUser(t, db, "resend@example.com")
++
++    // wait out cooldown: backdate the existing row
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++        Update("created_at", time.Now().Add(-time.Minute))
++
++    raw, _ := json.Marshal(map[string]string{"email": "resend@example.com"})
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusOK {
++        t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++    }
++
++    code, err := findEmailVerifyCode(db, userID)
++    if err != nil {
++        t.Fatal(err)
++    }
++    hash := sha256.Sum256([]byte(otp))
++    if string(code.CodeHash) == string(hash[:]) {
++        t.Fatal("expected old otp to be replaced")
++    }
++    var count int64
++    db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&count)
++    if count != 1 {
++        t.Fatalf("expected exactly 1 row, got %d", count)
++    }
++}
++
++func TestResendVerification_Cooldown(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++    seedUnverifiedUser(t, db, "cooldown@example.com")
++
++    raw, _ := json.Marshal(map[string]string{"email": "cooldown@example.com"})
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusTooManyRequests {
++        t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
++    }
++}
++
++func TestResendVerification_UnknownEmail_Uniform(t *testing.T) {
++    db := setupTestDB(t)
++    r := setupHandlerRouter(db, testConfigWithVerification())
++
++    raw, _ := json.Marshal(map[string]string{"email": "ghost@example.com"})
++    w := httptest.NewRecorder()
++    req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++    req.Header.Set("Content-Type", "application/json")
++    r.ServeHTTP(w, req)
++
++    if w.Code != http.StatusOK {
++        t.Fatalf("expected 200 (no enumeration), got %d", w.Code)
++    }
++}
++```
++
++- [ ] **Step 2: Run tests to verify they fail**
++
++Run: `go test ./internal/auth/ -run "TestResendVerification" -count=1`
++Expected: FAIL ΓÇö route 404.
++
++- [ ] **Step 3: Implement**
++
++Add handler at the end of `handlers.go` (next to `HandleVerifyEmail`):
++
++```go
++func HandleResendVerification(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
++    return func(c *gin.Context) {
++        var req struct {
++            Email string `json:"email" binding:"required"`
++        }
++        if err := c.ShouldBindJSON(&req); err != nil {
++            Error(c, http.StatusBadRequest, "VALIDATION_ERROR", "email is required")
++            return
++        }
++
++        var user models.User
++        if db.Where("email = ?", req.Email).First(&user).Error != nil ||
++            user.AuthProvider != "password" || user.EmailVerifiedAt != nil {
++            Success(c, http.StatusOK, gin.H{"verification_required": true})
++            return
++        }
++
++        existing, err := findEmailVerifyCode(db, user.ID)
++        if err == nil && time.Since(existing.CreatedAt) < time.Minute {
++            Error(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "wait before requesting a new code")
++            return
++        }
++
++        otp, err := issueEmailVerifyCode(db, user.ID)
++        if err != nil {
++            Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++            return
++        }
++        sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++        if err := sender.SendOtp(user.Email, otp); err != nil {
++            slog.Error("failed to send verification otp", "email", user.Email, "error", err)
++        }
++
++        Success(c, http.StatusOK, gin.H{"verification_required": true})
++    }
++}
++```
++
++Register in test router after `/verify-email`:
++
++```go
++auth.POST("/resend-verification", HandleResendVerification(db, cfg))
++```
++
++- [ ] **Step 4: Run tests to verify they pass**
++
++Run: `go test ./internal/auth/ -run "TestResendVerification" -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/handlers.go server/internal/auth/handlers_test.go
++git commit -m "feat: resend verification otp with 60s cooldown"
++```
++
++---
++
++### Task 9: Wire routes in main.go with rate limiting
++
++**Files:**
++- Modify: `server/cmd/termvault-server/main.go:47-58`
++
++- [ ] **Step 1: Add the routes**
++
++```go
++apiAuth.POST("/verify-email", auth.RateLimit(cfg.RateLimitAuth), auth.HandleVerifyEmail(db, cfg))
++apiAuth.POST("/resend-verification", auth.RateLimit(cfg.RateLimitAuth), auth.HandleResendVerification(db, cfg))
++```
++
++(Place after the `/recovery/prefetch` line.)
++
++- [ ] **Step 2: Verify build**
++
++Run: `go vet ./... && go build ./...`
++Expected: exit 0.
++
++- [ ] **Step 3: Commit**
++
++```bash
++git add server/cmd/termvault-server/main.go
++git commit -m "feat: register verify-email and resend-verification routes"
++```
++
++---
++
++### Task 10: OAuth users auto-verified
++
++**Files:**
++- Modify: `server/internal/auth/oauth.go:352-361` (user creation) and `:344-350` (email-link branch)
++- Test: `server/internal/auth/oauth_test.go`
++
++**Interfaces:**
++- Produces: users created via OAuth callback get `EmailVerifiedAt` set at creation; pre-existing email-linked users get it set at link time.
++
++- [ ] **Step 1: Write the failing test**
++
++Check `oauth_test.go` for the existing user-creation test (search for `models.User{` in the test file) and add:
++
++```go
++func TestOAuthCallback_CreatesVerifiedUser(t *testing.T) {
++    // follow the existing OAuth callback test setup in this file
++    // (mock provider userinfo, router, etc.) and assert:
++    // after the flow completes, db user has EmailVerifiedAt != nil
++}
++```
++
++If no callback-level harness exists, test at the model layer instead ΓÇö add to the callback test the assertion that the created user row has `EmailVerifiedAt != nil`.
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `go test ./internal/auth/ -run TestOAuthCallback_CreatesVerifiedUser -count=1`
++Expected: FAIL ΓÇö `EmailVerifiedAt` nil.
++
++- [ ] **Step 3: Implement**
++
++In `oauth.go`, new-user creation (line ~352):
++
++```go
++user = models.User{
++    ID:              uuid.New(),
++    Email:           ui.Email,
++    FullName:        ui.Name,
++    AuthProvider:    provider,
++    ProviderSub:     &providerSub,
++    EmailVerifiedAt: &now,
++    Initialized:     false,
++    CreatedAt:       time.Now(),
++    UpdatedAt:       time.Now(),
++}
++```
++
++(`now` = the `time.Now()` already available in that scope; if not, create `now := time.Now()` before the struct.)
++
++In the email-link branch (line ~344):
++
++```go
++user.AuthProvider = provider
++user.ProviderSub = &providerSub
++user.EmailVerifiedAt = &now
++```
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `go test ./internal/auth/ -run "TestOAuth" -count=1`
++Expected: PASS.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add server/internal/auth/oauth.go server/internal/auth/oauth_test.go
++git commit -m "feat: oauth users auto-verified"
++```
++
++---
++
++### Task 11: Run full server suite
++
++- [ ] **Step 1: Run everything**
++
++Run: `go vet ./... && go test ./... -count=1`
++Expected: all PASS (existing suite + new tests).
++
++- [ ] **Step 2: Commit any stragglers**
++
++```bash
++git status --short && git add -A && git commit -m "chore: server test fixes" || true
++```
++
++---
++
++### Task 12: Client API layer
++
++**Files:**
++- Modify: `client/src/lib/api/auth.ts` (types at 137-198, `authApi` at 200-316)
++
++**Interfaces:**
++- Produces:
++  - `interface RegisterResponse extends Partial<TokenPair> { user: User; verification_required?: boolean }`
++  - `interface VerifyEmailResponse extends TokenPair { user: User; keyring?: KeyringRows }`
++  - `authApi.verifyEmail(params: { email: string; otp: string; device_id: string }): Promise<VerifyEmailResponse>`
++  - `authApi.resendVerification(email: string): Promise<{ verification_required: boolean }>`
++
++- [ ] **Step 1: Update the types**
++
++```ts
++export interface RegisterResponse extends Partial<TokenPair> {
++  user: User;
++  verification_required?: boolean;
++}
++
++export interface VerifyEmailResponse extends TokenPair {
++  user: User;
++  keyring?: KeyringRows;
++}
++```
++
++- [ ] **Step 2: Add the methods**
++
++```ts
++async verifyEmail(params: {
++  email: string;
++  otp: string;
++  device_id: string;
++}): Promise<VerifyEmailResponse> {
++  return apiFetch("POST", "/api/v1/auth/verify-email", params);
++},
++
++async resendVerification(email: string): Promise<{
++  verification_required: boolean;
++}> {
++  return apiFetch("POST", "/api/v1/auth/resend-verification", { email });
++},
++```
++
++(Add inside `authApi` after `register`.)
++
++- [ ] **Step 3: Typecheck**
++
++Run: `npx tsc --noEmit` (in `client/`)
++Expected: exit 0.
++
++- [ ] **Step 4: Commit**
++
++```bash
++git add client/src/lib/api/auth.ts
++git commit -m "feat: client api for verify-email and resend"
++```
++
++---
++
++### Task 13: authStore ΓÇö pendingVerificationEmail state + verify/resend actions
++
++**Files:**
++- Modify: `client/src/stores/auth/authStore.ts` (state interface 51-92, register 180-234, login 236-284, catch helpers)
++
++**Interfaces:**
++- Consumes: `authApi.verifyEmail`, `authApi.resendVerification`, `AuthApiError` (from `../../lib/api/auth`), `getDeviceId`
++- Produces:
++  - State: `pendingVerificationEmail: string | null`
++  - `verifyEmail: (email: string, otp: string) => Promise<void>` ΓÇö on success: same state transitions as `login()` (user, tokens, isAuthenticated, isUnlocked, persistTokens, savePassword when `!alwaysAsk`, clear `pendingVerificationEmail`)
++  - `resendVerification: (email: string) => Promise<void>`
++  - `clearPendingVerification: () => void`
++
++- [ ] **Step 1: Add state + actions to the interface**
++
++In the `AuthState` interface add after `pendingOAuth`:
++
++```ts
++pendingVerificationEmail: string | null;
++```
++
++Add after `oauthSetup`:
++
++```ts
++verifyEmail: (email: string, otp: string, password?: string) => Promise<void>;
++resendVerification: (email: string) => Promise<void>;
++clearPendingVerification: () => void;
++```
++
++> `password` is optional: the OTP panel lives on the same page as the login/register form, so the page can pass the just-typed password through. When provided (and `!alwaysAsk`), the keychain entry is armed after verification; otherwise auto-unlock simply isn't armed.
++
++- [ ] **Step 2: Register ΓÇö branch on verification_required**
++
++In `register()` (after `authApi.register` call, before `set({...})`):
++
++```ts
++if (res.verification_required) {
++  set({ pendingVerificationEmail: email, isLoading: false });
++  return;
++}
++```
++
++- [ ] **Step 3: Login ΓÇö catch VERIFICATION_REQUIRED**
++
++Import `AuthApiError` in the `authApi` import block:
++
++```ts
++import {
++  authApi,
++  loadApiUrl,
++  setRefreshTokenGetter,
++  setRefreshTokenSetter,
++  type AuthApiError,
++  type TokenPair,
++  type User,
++} from "../../lib/api/auth";
++```
++
++In `login()`'s catch, before the generic message assignment:
++
++```ts
++} catch (err) {
++  if (
++    err instanceof AuthApiError &&
++    err.apiError.code === "VERIFICATION_REQUIRED"
++  ) {
++    set({
++      pendingVerificationEmail: err.apiError.email ?? email,
++      isLoading: false,
++    });
++    return;
++  }
++  const message = ...
++```
++
++- [ ] **Step 4: Add verifyEmail / resendVerification / clearPendingVerification actions**
++
++Add after `register` in the store body:
++
++```ts
++verifyEmail: async (email: string, otp: string) => {
++  set({ isLoading: true, error: null });
++  try {
++    const res = await authApi.verifyEmail({
++      email,
++      otp,
++      device_id: await getDeviceId(),
++    });
++
++    if (res.keyring) {
++      await unwrapDek(res.keyring.dek_wrapped_by_kek);
++    }
++
++    const newTokens = {
++      access_token: res.access_token,
++      refresh_token: res.refresh_token,
++    };
++    set({
++      user: res.user,
++      tokens: newTokens,
++      isAuthenticated: true,
++      isUnlocked: true,
++      pendingVerificationEmail: null,
++      isLoading: false,
++    });
++    await persistTokens(newTokens);
++    if (password && !get().alwaysAsk) {
++      await savePassword(password);
++    }
++  } catch (err) {
++    const message =
++      typeof err === "string"
++        ? err
++        : err instanceof Error
++          ? err.message
++          : "Verification failed";
++    set({ error: message, isLoading: false });
++    throw err;
++  }
++},
++
++resendVerification: async (email: string) => {
++  set({ isLoading: true, error: null });
++  try {
++    await authApi.resendVerification(email);
++    set({ isLoading: false });
++  } catch (err) {
++    const message =
++      typeof err === "string"
++        ? err
++        : err instanceof Error
++          ? err.message
++          : "Resend failed";
++    set({ error: message, isLoading: false });
++    throw err;
++  }
++},
++
++clearPendingVerification: () => set({ pendingVerificationEmail: null }),
++```
++
++> NOTE on `savePassword`: `savePassword` is called with the raw password in `login()`/`register()`; in `verifyEmail` the caller must pass the password through. **Signature change**: change `verifyEmail: (email: string, otp: string) => Promise<void>` to `verifyEmail: (email: string, otp: string, password?: string) => Promise<void>` and call `savePassword(password)` only when `password` is provided. Update the interface and Task 14 accordingly ΓÇö the OTP panel can't know the password unless the login/register form passes it through.
++
++- [ ] **Step 5: Typecheck + lint**
++
++Run: `npx tsc --noEmit` then `pnpm biome check src/stores/auth/authStore.ts`
++Expected: exit 0 both.
++
++- [ ] **Step 6: Commit**
++
++```bash
++git add client/src/stores/auth/authStore.ts
++git commit -m "feat: pending verification state and verify/resend actions"
++```
++
++---
++
++### Task 14: OTP panel component + page integration
++
++**Files:**
++- Create: `client/src/components/auth/forms/EmailVerification.tsx`
++- Modify: `client/src/pages/auth/LoginPage.tsx:17-31`
++- Modify: `client/src/pages/auth/RegisterPage.tsx:17-27`
++
++**Interfaces:**
++- Consumes: `useAuthStore().pendingVerificationEmail`, `verifyEmail(email, otp, password?)`, `resendVerification(email)`, `clearPendingVerification`, `isLoading`, `error`, `clearError`
++- Produces: `EmailVerification` component ΓÇö shows email, 6-digit input, Resend button (60s countdown), "Back to sign in" link (calls `clearPendingVerification`).
++
++- [ ] **Step 1: Create the component**
++
++```tsx
++import { useState } from "react";
++import { useAuthStore } from "@/stores/auth/authStore";
++import { Alert } from "@/components/ui/Alert";
++import { Button } from "@/components/ui/Button";
++import { FormInput } from "@/components/ui/forms/FormInput";
++
++export default function EmailVerification({
++  onBackToLogin,
++  password,
++}: {
++  onBackToLogin: () => void;
++  password?: string;
++}) {
++  const {
++    pendingVerificationEmail,
++    verifyEmail,
++    resendVerification,
++    isLoading,
++    error,
++    clearError,
++  } = useAuthStore();
++  const [otp, setOtp] = useState("");
++  const [cooldown, setCooldown] = useState(0);
++
++  const email = pendingVerificationEmail ?? "";
++
++  const handleResend = async () => {
++    clearError();
++    setCooldown(60);
++    const timer = setInterval(() => {
++      setCooldown((s) => {
++        if (s <= 1) {
++          clearInterval(timer);
++          return 0;
++        }
++        return s - 1;
++      });
++    }, 1000);
++    await resendVerification(email);
++  };
++
++  const handleVerify = async () => {
++    clearError();
++    await verifyEmail(email, otp.trim(), password);
++  };
++
++  return (
++    <div className="bg-dark-900 rounded-xl p-6 shadow-xl">
++      <h2 className="text-xl font-semibold text-white mb-2">
++        Verify your email
++      </h2>
++      <p className="text-dark-400 text-sm mb-6">
++        Enter the 6-digit code sent to <span className="text-white">{email}</span>
++      </p>
++
++      {error && (
++        <div className="mb-4">
++          <Alert variant="error">{error}</Alert>
++        </div>
++      )}
++
++      <div className="space-y-4">
++        <FormInput
++          control={undefined}
++          name="otp"
++          label="Verification code"
++          placeholder="123456"
++          inputMode="numeric"
++          maxLength={6}
++          value={otp}
++          onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
++        />
++
++        <Button
++          type="button"
++          disabled={isLoading || otp.length !== 6}
++          variant="default"
++          size="sm"
++          className="w-full"
++          onClick={handleVerify}
++        >
++          {isLoading ? "Verifying..." : "Verify"}
++        </Button>
++
++        <Button
++          type="button"
++          disabled={cooldown > 0}
++          variant="outline"
++          size="sm"
++          className="w-full"
++          onClick={handleResend}
++        >
++          {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
++        </Button>
++
++        <button
++          type="button"
++          onClick={onBackToLogin}
++          className="w-full text-center text-primary-500 hover:text-primary-400 text-sm"
++        >
++          Back to sign in
++        </button>
++      </div>
++    </div>
++  );
++}
++```
++
++> NOTE: `FormInput` is react-hook-form controlled (`control` prop). Check `client/src/components/ui/forms/FormInput.tsx` ΓÇö if it requires `control`, either (a) use a plain `<input>` with existing input classes for this component, or (b) wrap in a small `useForm` instance. Prefer the plain input if FormInput is controller-bound. Adjust accordingly and run biome.
++
++- [ ] **Step 2: Integrate into LoginPage**
++
++```tsx
++const { login, isLoading, error, clearError, pendingVerificationEmail } =
++  useAuthStore();
++```
++
++At the top of the card (after the `<div className="bg-dark-900 ...">` opening tag):
++
++```tsx
++{pendingVerificationEmail && (
++  <EmailVerification onBackToLogin={clearPendingVerification} />
++)}
++{!pendingVerificationEmail && (
++  // wrap the existing card content (heading, error, OAuthLogin, form, links, ServerConfig) in this fragment
++)}
++```
++
++(Extract the existing card content into a `{!pendingVerificationEmail && (...)}` fragment so the OTP panel replaces it. `clearPendingVerification` comes from the store.)
++
++- [ ] **Step 3: Integrate into RegisterPage** ΓÇö same pattern as LoginPage.
++
++- [ ] **Step 4: Verify**
++
++Run: `npx tsc --noEmit` then `pnpm biome check .`
++Expected: exit 0.
++
++**LoginPage password pass-through:** keep `const [password, setPassword] = useState("")` in LoginPage; on form submit `setPassword(data.password)` before calling `login`; render `<EmailVerification onBackToLogin={clearPendingVerification} password={password} />`. In the component, call `verifyEmail(email, otp, password)`. Same on RegisterPage with its form's `password` field.
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add client/src/components/auth/forms/EmailVerification.tsx client/src/pages/auth/LoginPage.tsx client/src/pages/auth/RegisterPage.tsx
++git commit -m "feat: otp entry panel on login and register pages"
++```
++
++---
++
++### Task 15: Client tests (vitest)
++
++**Files:**
++- Create: `client/src/stores/auth/authStore.test.ts`
++
++**Interfaces:**
++- Consumes: mocked `../../lib/api/auth`, mocked tauri store/keychain/db/crypto modules.
++
++- [ ] **Step 1: Write the tests**
++
++```ts
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const { setRefreshToken, getRefreshToken } = vi.hoisted(() => ({
++  setRefreshToken: vi.fn(),
++  getRefreshToken: vi.fn(() => null),
++}));
++
++vi.mock("@tauri-apps/plugin-store", () => ({
++  load: vi.fn(() => ({
++    get: vi.fn(async () => null),
++    set: vi.fn(async () => {}),
++    save: vi.fn(async () => {}),
++  })),
++}));
++
++vi.mock("../../lib/api/auth", () => ({
++  authApi: {
++    register: vi.fn(),
++    login: vi.fn(),
++    prelogin: vi.fn(),
++    verifyEmail: vi.fn(),
++    resendVerification: vi.fn(),
++  },
++  loadApiUrl: vi.fn(async () => {}),
++  setRefreshTokenGetter: vi.fn(),
++  setRefreshTokenSetter: vi.fn(),
++  AuthApiError: class AuthApiError extends Error {
++    constructor(
++      public status: number,
++      public apiError: { code: string; message: string; email?: string },
++    ) {
++      super(apiError.message);
++    }
++  },
++}));
++
++vi.mock("../../lib/crypto/crypto", () => ({
++  generateAccountMaterial: vi.fn(async () => ({
++    recovery_code: "rc",
++    public_key: "pk",
++    salt_cl: "sc",
++  })),
++  deriveKek: vi.fn(async () => {}),
++  buildKeyringRows: vi.fn(async () => ({
++    dek_wrapped_by_kek: "kek",
++    dek_wrapped_by_recovery: "rec",
++    private_key_wrapped_by_dek: "pk",
++  })),
++  computeLoginProof: vi.fn(async () => ({
++    proof: "proof",
++    verifier: "verifier",
++  })),
++  unwrapDek: vi.fn(async () => {}),
++  lockSession: vi.fn(async () => {}),
++  clearKeychain: vi.fn(async () => {}),
++  setRefreshToken,
++  getRefreshToken,
++  saveRefreshToken: vi.fn(async () => {}),
++  loadRefreshToken: vi.fn(async () => null),
++  signChallenge: vi.fn(async () => "sig"),
++}));
++
++vi.mock("../../lib/db/db", () => ({
++  wipeLocalData: vi.fn(async () => {}),
++}));
++
++vi.mock("../../lib/keychain/keychain", () => ({
++  deletePassword: vi.fn(async () => {}),
++  loadPassword: vi.fn(async () => null),
++  savePassword: vi.fn(async () => {}),
++}));
++
++vi.mock("../../lib/common/device", () => ({
++  getDeviceId: vi.fn(async () => "dev-1"),
++}));
++
++import { authApi, AuthApiError } from "../../lib/api/auth";
++import { useAuthStore } from "./authStore";
++
++describe("authStore email verification", () => {
++  beforeEach(() => {
++    useAuthStore.setState({
++      user: null,
++      tokens: null,
++      isAuthenticated: false,
++      isUnlocked: false,
++      pendingVerificationEmail: null,
++      error: null,
++      isLoading: false,
++    });
++    vi.clearAllMocks();
++  });
++
++  it("register with verification_required sets pending email and no tokens", async () => {
++    vi.mocked(authApi.prelogin).mockResolvedValue({
++      nonce: "n",
++      kdf: { m: 32768, t: 2, p: 1 },
++      server_salt: "ss",
++      salt_cl: "sc",
++    });
++    vi.mocked(authApi.register).mockResolvedValue({
++      user: {
++        id: "u1",
++        email: "new@example.com",
++        initialized: true,
++        auth_provider: "password",
++        created_at: "2026-01-01",
++      },
++      verification_required: true,
++    } as never);
++
++    await useAuthStore.getState().register("new@example.com", "New User", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBe("new@example.com");
++    expect(s.isAuthenticated).toBe(false);
++    expect(s.tokens).toBeNull();
++  });
++
++  it("login with VERIFICATION_REQUIRED sets pending email", async () => {
++    vi.mocked(authApi.prelogin).mockResolvedValue({
++      nonce: "n",
++      kdf: { m: 32768, t: 2, p: 1 },
++      server_salt: "ss",
++      salt_cl: "sc",
++    });
++    vi.mocked(authApi.login).mockRejectedValue(
++      new AuthApiError(403, {
++        code: "VERIFICATION_REQUIRED",
++        message: "verify your email",
++        email: "gate@example.com",
++      }),
++    );
++
++    await useAuthStore.getState().login("gate@example.com", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBe("gate@example.com");
++    expect(s.isAuthenticated).toBe(false);
++  });
++
++  it("verifyEmail succeeds and authenticates", async () => {
++    vi.mocked(authApi.verifyEmail).mockResolvedValue({
++      access_token: "at",
++      refresh_token: "rt",
++      user: {
++        id: "u1",
++        email: "new@example.com",
++        initialized: true,
++        auth_provider: "password",
++        created_at: "2026-01-01",
++      },
++      keyring: {
++        dek_wrapped_by_kek: "kek",
++        dek_wrapped_by_recovery: "rec",
++        private_key_wrapped_by_dek: "pk",
++      },
++    } as never);
++
++    await useAuthStore
++      .getState()
++      .verifyEmail("new@example.com", "123456", "pw");
++
++    const s = useAuthStore.getState();
++    expect(s.isAuthenticated).toBe(true);
++    expect(s.isUnlocked).toBe(true);
++    expect(s.pendingVerificationEmail).toBeNull();
++    expect(s.tokens).toEqual({
++      access_token: "at",
++      refresh_token: "rt",
++    });
++  });
++});
++```
++
++- [ ] **Step 2: Run the tests**
++
++Run: `pnpm vitest run src/stores/auth/authStore.test.ts`
++Expected: PASS. (If `setRefreshToken` hoist mocks cause type friction, cast with `as never` / `as unknown as` on mockResolvedValue arguments.)
++
++- [ ] **Step 3: Run the full client suite**
++
++Run: `pnpm vitest run && npx tsc --noEmit && pnpm biome check .`
++Expected: all PASS / exit 0.
++
++- [ ] **Step 4: Commit**
++
++```bash
++git add client/src/stores/auth/authStore.test.ts
++git commit -m "test: authStore email verification flows"
++```
++
++---
++
++### Task 16: Docs ΓÇö env table + .env
++
++**Files:**
++- Modify: `AGENTS.md` (env tables)
++- Modify: `server/.env` (new section)
++- Modify: `client/.env` (no change expected ΓÇö verify)
++
++- [ ] **Step 1: Update AGENTS.md server env table**
++
++Add rows after `TERMVAULT_OAUTH_REDIRECT_URIS`:
++
++```markdown
++| `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
++| `SMTP_HOST` | SMTP server hostname for verification emails (empty = OTP logged to console) | empty |
++| `SMTP_PORT` | SMTP server port | `587` |
++| `SMTP_USERNAME` | SMTP auth username | empty |
++| `SMTP_PASSWORD` | SMTP auth password | empty |
++| `SMTP_FROM` | From address for verification emails | empty |
++```
++
++- [ ] **Step 2: Update server/.env**
++
++Add before the Redis section:
++
++```bash
++# ΓöÇΓöÇ Email verification (optional) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Require new email/password signups to verify their email with a 6-digit OTP.
++# Accepted values: true / 1 / yes. Off by default.
++REQUIRE_EMAIL_VERIFICATION=false
++
++# SMTP server for sending verification emails. If SMTP_HOST is empty, the OTP
++# is logged to the server console instead (dev mode).
++SMTP_HOST=
++SMTP_PORT=587
++SMTP_USERNAME=
++SMTP_PASSWORD=
++SMTP_FROM=
++```
++
++- [ ] **Step 3: Run full verification**
++
++Run (server): `go vet ./... && go test ./... -count=1`
++Run (client): `pnpm vitest run && npx tsc --noEmit && pnpm biome check .`
++Run (tauri): `cd client/src-tauri && cargo check`
++Expected: all green.
++
++- [ ] **Step 4: Commit**
++
++```bash
++git add AGENTS.md server/.env
++git commit -m "docs: email verification env vars"
++```
++
++---
++
++## Self-review notes
++
++- Spec coverage: toggle (T1), model (T2), delivery (T3), OTP lifecycle (T4), register gate (T5), login gate (T6), verify (T7), resend (T8), routes+rate limit (T9), OAuth exempt (T10), no-token invariant enforced across T5/T6/T7 (register/login never mint for unverified; only verify transitions state), client API (T12), store (T13), UI (T14), tests (T15), docs (T16).
++- `ConstantTimeCompare` takes `[]byte, []byte` ΓÇö verify handler passes `[]byte(code.CodeHash)`.
++- `verifyEmail(email, otp, password?)`: pages hold the last-typed password and pass it through to arm the keychain entry (`savePassword`) only when provided; otherwise auto-unlock isn't armed and the user unlocks manually next launch.
+diff --git a/docs/superpowers/specs/2026-08-07-email-verification-design.md b/docs/superpowers/specs/2026-08-07-email-verification-design.md
+new file mode 100644
+index 0000000..06a10d6
+--- /dev/null
++++ b/docs/superpowers/specs/2026-08-07-email-verification-design.md
+@@ -0,0 +1,137 @@
++# Email Verification for Password Signups ΓÇö Design
++
++Date: 2026-08-07
++
++## Goal
++
++Require new email/password signups to verify their email address before the account can receive access or refresh tokens. Feature is opt-in via a single env toggle off by default. Does not apply to OAuth signups.
++
++## Toggle & email config
++
++| Variable | Description | Default |
++|----------|-------------|---------|
++| `REQUIRE_EMAIL_VERIFICATION` | `true`/`1`/`yes` enables verification for password signups | `false` (off) |
++| `SMTP_HOST` | SMTP server hostname | empty |
++| `SMTP_PORT` | SMTP server port | `587` |
++| `SMTP_USERNAME` | SMTP auth username | empty |
++| `SMTP_PASSWORD` | SMTP auth password | empty |
++| `SMTP_FROM` | From address for verification emails | empty |
++
++- Parsing of `REQUIRE_EMAIL_VERIFICATION` is strict: accepted values `true`, `1`, `yes` (case-insensitive); anything else / unset = disabled.
++- If verification is enabled but `SMTP_HOST` is empty, the server **logs the OTP to console** instead of sending (`[email-dev] verification code for <email>: 123456`). This keeps dev/test flows working without an SMTP server.
++- Email delivery uses stdlib `net/smtp` (no new dependency). When `SMTP_USERNAME` is empty, send is skipped and the code is logged.
++- OAuth users and OAuth-setup (`Initialized` transition) users are exempt: on account creation via OAuth, `email_verified_at` is set to now (provider already confirms the address).
++
++## Data model
++
++- `users.email_verified_at *time.Time` ΓÇö `NULL` means not verified. Added via GORM AutoMigrate (no migration files). Mirrored into the client DB model (`db.rs`) for parity only; not used in client logic.
++- Verification codes reuse the existing `auth_codes` table with `Purpose = "email_verify"`:
++  - `CodeHash` = `sha256(hex(code))` ΓÇö OTP is never stored in plaintext.
++  - `UserID`, `ExpiresAt` (15 min), `UsedAt` (single-use), `CreatedAt`.
++  - **One live row per user, never more.** Re-issue (resend / register retry) does `DELETE FROM auth_codes WHERE user_id = ? AND purpose = 'email_verify'` then inserts a fresh row. Successful verification deletes the row. The table therefore holds at most one `email_verify` row per user at any time ΓÇö no revocation accumulation, bounded lookups, no cleanup jobs.
++
++## Server behavior
++
++### Register (`POST /api/register`)
++- Verification **off**: unchanged, tokens returned.
++- Verification **on**: both the new-user path and the existing-user idempotent re-issue path respect the gate ΓÇö while `email_verified_at IS NULL` the handler never mints tokens. It generates a fresh OTP (or re-emails the still-valid active one), persists keyring + vaults (new-user path), and responds **201** with:
++  ```json
++  { "verification_required": true, "user": {...} }
++  ```
++  **No `access_token` / `refresh_token` fields are returned.** Spec: the register response must never contain tokens while the account is unverified.
++
++### Login (POST /api/login)
++- After successful proof (`HandleLogin`): if verification is on AND `AuthProvider = "password"` AND `email_verified_at IS NULL` ΓåÆ respond **403** `VERIFICATION_REQUIRED` with the user's email so the client can prefill the OTP screen:
++  ```json
++  { "error": { "code": "VERIFICATION_REQUIRED" }, "email": "..." }
++  ```
++  Do **not** update `last_login_at`, do not mint tokens.
++- Verified / verification off: unchanged.
++
++### Verify (POST /api/verify-email) ΓÇö new, unauthenticated
++Request: `{ "email": ..., "otp": ..., "device_id": ... }`
++- Look up the user's live `email_verify` code (`UsedAt IS NULL` + `ExpiresAt > now`).
++- Constant-time compare (deliberately not revealed-length-risk-friendly: reject on mismatch), cap at **5 attempts** per code ΓÇö on the 5th failed attempt the code is deleted, client asked to resend.
++- Success: set `users.email_verified_at = now`, **delete** the code row (consumed ΓÇö deletion is the single-use enforcement), then issue tokens exactly like register today:
++  ```json
++  { "access_token": ..., "refresh_token": ..., "user": ... }
++  ```
++  (This is the single point where an accounts transitions to verified, so returning tokens here is valid ΓÇö after this call the account IS verified.)
++- Failures: invalid/expired/used/exhausted code ΓåÆ **400** `INVALID_VERIFICATION_CODE` (attempts-exhausted and expired get a distinct message so the client can auto-trigger resend).
++
++### Resend (POST /resend-verification) ΓÇö unauthenticated
++- Request: `{ "email": ... }`, Response: `{ "verification_required": true }`.
++- Rate limited with the auth bucket (`RATE_LIMIT_AUTH`). Enforces a per-user 60s cooldown; within window returns `429 TOO_MANY_REQUESTS`.
++- Deletes any existing `email_verify` row for the user and inserts a fresh 15-minute OTP (in-place replacement ΓÇö old code becomes invalid immediately, no dead rows). Does **not** leak whether the email exists (uniform success).
++- Server never sends tokens here; behavior identical for unknown emails.
++
++### 403 body shape
++Use the existing error envelope with the email **inside** the error payload (the client's `apiFetch` only surfaces `json.error`, so a top-level `email` would be lost):
++```json
++{ "error": { "code": "VERIFICATION_REQUIRED", "message": "verify your email", "email": "<email>" } }
++```
++The 403 (not 401) distinguishes "gate this account" from "bad credentials".
++
++## Client flow
++
++- `authStore.register()`: on `verification_required: true` ΓåÆ set `pendingVerificationEmail` (do **not** persist tokens, do **not** enter logged-in state).
++- Auth screen renders one of: login form / register form / **OTP screen** when `pendingVerificationEmail` is set:
++  - Shows the email, a 6-digit input, **Resend** (disabled 60s), **Back to login**.
++- `login()` catches **403 VERIFICATION_REQUIRED** ΓåÆ sets `pendingVerificationEmail` from the response ΓåÆ OTP screen (email prefilled). This covers the user's requirement: any subsequent login attempt for an unverified account lands on the OTP page, and stays there until verification.
++- `verifyEmail(email, code, deviceId)` ΓåÆ `POST /api/v1/verify-email` ΓåÆ on success persists tokens (same code path as register success) and clears `pendingVerificationEmail`. On `INVALID_VERIFICATION_CODE` shows inline error; on attempts-exhausted/expired shows "resend needed" and auto-resends.
++- `resendVerificationEmail(email)` ΓåÆ POST, keeps OTP screen.
++- `client/src/lib/api/auth.ts`: add `verifyEmail` / `resendVerification`, types for verification responses; `RegisterRequest` unchanged (fields unchanged).
++- Logout / forced-logout: no change (wiping already covers unverified accounts ΓÇö they have no tokens cached, keyring may exist locally but server never issued tokens).
++
++## No-token invariant (the "as long as not verified, no tokens" rule)
++
++Tokens are minted in exactly these handlers: `HandleLogin`, `HandleRegister`, `HandleVerifyEmail`, `HandlePasswordChange` (rotate), `HandleRefresh`, and OAuth exchange/setup. For password accounts:
++
++- `HandleLogin` and `HandleRegister` short-circuit while `email_verified_at IS NULL` (login ΓåÆ 403; register ΓåÆ verification_required response with no tokens).
++- `HandleRefresh`/`HandleLogout`: unverified accounts never hold a refresh token (never issued before verification), but as a defense-in-depth new refresh tokens are only minted against an existing live refresh row ΓÇö which unverified accounts cannot obtain.
++- `HandleVerifyEmail` only marks the account verified *and* issues tokens in the same successful call. OAuth flows exempt.
++
++Result: no unverified password account can ever hold an access or refresh token.
++
++## Testing
++
++Server (`go test`):
++- Config: default off; every accepted truthy value; reject garbage (off).
++- Register w/ verification ON ΓåÆ 201, `verification_required`, no token fields in body.
++- Register w/ verification OFF ΓåÆ unchanged (tokens).
++- Login unverified ΓåÆ 403, `VERIFICATION_REQUIRED`, no tokens, no `last_login_at` write.
++- Login verified ΓåÆ 200 tokens.
++- Verify success ΓåÆ verified, code `UsedAt`, tokens; refresh usable.
++- Verify wrong code ΓåÆ attempts decrement; 5th attempt deletes code.
++- Verify expired ΓåÆ 400; verify after resend (old code) ΓåÆ 400; verify wrong email ΓåÆ 400.
++- Resend ΓåÆ old row deleted, single fresh row; resend within 60s ΓåÆ 429; resend unknown email ΓåÆ generic success + 200; at most one `email_verify` row per user after repeated resends.
++- OAuth register ΓåÆ verified by default.
++
++Client (`vitest`):
++- register returns `verification_required` ΓåÆ pending state, no tokens persisted.
++- login 403 ΓåÆ pending email ΓåÆ OTP screen; verify success ΓåÆ logged-in tokens persisted; resend called.
++
++## Security notes
++
++- OTP: 6 decimal digits, 15-minute expiry, single-use, max 5 attempts, one active per user, sha256-hashed at rest, rate-limited endpoints (auth bucket), 60s resend cooldown.
++- Constant-time verification of the code so early rejection doesn't leak position ΓÇö on mismatch.
++- No user enumeration via login (403 only for known+password user; unknown ΓåÆ 401 as today, email timing equalized in prelogin).
++- OTP is delivered either by SMTP (TLS via STARTTLS) or console logs in dev; console logging is the documented dev fallback and no code ever leaks tokens.
++
++## Files
++
++- `server/internal/config/*`: parsing + tests
++- `server/internal/email/*` (new): SMTP sender + console fallback sender, `Send(recipient, subject, body)` 
++- `server/internal/codes/*`: otp generate, verify against `auth_codes`, attempt-cap same
++- `server/internal/auth/handlers.go`: register gate, login gate, verify, resend
++- `server/internal/models/user.go`: `email_verified_at`
++- `server/internal/models/auth_code.go`: `Purpose` check
++- `client/src/lib/api/auth.ts`, `client/src/stores/auth/authStore.ts`, auth screen OTP panel
++- `AGENTS.md` + `server/.env.example` + `client/.env.example`: env table
++- `docs/superpowers/specs/2026-08-07-email-verification-design.md` (this file)
++
++## Open questions / non-goals
++
++- Not in scope: sending flow email templates beyond one verification OTP; resend cooldown only touches verification.
++- Not in scope: verifying existing unverified accounts historically (there are none today pre-feature).
++- No separate "verify on login for OAuth" ΓÇö exempt by design.
+\ No newline at end of file
+diff --git a/server/.env.example b/server/.env.example
+new file mode 100644
+index 0000000..680c200
+--- /dev/null
++++ b/server/.env.example
+@@ -0,0 +1,90 @@
++# ΓöÇΓöÇ TermVault Server ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++# Copy/rename this file to `.env` and adjust values. Loaded via godotenv by
++# `internal/config/config.go`. This file contains secrets ΓÇö do NOT commit.
++
++# ΓöÇΓöÇ Server ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Port the HTTP server binds to.
++TERMVAULT_PORT=8080
++
++# Bind address. Use 127.0.0.1 for local-only, 0.0.0.0 to expose on the network.
++TERMVAULT_HOST=0.0.0.0
++
++# Database connection string. SQLite is used by default for dev.
++#   SQLite:  sqlite://termvault.db   (or sqlite://teams.db?cache=shared&_fk=1)
++#   Postgres: postgres://user:pass@localhost:5432/termvault
++#   MySQL:    mysql://user:pass@localhost:3306/termvault?charset=utf8mb4&parseTime=True&loc=Local
++# GORM AutoMigrate runs on startup ΓÇö no manual migrations needed.
++DATABASE_URL=sqlite://termvault.db
++
++# ΓöÇΓöÇ Auth / JWT ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# REQUIRED. Secret used to sign JWT access tokens. Generate one with:
++#   openssl rand -base64 48
++JWT_SECRET=
++
++# Lifetime of access tokens. Go duration format (s/m/h).
++JWT_EXPIRY=15m
++
++# Lifetime of refresh tokens. Default is 720h = 30 days.
++REFRESH_TOKEN_EXPIRY=720h
++
++# Public URL the app is reachable at ΓÇö used for OAuth callback URLs.
++BASE_URL=http://localhost:8080
++
++# ΓöÇΓöÇ Rate limiting ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Requests per minute allowed to register/login endpoints.
++RATE_LIMIT_AUTH=10
++
++# Requests per minute allowed to general API (sync/refresh) endpoints.
++RATE_LIMIT_API=30
++
++# ΓöÇΓöÇ Reverse proxy ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Comma-separated list of CIDRs trusted to send X-Forwarded-For headers.
++# Leave empty if the server is exposed directly (no proxy).
++TRUSTED_PROXIES=
++
++# ΓöÇΓöÇ OAuth (optional) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Google OAuth client credentials (empty = Google login disabled).
++OAUTH_GOOGLE_CLIENT_ID=
++OAUTH_GOOGLE_CLIENT_SECRET=
++
++# GitHub OAuth client credentials (empty = GitHub login disabled).
++OAUTH_GITHUB_CLIENT_ID=
++OAUTH_GITHUB_CLIENT_SECRET=
++
++# Base URL used to build OAuth redirect callbacks. Defaults to BASE_URL.
++OAUTH_REDIRECT_BASE=
++
++# Custom URL scheme used for deep links from OAuth flows back into the desktop app.
++APP_SCHEME=termvault
++
++# Allowlist of desktop app loopback callback URIs (comma-separated). During
++# OAuth the client binds 127.0.0.1 on one of these ports and the server only
++# redirects to URIs listed here (mismatch = 400 INVALID_CALLBACK).
++# If you change ports here, the client's Rust listener ports
++# (client/src-tauri/src/oauth.rs) must match.
++TERMVAULT_OAUTH_REDIRECT_URIS=http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback
++
++# ΓöÇΓöÇ Email verification (optional) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Require new email/password signups to verify their email with a 6-digit OTP.
++# Accepted values: true / 1 / yes. Off by default.
++REQUIRE_EMAIL_VERIFICATION=false
++
++# SMTP server for sending verification emails. If SMTP_HOST is empty, the OTP
++# is logged to the server console instead (dev mode).
++SMTP_HOST=
++SMTP_PORT=587
++SMTP_USERNAME=
++SMTP_PASSWORD=
++SMTP_FROM=
++
++# ΓöÇΓöÇ Redis (optional, multi-instance) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Redis URL for token/session storage when running multiple server instances.
++# Leave empty to use in-memory storage (single instance).
++REDIS_URL=
+\ No newline at end of file
+diff --git a/server/cmd/termvault-server/main.go b/server/cmd/termvault-server/main.go
+index 4956ae1..8cebc58 100644
+--- a/server/cmd/termvault-server/main.go
++++ b/server/cmd/termvault-server/main.go
+@@ -50,10 +50,12 @@ func main() {
+ 	apiAuth.POST("/login", auth.HandleLogin(db, cfg))
+ 	apiAuth.POST("/refresh", auth.HandleRefresh(db, cfg))
+ 	apiAuth.POST("/logout", auth.HandleLogout(db))
+ 	apiAuth.POST("/recovery", auth.HandleRecovery(db, cfg))
+ 	apiAuth.POST("/recovery/prefetch", auth.HandleRecoveryPrefetch(db))
++	apiAuth.POST("/verify-email", auth.RateLimit(cfg.RateLimitAuth), auth.HandleVerifyEmail(db, cfg))
++	apiAuth.POST("/resend-verification", auth.RateLimit(cfg.RateLimitAuth), auth.HandleResendVerification(db, cfg))
+ 	apiAuth.GET("/oauth/start/:provider", auth.HandleOAuthStart(db, cfg))
+ 	apiAuth.GET("/oauth/callback/:provider", auth.HandleOAuthCallback(db, cfg))
+ 	apiAuth.POST("/oauth/exchange", auth.HandleOAuthExchange(db, cfg))
+ 	apiAuth.POST("/oauth/setup", auth.HandleOAuthSetup(db, cfg))
+ 
+diff --git a/server/internal/auth/email_verify.go b/server/internal/auth/email_verify.go
+new file mode 100644
+index 0000000..3067426
+--- /dev/null
++++ b/server/internal/auth/email_verify.go
+@@ -0,0 +1,60 @@
++package auth
++
++import (
++	"crypto/rand"
++	"crypto/sha256"
++	"encoding/base64"
++	"fmt"
++	"math/big"
++	"time"
++
++	"github.com/google/uuid"
++	"github.com/termvault/termvault/internal/models"
++	"gorm.io/gorm"
++)
++
++const emailVerifyPurpose = "email_verify"
++const otpTTL = 15 * time.Minute
++const maxOtpAttempts = 5
++
++func generateOtp() (string, error) {
++	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
++	if err != nil {
++		return "", fmt.Errorf("generate otp: %w", err)
++	}
++	return fmt.Sprintf("%06d", n.Int64()), nil
++}
++
++func issueEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (string, error) {
++	if err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Delete(&models.AuthCode{}).Error; err != nil {
++		return "", fmt.Errorf("clear old verification codes: %w", err)
++	}
++
++	otp, err := generateOtp()
++	if err != nil {
++		return "", err
++	}
++	hash := sha256.Sum256([]byte(otp))
++	code := models.AuthCode{
++		CodeHash:  base64.RawStdEncoding.EncodeToString(hash[:]),
++		Purpose:   emailVerifyPurpose,
++		UserID:    userID,
++		DeviceID:  "",
++		ExpiresAt: time.Now().Add(otpTTL),
++	}
++	if err := db.Create(&code).Error; err != nil {
++		return "", fmt.Errorf("store verification code: %w", err)
++	}
++	return otp, nil
++}
++
++func findEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (*models.AuthCode, error) {
++	var code models.AuthCode
++	err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Order("created_at DESC").First(&code).Error
++	if err != nil {
++		return nil, err
++	}
++	return &code, nil
++}
+diff --git a/server/internal/auth/email_verify_test.go b/server/internal/auth/email_verify_test.go
+new file mode 100644
+index 0000000..b9027ce
+--- /dev/null
++++ b/server/internal/auth/email_verify_test.go
+@@ -0,0 +1,75 @@
++package auth
++
++import (
++	"testing"
++
++	gormsqlite "github.com/glebarez/sqlite"
++	"github.com/google/uuid"
++	"github.com/termvault/termvault/internal/models"
++	"gorm.io/gorm"
++)
++
++func setupVerifyDB(t *testing.T) *gorm.DB {
++	t.Helper()
++	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
++	if err != nil {
++		t.Fatalf("open test db: %v", err)
++	}
++	if err := models.AutoMigrate(db); err != nil {
++		t.Fatalf("migrate: %v", err)
++	}
++	return db
++}
++
++func TestGenerateOtp_IsSixDigits(t *testing.T) {
++	for i := 0; i < 50; i++ {
++		otp, err := generateOtp()
++		if err != nil {
++			t.Fatal(err)
++		}
++		if len(otp) != 6 {
++			t.Fatalf("expected 6 digits, got %q", otp)
++		}
++		for _, ch := range otp {
++			if ch < '0' || ch > '9' {
++				t.Fatalf("non-digit in otp %q", otp)
++			}
++		}
++	}
++}
++
++func TestIssueEmailVerifyCode_ReplacesOldRow(t *testing.T) {
++	db := setupVerifyDB(t)
++	userID := uuid.New()
++	first, err := issueEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	second, err := issueEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if first == second {
++		t.Fatal("expected different otps")
++	}
++	var count int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&count)
++	if count != 1 {
++		t.Fatalf("expected exactly 1 row after re-issue, got %d", count)
++	}
++	code, err := findEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if code.CodeHash == second {
++		t.Fatal("expected hashed code, got plaintext")
++	}
++}
++
++func TestFindEmailVerifyCode_None(t *testing.T) {
++	db := setupVerifyDB(t)
++	_, err := findEmailVerifyCode(db, uuid.New())
++	if err != gorm.ErrRecordNotFound {
++		t.Fatalf("expected ErrRecordNotFound, got %v", err)
++	}
++}
+diff --git a/server/internal/auth/handlers.go b/server/internal/auth/handlers.go
+index 7ce1c01..e307213 100644
+--- a/server/internal/auth/handlers.go
++++ b/server/internal/auth/handlers.go
+@@ -3,16 +3,18 @@ package auth
+ import (
+ 	"crypto/hmac"
+ 	"crypto/rand"
+ 	"crypto/sha256"
+ 	"encoding/base64"
++	"log/slog"
+ 	"net/http"
+ 	"time"
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+ 	"github.com/termvault/termvault/internal/config"
++	"github.com/termvault/termvault/internal/email"
+ 	"github.com/termvault/termvault/internal/models"
+ 	"gorm.io/gorm"
+ )
+ 
+ type preloginRequest struct {
+@@ -30,20 +32,26 @@ type keyringPayload struct {
+ 	DekWrappedByRecovery   string `json:"dek_wrapped_by_recovery"`
+ 	PrivateKeyWrappedByDek string `json:"private_key_wrapped_by_dek"`
+ }
+ 
+ type registerRequest struct {
+-	UserID           string         `json:"user_id" binding:"required"`
+-	Email            string         `json:"email" binding:"required"`
+-	FullName         string         `json:"full_name"`
+-	PasswordHash     string         `json:"password_hash" binding:"required"`
+-	RecoveryCode     string         `json:"recovery_code"`
+-	PublicKey        string         `json:"public_key"`
+-	Keyring          keyringPayload `json:"keyring"`
+-	KDF              kdfParams      `json:"kdf"`
+-	ServerSalt       string         `json:"server_salt" binding:"required"`
+-	SaltCL           string         `json:"salt_cl" binding:"required"`
++	UserID       string         `json:"user_id" binding:"required"`
++	Email        string         `json:"email" binding:"required"`
++	FullName     string         `json:"full_name"`
++	PasswordHash string         `json:"password_hash" binding:"required"`
++	RecoveryCode string         `json:"recovery_code"`
++	PublicKey    string         `json:"public_key"`
++	Keyring      keyringPayload `json:"keyring"`
++	KDF          kdfParams      `json:"kdf"`
++	ServerSalt   string         `json:"server_salt" binding:"required"`
++	SaltCL       string         `json:"salt_cl" binding:"required"`
++}
++
++type verifyEmailRequest struct {
++	Email    string `json:"email" binding:"required"`
++	Otp      string `json:"otp" binding:"required"`
++	DeviceID string `json:"device_id"`
+ }
+ 
+ func HandlePrelogin(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+ 		var req preloginRequest
+@@ -100,10 +108,14 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 			return
+ 		}
+ 
+ 		var existing models.User
+ 		if db.Where("id = ?", userID).First(&existing).Error == nil {
++			if cfg.RequireEmailVerification && existing.EmailVerifiedAt == nil {
++				respondVerificationRequired(c, db, cfg, &existing)
++				return
++			}
+ 			rt, err := createRefreshToken(db, userID, "", cfg)
+ 			if err != nil {
+ 				Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
+ 				return
+ 			}
+@@ -175,10 +187,15 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		if err := models.SeedPersonalVault(db, userID); err != nil {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to seed vault")
+ 			return
+ 		}
+ 
++		if cfg.RequireEmailVerification {
++			respondVerificationRequired(c, db, cfg, &user)
++			return
++		}
++
+ 		rt, err := createRefreshToken(db, userID, "", cfg)
+ 		if err != nil {
+ 			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
+ 			return
+ 		}
+@@ -195,10 +212,26 @@ func HandleRegister(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 			"user":          user,
+ 		})
+ 	}
+ }
+ 
++func respondVerificationRequired(c *gin.Context, db *gorm.DB, cfg *config.Config, user *models.User) {
++	otp, err := issueEmailVerifyCode(db, user.ID)
++	if err != nil {
++		Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++		return
++	}
++	sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++	if err := sender.SendOtp(user.Email, otp); err != nil {
++		slog.Error("failed to send verification otp", "email", user.Email, "error", err)
++	}
++	Success(c, http.StatusCreated, gin.H{
++		"verification_required": true,
++		"user":                  user,
++	})
++}
++
+ type loginRequest struct {
+ 	Email        string `json:"email" binding:"required"`
+ 	Proof        string `json:"proof" binding:"required"`
+ 	Nonce        string `json:"nonce" binding:"required"`
+ 	DeviceID     string `json:"device_id"`
+@@ -244,10 +277,20 @@ func HandleLogin(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		if !ConstantTimeCompare(proofBytes, expectedProof) {
+ 			Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid credentials")
+ 			return
+ 		}
+ 
++		if cfg.RequireEmailVerification && user.EmailVerifiedAt == nil {
++			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
++				"code":       "VERIFICATION_REQUIRED",
++				"message":    "verify your email",
++				"email":      user.Email,
++				"request_id": c.GetString("request_id"),
++			}})
++			return
++		}
++
+ 		now := time.Now()
+ 		db.Model(&user).Update("last_login_at", &now)
+ 
+ 		rtToken, err := createRefreshToken(db, user.ID, req.DeviceID, cfg)
+ 		if err != nil {
+@@ -696,10 +739,120 @@ func createRefreshToken(db *gorm.DB, userID uuid.UUID, deviceID string, cfg *con
+ 		return "", err
+ 	}
+ 	return rawToken, nil
+ }
+ 
++func HandleVerifyEmail(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		var req verifyEmailRequest
++		if err := c.ShouldBindJSON(&req); err != nil {
++			Error(c, http.StatusBadRequest, "VALIDATION_ERROR", "email and otp are required")
++			return
++		}
++
++		var user models.User
++		if db.Where("email = ?", req.Email).First(&user).Error != nil {
++			Error(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid email")
++			return
++		}
++		if user.EmailVerifiedAt != nil {
++			Error(c, http.StatusBadRequest, "ALREADY_VERIFIED", "email already verified")
++			return
++		}
++
++		code, err := findEmailVerifyCode(db, user.ID)
++		if err != nil || code.ExpiresAt.Before(time.Now()) {
++			Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "verification code expired or missing")
++			return
++		}
++
++		hash := sha256.Sum256([]byte(req.Otp))
++		hashB64 := base64.RawStdEncoding.EncodeToString(hash[:])
++		if !ConstantTimeCompare([]byte(hashB64), []byte(code.CodeHash)) {
++			code.Attempts++
++			if code.Attempts >= maxOtpAttempts {
++				db.Delete(&code)
++				Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "too many failed attempts, request a new code")
++				return
++			}
++			db.Save(&code)
++			Error(c, http.StatusBadRequest, "INVALID_VERIFICATION_CODE", "invalid verification code")
++			return
++		}
++
++		now := time.Now()
++		if err := db.Model(&user).Updates(map[string]interface{}{
++			"email_verified_at": &now,
++			"last_login_at":     &now,
++		}).Error; err != nil {
++			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to verify email")
++			return
++		}
++		user.EmailVerifiedAt = &now
++
++		if err := db.Delete(&code).Error; err != nil {
++			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to consume verification code")
++			return
++		}
++
++		rt, err := createRefreshToken(db, user.ID, req.DeviceID, cfg)
++		if err != nil {
++			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create refresh token")
++			return
++		}
++		at, _, err := GenerateTokenPair(user.ID, req.DeviceID, cfg)
++		if err != nil {
++			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to generate tokens")
++			return
++		}
++
++		Success(c, http.StatusOK, gin.H{
++			"access_token":  at,
++			"refresh_token": rt,
++			"user":          user,
++			"keyring":       fetchKeyring(db, user.ID),
++		})
++	}
++}
++
++func HandleResendVerification(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		var req struct {
++			Email string `json:"email" binding:"required"`
++		}
++		if err := c.ShouldBindJSON(&req); err != nil {
++			Error(c, http.StatusBadRequest, "VALIDATION_ERROR", "email is required")
++			return
++		}
++
++		var user models.User
++		if db.Where("email = ?", req.Email).First(&user).Error != nil ||
++			user.AuthProvider != "password" || user.EmailVerifiedAt != nil {
++			Success(c, http.StatusOK, gin.H{"verification_required": true})
++			return
++		}
++
++		existing, err := findEmailVerifyCode(db, user.ID)
++		if err == nil && time.Since(existing.CreatedAt) < time.Minute {
++			Error(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "wait before requesting a new code")
++			return
++		}
++
++		otp, err := issueEmailVerifyCode(db, user.ID)
++		if err != nil {
++			Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to create verification code")
++			return
++		}
++		sender := email.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
++		if err := sender.SendOtp(user.Email, otp); err != nil {
++			slog.Error("failed to send verification otp", "email", user.Email, "error", err)
++		}
++
++		Success(c, http.StatusOK, gin.H{"verification_required": true})
++	}
++}
++
+ func hashToken(token string) string {
+ 	h := sha256.Sum256([]byte(token))
+ 	return base64.RawStdEncoding.EncodeToString(h[:])
+ }
+ 
+diff --git a/server/internal/auth/handlers_test.go b/server/internal/auth/handlers_test.go
+index efe7931..61a4ca0 100644
+--- a/server/internal/auth/handlers_test.go
++++ b/server/internal/auth/handlers_test.go
+@@ -36,10 +36,12 @@ func setupHandlerRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
+ 	r := gin.New()
+ 	r.Use(gin.Recovery())
+ 	auth := r.Group("/api/v1/auth")
+ 	auth.POST("/prelogin", HandlePrelogin(db, cfg))
+ 	auth.POST("/register", HandleRegister(db, cfg))
++	auth.POST("/verify-email", HandleVerifyEmail(db, cfg))
++	auth.POST("/resend-verification", HandleResendVerification(db, cfg))
+ 	auth.POST("/login", HandleLogin(db, cfg))
+ 	auth.POST("/refresh", HandleRefresh(db, cfg))
+ 	auth.POST("/logout", HandleLogout(db))
+ 	auth.POST("/recovery", HandleRecovery(db, cfg))
+ 	auth.POST("/recovery/prefetch", HandleRecoveryPrefetch(db))
+@@ -58,10 +60,33 @@ func testConfig() *config.Config {
+ 		JWTExpiry:          15 * 60e9,
+ 		RefreshTokenExpiry: 30 * 24 * 60e9,
+ 	}
+ }
+ 
++func testConfigWithVerification() *config.Config {
++	cfg := testConfig()
++	cfg.RequireEmailVerification = true
++	return cfg
++}
++
++func registerRequestPayload(email, userID string) map[string]interface{} {
++	return map[string]interface{}{
++		"user_id":       userID,
++		"email":         email,
++		"full_name":     email,
++		"password_hash": base64.RawStdEncoding.EncodeToString([]byte("verifier-bytes")),
++		"keyring": map[string]string{
++			"dek_wrapped_by_kek":         "kek",
++			"dek_wrapped_by_recovery":    "rec",
++			"private_key_wrapped_by_dek": "pk",
++		},
++		"kdf":         map[string]int{"m": 32768, "t": 2, "p": 1},
++		"server_salt": "server-salt",
++		"salt_cl":     "salt-cl",
++	}
++}
++
+ func seedUserWithVerifier(t *testing.T, db *gorm.DB, email string) (uuid.UUID, []byte) {
+ 	t.Helper()
+ 	userID := uuid.New()
+ 	verifier := []byte("test-secret-verifier-bytes")
+ 	verifierB64 := base64.RawStdEncoding.EncodeToString(verifier)
+@@ -84,10 +109,30 @@ func seedUserWithVerifier(t *testing.T, db *gorm.DB, email string) (uuid.UUID, [
+ 		t.Fatalf("seed user: %v", err)
+ 	}
+ 	return userID, verifier
+ }
+ 
++func seedUnverifiedUser(t *testing.T, db *gorm.DB, email string) (uuid.UUID, string) {
++	t.Helper()
++	userID, _ := seedUserWithVerifier(t, db, email)
++	for _, keyType := range []string{"dek_wrapped_by_kek", "dek_wrapped_by_recovery", "private_key_wrapped_by_dek"} {
++		db.Create(&models.UserKey{UserID: userID, KeyType: keyType, Payload: "wrapped-" + keyType})
++	}
++	otp, err := issueEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return userID, otp
++}
++
++func makeVerifyEmailRequest(email, otp string) *http.Request {
++	raw, _ := json.Marshal(map[string]string{"email": email, "otp": otp, "device_id": "dev-1"})
++	req := httptest.NewRequest("POST", "/api/v1/auth/verify-email", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	return req
++}
++
+ func makeAccessToken(userID uuid.UUID, cfg *config.Config) string {
+ 	at, _, err := GenerateTokenPair(userID, "", cfg)
+ 	if err != nil {
+ 		panic("makeAccessToken: " + err.Error())
+ 	}
+@@ -405,10 +450,319 @@ func TestRegister_Idempotent(t *testing.T) {
+ 	if data["access_token"] == nil || data["access_token"] == "" {
+ 		t.Error("access_token should not be empty")
+ 	}
+ }
+ 
++func TestRegister_VerificationRequired_NoTokens(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	body := registerRequestPayload("verify@example.com", uuid.New().String())
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusCreated {
++		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if !resp.Data.VerificationRequired {
++		t.Fatal("expected verification_required true")
++	}
++	if resp.Data.AccessToken != "" || resp.Data.RefreshToken != "" {
++		t.Fatal("expected no tokens in register response")
++	}
++
++	var user models.User
++	if err := db.Where("email = ?", "verify@example.com").First(&user).Error; err != nil {
++		t.Fatal(err)
++	}
++	if user.EmailVerifiedAt != nil {
++		t.Fatal("expected user unverified")
++	}
++	var codeCount int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", user.ID, emailVerifyPurpose).Count(&codeCount)
++	if codeCount != 1 {
++		t.Fatalf("expected 1 verification code, got %d", codeCount)
++	}
++}
++
++func TestRegister_VerificationOff_ReturnsTokens(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfig())
++
++	body := registerRequestPayload("plain@example.com", uuid.New().String())
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusCreated {
++		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Data.AccessToken == "" {
++		t.Fatal("expected access token when verification off")
++	}
++	if resp.Data.RefreshToken == "" {
++		t.Fatal("expected refresh token when verification off")
++	}
++	if resp.Data.VerificationRequired {
++		t.Fatal("expected no verification_required flag")
++	}
++}
++
++func TestRegister_VerificationRequired_Reissue(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID := uuid.New().String()
++	body := registerRequestPayload("reissue@example.com", userID)
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++	if w.Code != http.StatusCreated {
++		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
++	}
++
++	w2 := httptest.NewRecorder()
++	req2 := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req2.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w2, req2)
++	if w2.Code != http.StatusCreated {
++		t.Fatalf("expected 201 on re-register, got %d: %s", w2.Code, w2.Body.String())
++	}
++
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if !resp.Data.VerificationRequired {
++		t.Fatal("expected verification_required true on re-register")
++	}
++	if resp.Data.AccessToken != "" || resp.Data.RefreshToken != "" {
++		t.Fatal("expected no tokens on re-register")
++	}
++
++	uid, err := uuid.Parse(userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var codeCount int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", uid, emailVerifyPurpose).Count(&codeCount)
++	if codeCount != 1 {
++		t.Fatalf("expected exactly 1 verification code after re-register, got %d", codeCount)
++	}
++}
++
++func TestVerifyEmail_Success(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	userID, otp := seedUnverifiedUser(t, db, "verify-ok@example.com")
++
++	w := httptest.NewRecorder()
++	r.ServeHTTP(w, makeVerifyEmailRequest("verify-ok@example.com", otp))
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Data struct {
++			AccessToken  string            `json:"access_token"`
++			RefreshToken string            `json:"refresh_token"`
++			Keyring      map[string]string `json:"keyring"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
++		t.Fatal("expected tokens after verification")
++	}
++	if resp.Data.Keyring == nil {
++		t.Fatal("expected keyring in verify response")
++	}
++
++	var user models.User
++	db.First(&user, "id = ?", userID)
++	if user.EmailVerifiedAt == nil {
++		t.Fatal("expected user verified")
++	}
++	var codeCount int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&codeCount)
++	if codeCount != 0 {
++		t.Fatalf("expected code row deleted after verification, got %d", codeCount)
++	}
++
++	// refresh token must be usable
++	var rt models.RefreshToken
++	if err := db.Where("user_id = ?", userID).First(&rt).Error; err != nil {
++		t.Fatalf("expected refresh token row: %v", err)
++	}
++}
++
++func TestVerifyEmail_WrongCode_ExhaustsAttempts(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	userID, otp := seedUnverifiedUser(t, db, "brute@example.com")
++
++	for i := 1; i <= maxOtpAttempts; i++ {
++		w := httptest.NewRecorder()
++		r.ServeHTTP(w, makeVerifyEmailRequest("brute@example.com", "000000"))
++		if w.Code != http.StatusBadRequest {
++			t.Fatalf("attempt %d: expected 400, got %d", i, w.Code)
++		}
++		if otp == "000000" {
++			t.Fatal("test otp collided with wrong code")
++		}
++	}
++
++	// after 5 failures the row is gone; next attempt still 400
++	w := httptest.NewRecorder()
++	r.ServeHTTP(w, makeVerifyEmailRequest("brute@example.com", otp))
++	if w.Code != http.StatusBadRequest {
++		t.Fatalf("expected 400 after attempts exhausted, got %d", w.Code)
++	}
++	var user models.User
++	db.First(&user, "id = ?", userID)
++	if user.EmailVerifiedAt != nil {
++		t.Fatal("user must not be verified after exhausted attempts")
++	}
++	var codeCount int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&codeCount)
++	if codeCount != 0 {
++		t.Fatalf("expected code row deleted after 5 attempts, got %d", codeCount)
++	}
++}
++
++func TestVerifyEmail_ExpiredCode(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	userID, otp := seedUnverifiedUser(t, db, "expired@example.com")
++
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Update("expires_at", time.Now().Add(-time.Hour))
++
++	w := httptest.NewRecorder()
++	r.ServeHTTP(w, makeVerifyEmailRequest("expired@example.com", otp))
++	if w.Code != http.StatusBadRequest {
++		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
++	}
++}
++
++func TestVerifyEmail_UnknownEmail(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	w := httptest.NewRecorder()
++	r.ServeHTTP(w, makeVerifyEmailRequest("nobody@example.com", "123456"))
++	if w.Code != http.StatusUnauthorized {
++		t.Fatalf("expected 401, got %d", w.Code)
++	}
++}
++
++func TestVerifyEmail_AlreadyVerified(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	userID, _ := seedUnverifiedUser(t, db, "already@example.com")
++	now := time.Now()
++	db.Model(&models.User{}).Where("id = ?", userID).Update("email_verified_at", &now)
++
++	w := httptest.NewRecorder()
++	r.ServeHTTP(w, makeVerifyEmailRequest("already@example.com", "123456"))
++	if w.Code != http.StatusBadRequest {
++		t.Fatalf("expected 400, got %d", w.Code)
++	}
++	var resp struct {
++		Error struct {
++			Code string `json:"code"`
++		} `json:"error"`
++	}
++	json.Unmarshal(w.Body.Bytes(), &resp)
++	if resp.Error.Code != "ALREADY_VERIFIED" {
++		t.Fatalf("expected ALREADY_VERIFIED, got %s", resp.Error.Code)
++	}
++}
++
++func TestRegister_VerifiedUser_ReturnsTokens(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID := uuid.New()
++	now := time.Now()
++	salt := "server-salt"
++	saltCL := "client-salt"
++	existing := models.User{
++		ID:              userID,
++		Email:           "verified@example.com",
++		FullName:        "Verified",
++		AuthProvider:    "password",
++		AuthSalt:        &salt,
++		SaltCL:          &saltCL,
++		EmailVerifiedAt: &now,
++	}
++	if err := db.Create(&existing).Error; err != nil {
++		t.Fatalf("seed user: %v", err)
++	}
++
++	body := registerRequestPayload("verified@example.com", userID.String())
++	raw, _ := json.Marshal(body)
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Data struct {
++			VerificationRequired bool   `json:"verification_required"`
++			AccessToken          string `json:"access_token"`
++			RefreshToken         string `json:"refresh_token"`
++		} `json:"data"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Data.AccessToken == "" || resp.Data.RefreshToken == "" {
++		t.Fatal("expected tokens for verified user")
++	}
++	if resp.Data.VerificationRequired {
++		t.Fatal("expected no verification_required flag for verified user")
++	}
++}
++
+ func TestRegister_StoresKeyringAndRecovery(t *testing.T) {
+ 	db := setupTestDB(t)
+ 	cfg := testConfig()
+ 	r := setupHandlerRouter(db, cfg)
+ 
+@@ -1207,15 +1561,15 @@ func TestRecovery_ReplacesKeyring(t *testing.T) {
+ 		Payload: "old-dek-payload",
+ 	})
+ 
+ 	nonce := base64.RawStdEncoding.EncodeToString([]byte("keyring-nonce"))
+ 	body, _ := json.Marshal(gin.H{
+-		"recovery_code": base64.RawStdEncoding.EncodeToString([]byte(recoveryCode)),
+-		"signature":     recoverySignature(t, nonce),
+-		"new_verifier":  "recovered-v",
++		"recovery_code":     base64.RawStdEncoding.EncodeToString([]byte(recoveryCode)),
++		"signature":         recoverySignature(t, nonce),
++		"new_verifier":      "recovered-v",
+ 		"new_encrypted_dek": "new-dek-payload",
+-		"new_nonce":     nonce,
++		"new_nonce":         nonce,
+ 	})
+ 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/recovery", bytes.NewReader(body))
+ 	req.Header.Set("Content-Type", "application/json")
+ 	w := httptest.NewRecorder()
+ 	r.ServeHTTP(w, req)
+@@ -1265,5 +1619,145 @@ func TestRecovery_RevokesAllSessions(t *testing.T) {
+ 	db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", uid).Count(&activeCount)
+ 	if activeCount != 0 {
+ 		t.Errorf("expected 0 active tokens after recovery, got %d", activeCount)
+ 	}
+ }
++
++func TestLogin_Unverified_ReturnsVerificationRequired(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID, verifier := seedUserWithVerifier(t, db, "gate@example.com")
++	var user models.User
++	db.First(&user, "id = ?", userID)
++
++	nonce := []byte("nonce-bytes")
++	nonceB64 := base64.RawStdEncoding.EncodeToString(nonce)
++	proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++
++	raw, _ := json.Marshal(map[string]string{
++		"email": "gate@example.com", "proof": proof, "nonce": nonceB64,
++	})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusForbidden {
++		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp struct {
++		Error struct {
++			Code  string `json:"code"`
++			Email string `json:"email"`
++		} `json:"error"`
++	}
++	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
++		t.Fatal(err)
++	}
++	if resp.Error.Code != "VERIFICATION_REQUIRED" {
++		t.Fatalf("expected VERIFICATION_REQUIRED, got %s", resp.Error.Code)
++	}
++	if resp.Error.Email != "gate@example.com" {
++		t.Fatalf("expected email in error payload, got %s", resp.Error.Email)
++	}
++
++	db.First(&user, "id = ?", userID)
++	if user.LastLoginAt != nil {
++		t.Fatal("last_login_at must not be updated for unverified user")
++	}
++	var rtCount int64
++	db.Model(&models.RefreshToken{}).Where("user_id = ?", userID).Count(&rtCount)
++	if rtCount != 0 {
++		t.Fatalf("no refresh token should be created, got %d", rtCount)
++	}
++}
++
++func TestLogin_Verified_Succeeds(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	userID, verifier := seedUserWithVerifier(t, db, "ok@example.com")
++	now := time.Now()
++	db.Model(&models.User{}).Where("id = ?", userID).Update("email_verified_at", &now)
++
++	nonce := []byte("nonce-bytes")
++	proof := base64.RawStdEncoding.EncodeToString(GenerateProof(verifier, nonce))
++	raw, _ := json.Marshal(map[string]string{
++		"email": "ok@example.com",
++		"proof": proof,
++		"nonce": base64.RawStdEncoding.EncodeToString(nonce),
++	})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++}
++
++func TestResendVerification_ReplacesCode(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	userID, otp := seedUnverifiedUser(t, db, "resend@example.com")
++
++	// wait out cooldown: backdate the existing row
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Update("created_at", time.Now().Add(-time.Minute))
++
++	raw, _ := json.Marshal(map[string]string{"email": "resend@example.com"})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
++	}
++
++	code, err := findEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	hash := sha256.Sum256([]byte(otp))
++	if string(code.CodeHash) == string(hash[:]) {
++		t.Fatal("expected old otp to be replaced")
++	}
++	var count int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&count)
++	if count != 1 {
++		t.Fatalf("expected exactly 1 row, got %d", count)
++	}
++}
++
++func TestResendVerification_Cooldown(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++	seedUnverifiedUser(t, db, "cooldown@example.com")
++
++	raw, _ := json.Marshal(map[string]string{"email": "cooldown@example.com"})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusTooManyRequests {
++		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
++	}
++}
++
++func TestResendVerification_UnknownEmail_Uniform(t *testing.T) {
++	db := setupTestDB(t)
++	r := setupHandlerRouter(db, testConfigWithVerification())
++
++	raw, _ := json.Marshal(map[string]string{"email": "ghost@example.com"})
++	w := httptest.NewRecorder()
++	req := httptest.NewRequest("POST", "/api/v1/auth/resend-verification", bytes.NewReader(raw))
++	req.Header.Set("Content-Type", "application/json")
++	r.ServeHTTP(w, req)
++
++	if w.Code != http.StatusOK {
++		t.Fatalf("expected 200 (no enumeration), got %d", w.Code)
++	}
++}
+diff --git a/server/internal/auth/oauth.go b/server/internal/auth/oauth.go
+index 78aa7ea..52b32d4 100644
+--- a/server/internal/auth/oauth.go
++++ b/server/internal/auth/oauth.go
+@@ -3,10 +3,11 @@ package auth
+ import (
+ 	"crypto/rand"
+ 	"crypto/sha256"
+ 	"encoding/base64"
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"net/url"
+ 	"time"
+@@ -221,10 +222,60 @@ func fetchGitHubUserInfo(token *oauth2.Token, apiBase string) (*userInfo, error)
+ 		AvatarURL:   raw.AvatarURL,
+ 		ProviderSub: fmt.Sprintf("%d", raw.ID),
+ 	}, nil
+ }
+ 
++var (
++	errOAuthLinkFailed       = errors.New("oauth link failed")
++	errOAuthUserCreateFailed = errors.New("oauth user create failed")
++	errOAuthVaultSeedFailed  = errors.New("oauth vault seed failed")
++)
++
++// linkOrCreateOAuthUser links an existing account to an OAuth provider or
++// creates a new user when no matching account exists, and returns it. OAuth
++// users are exempt from email verification: the provider has already
++// confirmed the address, so EmailVerifiedAt is set on both paths. The
++// returned error distinguishes the failure stage so the handler can pick the
++// right redirect reason.
++func linkOrCreateOAuthUser(db *gorm.DB, provider string, ui *userInfo) (models.User, error) {
++	providerSub := ui.ProviderSub
++	var user models.User
++	found := db.Where("auth_provider = ? AND provider_sub = ?", provider, providerSub).First(&user).Error == nil
++
++	if !found {
++		if db.Where("email = ?", ui.Email).First(&user).Error == nil {
++			user.AuthProvider = provider
++			user.ProviderSub = &providerSub
++			now := time.Now()
++			user.EmailVerifiedAt = &now
++			if err := db.Save(&user).Error; err != nil {
++				return user, errOAuthLinkFailed
++			}
++		} else {
++			now := time.Now()
++			user = models.User{
++				ID:              uuid.New(),
++				Email:           ui.Email,
++				FullName:        ui.Name,
++				AuthProvider:    provider,
++				ProviderSub:     &providerSub,
++				EmailVerifiedAt: &now,
++				Initialized:     false,
++				CreatedAt:       now,
++				UpdatedAt:       now,
++			}
++			if err := db.Create(&user).Error; err != nil {
++				return user, errOAuthUserCreateFailed
++			}
++			if err := models.SeedPersonalVault(db, user.ID); err != nil {
++				return user, errOAuthVaultSeedFailed
++			}
++		}
++	}
++	return user, nil
++}
++
+ func HandleOAuthStart(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+ 		provider := c.Param("provider")
+ 		oauthCfg, err := getOAuthConfig(provider, cfg)
+ 		if err != nil {
+@@ -334,42 +385,21 @@ func HandleOAuthCallback(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		if err != nil {
+ 			c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"userinfo_failed"}}))
+ 			return
+ 		}
+ 
+-		var user models.User
+-		providerSub := ui.ProviderSub
+-		found := db.Where("auth_provider = ? AND provider_sub = ?", provider, providerSub).First(&user).Error == nil
+-
+-		if !found {
+-			if db.Where("email = ?", ui.Email).First(&user).Error == nil {
+-				user.AuthProvider = provider
+-				user.ProviderSub = &providerSub
+-				if err := db.Save(&user).Error; err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"link_failed"}}))
+-					return
+-				}
+-			} else {
+-				user = models.User{
+-					ID:           uuid.New(),
+-					Email:        ui.Email,
+-					FullName:     ui.Name,
+-					AuthProvider: provider,
+-					ProviderSub:  &providerSub,
+-					Initialized:  false,
+-					CreatedAt:    time.Now(),
+-					UpdatedAt:    time.Now(),
+-				}
+-				if err := db.Create(&user).Error; err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"create_user_failed"}}))
+-					return
+-				}
+-				if err := models.SeedPersonalVault(db, user.ID); err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"vault_seed_failed"}}))
+-					return
+-				}
++		user, err := linkOrCreateOAuthUser(db, provider, ui)
++		if err != nil {
++			message := "link_failed"
++			switch {
++			case errors.Is(err, errOAuthUserCreateFailed):
++				message = "create_user_failed"
++			case errors.Is(err, errOAuthVaultSeedFailed):
++				message = "vault_seed_failed"
+ 			}
++			c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{message}}))
++			return
+ 		}
+ 
+ 		if !user.Initialized {
+ 			setupCode := randBytes(32)
+ 			setupCodeHash := hashToken(setupCode)
+@@ -482,14 +512,14 @@ func HandleOAuthExchange(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		})
+ 	}
+ }
+ 
+ type oauthSetupRequest struct {
+-	SetupToken  string         `json:"setup_token" binding:"required"`
+-	AuthVerifier string        `json:"auth_verifier" binding:"required"`
+-	RecoveryCode string        `json:"recovery_code"`
+-	PublicKey    string        `json:"public_key"`
++	SetupToken   string         `json:"setup_token" binding:"required"`
++	AuthVerifier string         `json:"auth_verifier" binding:"required"`
++	RecoveryCode string         `json:"recovery_code"`
++	PublicKey    string         `json:"public_key"`
+ 	Keyring      keyringPayload `json:"keyring"`
+ 	KDF          kdfParams      `json:"kdf"`
+ 	ServerSalt   string         `json:"server_salt" binding:"required"`
+ 	SaltCL       string         `json:"salt_cl" binding:"required"`
+ }
+@@ -608,9 +638,9 @@ func HandleKeyring(db *gorm.DB) gin.HandlerFunc {
+ 		}
+ 
+ 		keyring := fetchKeyring(db, user.ID)
+ 		Success(c, http.StatusOK, gin.H{
+ 			"keyring": keyring,
+-			"salt_cl":  deref(user.SaltCL),
++			"salt_cl": deref(user.SaltCL),
+ 		})
+ 	}
+-}
+\ No newline at end of file
++}
+diff --git a/server/internal/auth/oauth_test.go b/server/internal/auth/oauth_test.go
+index bb4166f..71a743f 100644
+--- a/server/internal/auth/oauth_test.go
++++ b/server/internal/auth/oauth_test.go
+@@ -17,19 +17,19 @@ import (
+ 	"gorm.io/gorm"
+ )
+ 
+ func oauthTestConfig() *config.Config {
+ 	return &config.Config{
+-		JWTSecret:         "test-secret-key",
+-		JWTExpiry:         15 * 60e9,
++		JWTSecret:          "test-secret-key",
++		JWTExpiry:          15 * 60e9,
+ 		RefreshTokenExpiry: 30 * 24 * 60e9,
+-		OAuthGoogleID:     "google-client-id",
+-		OAuthGoogleSecret: "google-client-secret",
+-		OAuthGitHubID:     "github-client-id",
+-		OAuthGitHubSecret: "github-client-secret",
+-		OAuthRedirectBase: "http://localhost:8080",
+-		AppScheme:         "termvault",
++		OAuthGoogleID:      "google-client-id",
++		OAuthGoogleSecret:  "google-client-secret",
++		OAuthGitHubID:      "github-client-id",
++		OAuthGitHubSecret:  "github-client-secret",
++		OAuthRedirectBase:  "http://localhost:8080",
++		AppScheme:          "termvault",
+ 		OAuthRedirectURIs: []string{
+ 			"http://127.0.0.1:1421/oauth/callback",
+ 			"http://127.0.0.1:1422/oauth/callback",
+ 			"http://127.0.0.1:1423/oauth/callback",
+ 		},
+@@ -363,10 +363,64 @@ func TestOAuthCallback_MissingState(t *testing.T) {
+ 	if !contains(location, "missing_code_or_state") {
+ 		t.Errorf("expected missing_code_or_state, got: %s", location)
+ 	}
+ }
+ 
++func TestOAuthCallback_CreatesVerifiedUser(t *testing.T) {
++	db := setupTestDB(t)
++
++	ui := &userInfo{Email: "new-oauth@example.com", Name: "New OAuth User", ProviderSub: "new-sub-1"}
++	user, err := linkOrCreateOAuthUser(db, "google", ui)
++	if err != nil {
++		t.Fatalf("linkOrCreateOAuthUser: %v", err)
++	}
++	if user.EmailVerifiedAt == nil {
++		t.Error("new OAuth user should be email-verified at creation")
++	}
++
++	var persisted models.User
++	if err := db.Where("id = ?", user.ID).First(&persisted).Error; err != nil {
++		t.Fatalf("reload user: %v", err)
++	}
++	if persisted.EmailVerifiedAt == nil {
++		t.Error("created user row should have email_verified_at set")
++	}
++}
++
++func TestOAuthCallback_LinksExistingEmailVerified(t *testing.T) {
++	db := setupTestDB(t)
++
++	existing := models.User{
++		ID:       uuid.New(),
++		Email:    "existing-oauth@example.com",
++		FullName: "Existing User",
++	}
++	if err := db.Create(&existing).Error; err != nil {
++		t.Fatalf("seed user: %v", err)
++	}
++
++	ui := &userInfo{Email: "existing-oauth@example.com", Name: "Existing User", ProviderSub: "link-sub-1"}
++	user, err := linkOrCreateOAuthUser(db, "google", ui)
++	if err != nil {
++		t.Fatalf("linkOrCreateOAuthUser: %v", err)
++	}
++	if user.ID != existing.ID {
++		t.Errorf("expected linked user id %s, got %s", existing.ID, user.ID)
++	}
++	if user.EmailVerifiedAt == nil {
++		t.Error("email-linked OAuth user should be email-verified at link time")
++	}
++
++	var persisted models.User
++	if err := db.Where("id = ?", user.ID).First(&persisted).Error; err != nil {
++		t.Fatalf("reload user: %v", err)
++	}
++	if persisted.EmailVerifiedAt == nil {
++		t.Error("linked user row should have email_verified_at set")
++	}
++}
++
+ func TestOAuthExchange_ValidCode(t *testing.T) {
+ 	db := setupTestDB(t)
+ 	cfg := oauthTestConfig()
+ 	r := oauthRouter(db, cfg)
+ 
+diff --git a/server/internal/config/config.go b/server/internal/config/config.go
+index 7388bd5..7e9ff90 100644
+--- a/server/internal/config/config.go
++++ b/server/internal/config/config.go
+@@ -8,51 +8,57 @@ import (
+ 
+ 	"github.com/joho/godotenv"
+ )
+ 
+ type Config struct {
+-	Port              string
+-	Host              string
+-	DatabaseURL       string
+-	JWTSecret         string
+-	JWTExpiry         time.Duration
+-	RefreshTokenExpiry time.Duration
+-	BaseURL           string
+-	OAuthGoogleID     string
+-	OAuthGoogleSecret string
+-	OAuthGitHubID     string
+-	OAuthGitHubSecret string
+-	OAuthRedirectBase string
+-	OAuthRedirectURIs []string
+-	AppScheme         string
+-	RateLimitAuth     int
+-	RateLimitAPI      int
+-	TrustedProxies    []string
++	Port                     string
++	Host                     string
++	DatabaseURL              string
++	JWTSecret                string
++	JWTExpiry                time.Duration
++	RefreshTokenExpiry       time.Duration
++	BaseURL                  string
++	OAuthGoogleID            string
++	OAuthGoogleSecret        string
++	OAuthGitHubID            string
++	OAuthGitHubSecret        string
++	OAuthRedirectBase        string
++	OAuthRedirectURIs        []string
++	AppScheme                string
++	RateLimitAuth            int
++	RateLimitAPI             int
++	TrustedProxies           []string
++	RequireEmailVerification bool
++	SMTPHost                 string
++	SMTPPort                 int
++	SMTPUsername             string
++	SMTPPassword             string
++	SMTPFrom                 string
+ }
+ 
+ func Load() *Config {
+ 	godotenv.Load()
+ 
+ 	rateLimitAuth := 10
+ 	rateLimitAPI := 30
+ 
+ 	cfg := &Config{
+-		Port:              getEnv("TERMVAULT_PORT", "8080"),
+-		Host:              getEnv("TERMVAULT_HOST", "0.0.0.0"),
+-		DatabaseURL:       getEnv("DATABASE_URL", "sqlite://termvault.db"),
+-		JWTSecret:         os.Getenv("JWT_SECRET"),
+-		JWTExpiry:         parseDuration(getEnv("JWT_EXPIRY", "15m")),
++		Port:               getEnv("TERMVAULT_PORT", "8080"),
++		Host:               getEnv("TERMVAULT_HOST", "0.0.0.0"),
++		DatabaseURL:        getEnv("DATABASE_URL", "sqlite://termvault.db"),
++		JWTSecret:          os.Getenv("JWT_SECRET"),
++		JWTExpiry:          parseDuration(getEnv("JWT_EXPIRY", "15m")),
+ 		RefreshTokenExpiry: parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h")),
+-		BaseURL:           getEnv("BASE_URL", "http://localhost:8080"),
+-		OAuthGoogleID:     os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
+-		OAuthGoogleSecret: os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
+-		OAuthGitHubID:     os.Getenv("OAUTH_GITHUB_CLIENT_ID"),
+-		OAuthGitHubSecret: os.Getenv("OAUTH_GITHUB_CLIENT_SECRET"),
+-		OAuthRedirectBase: getEnv("OAUTH_REDIRECT_BASE", getEnv("BASE_URL", "http://localhost:8080")),
+-		AppScheme:         getEnv("APP_SCHEME", "termvault"),
+-		RateLimitAuth:     rateLimitAuth,
+-		RateLimitAPI:      rateLimitAPI,
++		BaseURL:            getEnv("BASE_URL", "http://localhost:8080"),
++		OAuthGoogleID:      os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
++		OAuthGoogleSecret:  os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
++		OAuthGitHubID:      os.Getenv("OAUTH_GITHUB_CLIENT_ID"),
++		OAuthGitHubSecret:  os.Getenv("OAUTH_GITHUB_CLIENT_SECRET"),
++		OAuthRedirectBase:  getEnv("OAUTH_REDIRECT_BASE", getEnv("BASE_URL", "http://localhost:8080")),
++		AppScheme:          getEnv("APP_SCHEME", "termvault"),
++		RateLimitAuth:      rateLimitAuth,
++		RateLimitAPI:       rateLimitAPI,
+ 	}
+ 
+ 	if v := os.Getenv("RATE_LIMIT_AUTH"); v != "" {
+ 		if n, err := parseIntSafe(v, 10); err == nil {
+ 			cfg.RateLimitAuth = n
+@@ -62,10 +68,22 @@ func Load() *Config {
+ 		if n, err := parseIntSafe(v, 30); err == nil {
+ 			cfg.RateLimitAPI = n
+ 		}
+ 	}
+ 
++	cfg.RequireEmailVerification = parseBoolEnv("REQUIRE_EMAIL_VERIFICATION", false)
++	cfg.SMTPHost = os.Getenv("SMTP_HOST")
++	cfg.SMTPPort = 587
++	if v := os.Getenv("SMTP_PORT"); v != "" {
++		if n, err := parseIntSafe(v, 587); err == nil {
++			cfg.SMTPPort = n
++		}
++	}
++	cfg.SMTPUsername = os.Getenv("SMTP_USERNAME")
++	cfg.SMTPPassword = os.Getenv("SMTP_PASSWORD")
++	cfg.SMTPFrom = os.Getenv("SMTP_FROM")
++
+ 	if v := os.Getenv("TRUSTED_PROXIES"); v != "" {
+ 		for _, cidr := range strings.Split(v, ",") {
+ 			cidr = strings.TrimSpace(cidr)
+ 			if cidr != "" {
+ 				cfg.TrustedProxies = append(cfg.TrustedProxies, cidr)
+@@ -109,5 +127,16 @@ func parseIntSafe(s string, fallback int) (int, error) {
+ 	if err != nil {
+ 		return fallback, err
+ 	}
+ 	return n, nil
+ }
++
++func parseBoolEnv(key string, fallback bool) bool {
++	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
++	switch v {
++	case "true", "1", "yes":
++		return true
++	case "false", "0", "no":
++		return false
++	}
++	return fallback
++}
+diff --git a/server/internal/config/config_test.go b/server/internal/config/config_test.go
+index 7746ef8..dc199ab 100644
+--- a/server/internal/config/config_test.go
++++ b/server/internal/config/config_test.go
+@@ -21,10 +21,34 @@ func TestLoadDefaults(t *testing.T) {
+ 		t.Errorf("expected default rate limit auth 10, got %d", cfg.RateLimitAuth)
+ 	}
+ 	if cfg.RateLimitAPI != 30 {
+ 		t.Errorf("expected default rate limit API 30, got %d", cfg.RateLimitAPI)
+ 	}
++	if cfg.RequireEmailVerification {
++		t.Errorf("expected email verification off by default")
++	}
++	if cfg.SMTPPort != 587 {
++		t.Errorf("expected default SMTP port 587, got %d", cfg.SMTPPort)
++	}
++}
++
++func TestLoadEmailVerificationToggle(t *testing.T) {
++	cases := []struct {
++		val  string
++		want bool
++	}{
++		{"true", true}, {"TRUE", true}, {"1", true}, {"yes", true},
++		{"false", false}, {"0", false}, {"", false}, {"banana", false},
++	}
++	for _, c := range cases {
++		os.Setenv("REQUIRE_EMAIL_VERIFICATION", c.val)
++		cfg := Load()
++		if cfg.RequireEmailVerification != c.want {
++			t.Errorf("REQUIRE_EMAIL_VERIFICATION=%q: got %v want %v", c.val, cfg.RequireEmailVerification, c.want)
++		}
++	}
++	os.Unsetenv("REQUIRE_EMAIL_VERIFICATION")
+ }
+ 
+ func TestLoadEnvOverrides(t *testing.T) {
+ 	os.Setenv("TERMVAULT_PORT", "9090")
+ 	os.Setenv("TERMVAULT_HOST", "127.0.0.1")
+diff --git a/server/internal/email/sender.go b/server/internal/email/sender.go
+new file mode 100644
+index 0000000..993e23f
+--- /dev/null
++++ b/server/internal/email/sender.go
+@@ -0,0 +1,51 @@
++package email
++
++import (
++	"fmt"
++	"log/slog"
++	"net/smtp"
++)
++
++type Sender struct {
++	Host     string
++	Port     int
++	Username string
++	Password string
++	From     string
++}
++
++func New(host string, port int, username, password, from string) *Sender {
++	return &Sender{Host: host, Port: port, Username: username, Password: password, From: from}
++}
++
++func (s *Sender) Enabled() bool {
++	return s.Host != ""
++}
++
++func (s *Sender) SendOtp(to, code string) error {
++	subject := "Your TermVault verification code"
++	html := fmt.Sprintf("<p>Your TermVault verification code is:</p><p style=\"font-size:24px;font-weight:bold\">%s</p><p>It expires in 15 minutes.</p>", code)
++
++	if !s.Enabled() {
++		slog.Info("verification otp", "email", to, "code", code)
++		return nil
++	}
++
++	msg := []byte("From: " + s.From + "\r\n" +
++		"To: " + to + "\r\n" +
++		"Subject: " + subject + "\r\n" +
++		"MIME-Version: 1.0\r\n" +
++		"Content-Type: text/html; charset=UTF-8\r\n" +
++		"\r\n" +
++		html)
++
++	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
++	var auth smtp.Auth
++	if s.Username != "" {
++		auth = smtp.PlainAuth("", s.Username, s.Password, s.Host)
++	}
++	if err := smtp.SendMail(addr, auth, s.From, []string{to}, msg); err != nil {
++		return fmt.Errorf("send verification email: %w", err)
++	}
++	return nil
++}
+diff --git a/server/internal/email/sender_test.go b/server/internal/email/sender_test.go
+new file mode 100644
+index 0000000..0fb9de3
+--- /dev/null
++++ b/server/internal/email/sender_test.go
+@@ -0,0 +1,23 @@
++package email
++
++import "testing"
++
++func TestSendOtp_DisabledLogsAndSucceeds(t *testing.T) {
++	s := New("", 587, "", "", "")
++	if s.Enabled() {
++		t.Fatal("expected disabled sender when host empty")
++	}
++	if err := s.SendOtp("user@example.com", "123456"); err != nil {
++		t.Fatalf("disabled sender should not error: %v", err)
++	}
++}
++
++func TestNew_DefaultPort(t *testing.T) {
++	s := New("smtp.example.com", 587, "u", "p", "no-reply@example.com")
++	if !s.Enabled() {
++		t.Fatal("expected enabled sender when host set")
++	}
++	if s.Port != 587 || s.Username != "u" || s.From != "no-reply@example.com" {
++		t.Fatalf("sender fields not preserved: %+v", s)
++	}
++}
+diff --git a/server/internal/models/auth_code.go b/server/internal/models/auth_code.go
+index 1fc69f4..645d5dc 100644
+--- a/server/internal/models/auth_code.go
++++ b/server/internal/models/auth_code.go
+@@ -11,10 +11,11 @@ type AuthCode struct {
+ 	CodeHash  string     `gorm:"uniqueIndex:idx_auth_codes_code_hash;not null" json:"-"`
+ 	Purpose   string     `gorm:"not null" json:"purpose"`
+ 	UserID    uuid.UUID  `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE" json:"user_id"`
+ 	DeviceID  string     `gorm:"not null" json:"device_id"`
+ 	ExpiresAt time.Time  `gorm:"not null;index" json:"expires_at"`
++	Attempts  int        `gorm:"not null;default:0" json:"-"`
+ 	UsedAt    *time.Time `json:"used_at,omitempty"`
+ 	CreatedAt time.Time  `json:"created_at"`
+ }
+ 
+ func (AuthCode) TableName() string {
+diff --git a/server/internal/models/models_test.go b/server/internal/models/models_test.go
+index 4a136ca..41b6355 100644
+--- a/server/internal/models/models_test.go
++++ b/server/internal/models/models_test.go
+@@ -1,12 +1,12 @@
+ package models
+ 
+ import (
+ 	"testing"
+ 
+-	"github.com/google/uuid"
+ 	gormsqlite "github.com/glebarez/sqlite"
++	"github.com/google/uuid"
+ 	"gorm.io/gorm"
+ )
+ 
+ func setupTestDB(t *testing.T) *gorm.DB {
+ 	t.Helper()
+@@ -15,10 +15,23 @@ func setupTestDB(t *testing.T) *gorm.DB {
+ 		t.Fatalf("failed to open test db: %v", err)
+ 	}
+ 	return db
+ }
+ 
++func TestEmailVerificationColumns(t *testing.T) {
++	db := setupTestDB(t)
++	if err := AutoMigrate(db); err != nil {
++		t.Fatalf("AutoMigrate failed: %v", err)
++	}
++	if !db.Migrator().HasColumn("users", "email_verified_at") {
++		t.Errorf("users.email_verified_at column missing after AutoMigrate")
++	}
++	if !db.Migrator().HasColumn("auth_codes", "attempts") {
++		t.Errorf("auth_codes.attempts column missing after AutoMigrate")
++	}
++}
++
+ func TestAutoMigrate(t *testing.T) {
+ 	db := setupTestDB(t)
+ 
+ 	err := AutoMigrate(db)
+ 	if err != nil {
+diff --git a/server/internal/models/user.go b/server/internal/models/user.go
+index fa7afb9..6c97fb5 100644
+--- a/server/internal/models/user.go
++++ b/server/internal/models/user.go
+@@ -5,27 +5,28 @@ import (
+ 
+ 	"github.com/google/uuid"
+ )
+ 
+ type User struct {
+-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+-	Email        string     `gorm:"uniqueIndex:idx_users_email;not null" json:"email"`
+-	FullName     string     `gorm:"not null" json:"full_name"`
+-	AuthProvider string     `gorm:"not null;default:'password'" json:"auth_provider"`
+-	ProviderSub  *string    `gorm:"uniqueIndex:idx_users_auth_provider_provider_sub" json:"provider_sub,omitempty"`
+-	AuthVerifier *string    `json:"-"`
+-	AuthSalt     *string    `json:"-"`
+-	SaltCL       *string    `json:"salt_cl,omitempty"`
+-	KDFM         int        `gorm:"not null;default:67108864" json:"kdf_m"`
+-	KDFT         int        `gorm:"not null;default:3" json:"kdf_t"`
+-	KDFP         int        `gorm:"not null;default:1" json:"kdf_p"`
+-	PublicKey    *string    `json:"public_key,omitempty"`
+-	RecoveryHash *string    `json:"-"`
+-	Initialized  bool       `gorm:"not null;default:false" json:"initialized"`
+-	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+-	CreatedAt    time.Time  `json:"created_at"`
+-	UpdatedAt    time.Time  `json:"updated_at"`
++	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
++	Email           string     `gorm:"uniqueIndex:idx_users_email;not null" json:"email"`
++	FullName        string     `gorm:"not null" json:"full_name"`
++	AuthProvider    string     `gorm:"not null;default:'password'" json:"auth_provider"`
++	ProviderSub     *string    `gorm:"uniqueIndex:idx_users_auth_provider_provider_sub" json:"provider_sub,omitempty"`
++	AuthVerifier    *string    `json:"-"`
++	AuthSalt        *string    `json:"-"`
++	SaltCL          *string    `json:"salt_cl,omitempty"`
++	KDFM            int        `gorm:"not null;default:67108864" json:"kdf_m"`
++	KDFT            int        `gorm:"not null;default:3" json:"kdf_t"`
++	KDFP            int        `gorm:"not null;default:1" json:"kdf_p"`
++	PublicKey       *string    `json:"public_key,omitempty"`
++	RecoveryHash    *string    `json:"-"`
++	Initialized     bool       `gorm:"not null;default:false" json:"initialized"`
++	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
++	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
++	CreatedAt       time.Time  `json:"created_at"`
++	UpdatedAt       time.Time  `json:"updated_at"`
+ }
+ 
+ func (User) TableName() string {
+ 	return "users"
+ }
+
+(wrote 23 commits)

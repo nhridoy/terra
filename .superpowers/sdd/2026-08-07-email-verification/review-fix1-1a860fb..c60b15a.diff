@@ -1,0 +1,58 @@
+# Review package: 1a860fb..c60b15a
+
+## Commits
+c60b15a fix: clear pending verification state on teardown and login
+
+## Files changed
+ client/src/stores/auth/authStore.ts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+## Diff
+diff --git a/client/src/stores/auth/authStore.ts b/client/src/stores/auth/authStore.ts
+index 6a5c53a..c3bc38c 100644
+--- a/client/src/stores/auth/authStore.ts
++++ b/client/src/stores/auth/authStore.ts
+@@ -119,20 +119,21 @@ async function teardownSession(): Promise<void> {
+     await deletePassword();
+   } catch {
+     // ignore keychain purge errors
+   }
+   useAuthStore.setState({
+     user: null,
+     tokens: null,
+     isAuthenticated: false,
+     isUnlocked: false,
+     pendingOAuth: null,
++    pendingVerificationEmail: null,
+   });
+   await persistTokens(null);
+   try {
+     await wipeLocalData();
+   } catch {
+     // ignore local cache wipe errors
+   }
+ }
+ 
+ let _restoreSessionLock: Promise<void> | null = null;
+@@ -325,20 +326,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
+ 
+       const newTokens = {
+         access_token: res.access_token,
+         refresh_token: res.refresh_token,
+       };
+       set({
+         user: res.user,
+         tokens: newTokens,
+         isAuthenticated: true,
+         isUnlocked: true,
++        pendingVerificationEmail: null,
+         isLoading: false,
+       });
+       await persistTokens(newTokens);
+       if (!get().alwaysAsk) {
+         await savePassword(password);
+       }
+     } catch (err) {
+       if (
+         err instanceof AuthApiError &&
+         err.apiError.code === "VERIFICATION_REQUIRED"

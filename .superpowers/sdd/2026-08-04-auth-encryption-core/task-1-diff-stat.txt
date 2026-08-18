@@ -1,0 +1,15 @@
+ server/cmd/termvault-server/main.go     |  33 ++++++++--
+ server/go.mod                           |  19 +++++-
+ server/go.sum                           |  37 +++++++++++
+ server/internal/config/config.go        |  97 +++++++++++++++++++++++++++
+ server/internal/config/config_test.go   |  57 ++++++++++++++++
+ server/internal/models/auth_code.go     |  18 +++++
+ server/internal/models/models.go        |  40 +++++++++++
+ server/internal/models/models_test.go   | 113 ++++++++++++++++++++++++++++++++
+ server/internal/models/oauth_state.go   |  17 +++++
+ server/internal/models/record.go        |  19 ++++++
+ server/internal/models/refresh_token.go |  20 ++++++
+ server/internal/models/user.go          |  26 ++++++++
+ server/internal/models/user_key.go      |  15 +++++
+ server/internal/models/vault.go         |  16 +++++
+ 14 files changed, 521 insertions(+), 6 deletions(-)

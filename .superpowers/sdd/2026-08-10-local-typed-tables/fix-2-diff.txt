@@ -1,0 +1,112 @@
+diff --git a/client/src-tauri/src/db.rs b/client/src-tauri/src/db.rs
+index 11204fe..197bc8f 100644
+--- a/client/src-tauri/src/db.rs
++++ b/client/src-tauri/src/db.rs
+@@ -595,22 +595,22 @@ pub fn list_sync_rows(db: &LocalDb, table: Table, vault_id: &str, include_delete
+     let rows = stmt.query_map(rusqlite::params![vault_id], |r| row_from(table, r))
+         .map_err(|e| e.to_string())?
+         .filter_map(|r| r.ok())
+         .collect::<Vec<_>>();
+     Ok(rows)
+ }
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub enum Table { Groups, Hosts, Keys, Snippets, Workspaces, Presets }
+ 
+-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+-#[serde(rename_all = "snake_case")]
++#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "snake_case", default)]
+ pub struct SyncRow {
+     pub id: String,
+     pub revision: i64,
+     pub vault_id: String,
+     pub created_at: i64,
+     pub updated_at: i64,
+     pub deleted_at: Option<i64>,
+     pub name: Option<String>,
+     pub os: Option<String>,
+     pub description: Option<String>,
+@@ -841,20 +841,60 @@ mod tests {
+         assert_eq!(pending.len(), 2);
+     }
+ 
+     #[test]
+     fn test_table_parse_rejects_unknown() {
+         assert_eq!(Table::parse("hosts").unwrap(), Table::Hosts);
+         assert!(Table::parse("hosts; DROP TABLE groups").is_err());
+         assert!(Table::parse("HOSTS").is_err());
+     }
+ 
++    #[test]
++    fn test_sync_row_deserializes_store_shapes() {
++        let host = serde_json::from_value::<SyncRow>(serde_json::json!({
++            "id": "h1", "vault_id": "v1", "name": "prod",
++            "group_id": "g1", "key_id": "k1", "sort_order": 0, "data": "enc"
++        })).unwrap();
++        assert_eq!(host.revision, 0);
++        assert_eq!(host.created_at, 0);
++        assert_eq!(host.updated_at, 0);
++        assert!(host.deleted_at.is_none());
++        assert_eq!(host.name.as_deref(), Some("prod"));
++        assert!(host.os.is_none());
++        assert_eq!(host.group_id.as_deref(), Some("g1"));
++        assert_eq!(host.key_id.as_deref(), Some("k1"));
++        assert_eq!(host.data, "enc");
++
++        let key = serde_json::from_value::<SyncRow>(serde_json::json!({
++            "id": "k1", "vault_id": "v1", "name": "ssh",
++            "description": "main", "sort_order": 0, "data": "enc"
++        })).unwrap();
++        assert_eq!(key.revision, 0);
++        assert_eq!(key.description.as_deref(), Some("main"));
++        assert!(key.group_id.is_none() && key.key_id.is_none());
++
++        let snippet = serde_json::from_value::<SyncRow>(serde_json::json!({
++            "id": "s1", "vault_id": "v1", "name": "script",
++            "description": "d", "sort_order": 0, "data": "enc"
++        })).unwrap();
++        assert_eq!(snippet.revision, 0);
++        assert_eq!(snippet.name.as_deref(), Some("script"));
++
++        let workspace = serde_json::from_value::<SyncRow>(serde_json::json!({
++            "id": "w1", "vault_id": "v1", "name": "prod", "sort_order": 0, "data": "enc"
++        })).unwrap();
++        assert_eq!(workspace.revision, 0);
++        assert_eq!(workspace.updated_at, 0);
++        assert!(workspace.deleted_at.is_none());
++        assert_eq!(workspace.data, "enc");
++    }
++
+     #[test]
+     fn test_upsert_vault_roundtrip() {
+         let db = test_db();
+         let vault = VaultRow {
+             id: "v1".to_string(),
+             owner_id: "u1".to_string(),
+             kind: "personal".to_string(),
+             name: "Personal".to_string(),
+             created_at: "1700000000".to_string(),
+             updated_at: "1700000000".to_string(),
+diff --git a/client/src/lib/db/db.ts b/client/src/lib/db/db.ts
+index ee5360e..83041d1 100644
+--- a/client/src/lib/db/db.ts
++++ b/client/src/lib/db/db.ts
+@@ -55,16 +55,16 @@ export async function upsertRow(
+ 
+ export async function deleteRow(table: TableName, id: string): Promise<void> {
+   await invoke("db_delete", { table, id });
+ }
+ 
+ export async function getOutbox(): Promise<OutboxEntry[]> {
+   return invoke<OutboxEntry[]>("db_outbox");
+ }
+ 
+ // Reset the on-device SQLite cache to a pristine, fresh-install state.
+-// Best-effort: removes the DB file plus WAL/SHM sidecars so a re-open
++// Best-effort: deletes all rows from all local tables (wipe_all) so a re-open
+ // recreates all tables empty. Called on logout so no encrypted local rows
+ // remain on disk once the user signs out.
+ export async function wipeLocalData(): Promise<void> {
+   await invoke("wipe_local_data");
+ }

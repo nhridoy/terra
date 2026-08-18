@@ -1,0 +1,506 @@
+diff --git a/client/src-tauri/src/db.rs b/client/src-tauri/src/db.rs
+index 38b1575..eecbb08 100644
+--- a/client/src-tauri/src/db.rs
++++ b/client/src-tauri/src/db.rs
+@@ -1,27 +1,27 @@
+ use rusqlite::{params, Connection};
+-use std::path::{Path, PathBuf};
+ use std::sync::Mutex;
+ 
+ pub const DB_FILE_NAME: &str = "termvault.db";
+ 
+-/// Reset the local database to a pristine, fresh-install state by removing the
+-/// database file and any SQLite sidecars (write-ahead log, shared-memory file).
+-/// A subsequent `open()` recreates all tables empty. No-op-safe: missing files
+-/// are simply skipped.
+-pub fn wipe_database(db_path: &Path) -> Result<(), String> {
+-    for suffix in ["", "-wal", "-shm"] {
+-        let candidate = PathBuf::from(format!("{}{}", db_path.display(), suffix));
+-        if candidate.exists() {
+-            std::fs::remove_file(&candidate)
+-                .map_err(|e| format!("wipe_database: failed to remove {}: {e}", candidate.display()))?;
+-        }
++/// Reset the local database contents to pristine state. Row-deletion is used
++/// instead of file removal because the managed connection holds the DB file
++/// open (Windows cannot delete an open file). Does not VACUUM ΓÇö file size is
++/// retained, data is gone.
++pub fn wipe_all(db: &LocalDb) -> Result<(), String> {
++    let conn = db.conn.lock().map_err(|e| e.to_string())?;
++    for table in [
++        "user_profiles", "user_keys", "vaults", "groups", "hosts", "keys",
++        "snippets", "workspaces", "presets", "outbox", "sync_conflicts", "__sync_meta",
++    ] {
++        conn.execute_batch(&format!("DELETE FROM {table};"))
++            .map_err(|e| format!("wipe_all: {table}: {e}"))?;
+     }
+     Ok(())
+ }
+ 
+ pub struct LocalDb {
+     pub conn: Mutex<Connection>,
+ }
+ 
+ /// Open (or create) the local SQLite database and ensure all tables exist.
+ pub fn open(path: &str) -> Result<LocalDb, String> {
+@@ -58,39 +58,134 @@ pub fn open(path: &str) -> Result<LocalDb, String> {
+ 
+         CREATE TABLE IF NOT EXISTS vaults (
+             id TEXT PRIMARY KEY,
+             owner_id TEXT NOT NULL,
+             kind TEXT NOT NULL,
+             name TEXT NOT NULL,
+             created_at TEXT NOT NULL,
+             updated_at TEXT NOT NULL
+         );
+ 
+-        CREATE TABLE IF NOT EXISTS records (
++        -- Synced tables: shared envelope (id, revision, vault_id, created_at,
++        -- updated_at, deleted_at) + plaintext whitelist columns + opaque encrypted
++        -- data blob (AEAD with AAD = table name). No SQL FK constraints: rows can
++        -- arrive via sync in any order (hydration without transient failures).
++        CREATE TABLE IF NOT EXISTS groups (
+             id TEXT PRIMARY KEY,
+-            user_id TEXT NOT NULL,
++            revision INTEGER NOT NULL DEFAULT 1,
+             vault_id TEXT NOT NULL,
+-            record_type TEXT NOT NULL,
+-            data TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            parent_id TEXT,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
++        );
++        CREATE INDEX IF NOT EXISTS idx_groups_vault_parent ON groups(vault_id, parent_id, sort_order);
++
++        CREATE TABLE IF NOT EXISTS hosts (
++            id TEXT PRIMARY KEY,
+             revision INTEGER NOT NULL DEFAULT 1,
+-            deleted_at TEXT,
+-            created_at TEXT NOT NULL,
+-            updated_at TEXT NOT NULL
++            vault_id TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            os TEXT,
++            group_id TEXT,
++            key_id TEXT,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
++        );
++        CREATE INDEX IF NOT EXISTS idx_hosts_vault_group ON hosts(vault_id, group_id, sort_order);
++
++        CREATE TABLE IF NOT EXISTS keys (
++            id TEXT PRIMARY KEY,
++            revision INTEGER NOT NULL DEFAULT 1,
++            vault_id TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            description TEXT,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
++        );
++        CREATE INDEX IF NOT EXISTS idx_keys_vault ON keys(vault_id, sort_order);
++
++        CREATE TABLE IF NOT EXISTS snippets (
++            id TEXT PRIMARY KEY,
++            revision INTEGER NOT NULL DEFAULT 1,
++            vault_id TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            description TEXT,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
++        );
++        CREATE INDEX IF NOT EXISTS idx_snippets_vault ON snippets(vault_id, sort_order);
++
++        CREATE TABLE IF NOT EXISTS workspaces (
++            id TEXT PRIMARY KEY,
++            revision INTEGER NOT NULL DEFAULT 1,
++            vault_id TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
+         );
++        CREATE INDEX IF NOT EXISTS idx_workspaces_vault ON workspaces(vault_id, sort_order);
+ 
+-        CREATE INDEX IF NOT EXISTS idx_records_vault_id_revision ON records(vault_id, revision);
+-        CREATE INDEX IF NOT EXISTS idx_records_vault_id ON records(vault_id);
+-        CREATE INDEX IF NOT EXISTS idx_records_user_id ON records(user_id);
++        CREATE TABLE IF NOT EXISTS presets (
++            id TEXT PRIMARY KEY,
++            revision INTEGER NOT NULL DEFAULT 1,
++            vault_id TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            updated_at INTEGER NOT NULL,
++            deleted_at INTEGER,
++            name TEXT NOT NULL,
++            sort_order INTEGER NOT NULL DEFAULT 0,
++            data TEXT NOT NULL DEFAULT '{}'
++        );
++        CREATE INDEX IF NOT EXISTS idx_presets_vault ON presets(vault_id, sort_order);
++
++        CREATE TABLE IF NOT EXISTS outbox (
++            table_name TEXT NOT NULL,
++            record_id TEXT NOT NULL,
++            queued_at INTEGER NOT NULL,
++            PRIMARY KEY (table_name, record_id)
++        );
++        CREATE INDEX IF NOT EXISTS idx_outbox_queued_at ON outbox(queued_at);
++
++        CREATE TABLE IF NOT EXISTS sync_conflicts (
++            table_name TEXT NOT NULL,
++            record_id TEXT NOT NULL,
++            remote_rev INTEGER NOT NULL,
++            remote_payload TEXT NOT NULL,
++            created_at INTEGER NOT NULL,
++            PRIMARY KEY (table_name, record_id)
++        );
++
++        CREATE TABLE IF NOT EXISTS __sync_meta (
++            vault_id TEXT PRIMARY KEY,
++            watermark INTEGER NOT NULL DEFAULT 0,
++            last_sync_at INTEGER,
++            last_device_id TEXT
++);
+         ",
+     )
+     .map_err(|e| format!("Failed to create tables: {e}"))?;
+-
+     Ok(LocalDb {
+         conn: Mutex::new(conn),
+     })
+ }
+ 
+ #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+ pub struct UserProfile {
+     pub id: String,
+     pub email: String,
+     pub name: String,
+@@ -252,172 +347,71 @@ pub fn upsert_vault(db: &LocalDb, vault: &VaultRow) -> Result<(), String> {
+             vault.kind,
+             vault.name,
+             vault.created_at,
+             vault.updated_at,
+         ],
+     )
+     .map_err(|e| format!("upsert_vault: {e}"))?;
+     Ok(())
+ }
+ 
+-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+-pub struct RecordRow {
+-    pub id: String,
+-    pub user_id: String,
+-    pub vault_id: String,
+-    pub record_type: String,
+-    pub data: String,
+-    pub revision: i64,
+-    pub deleted_at: Option<String>,
+-    pub created_at: String,
+-    pub updated_at: String,
+-}
+-
+-pub fn upsert_record(db: &LocalDb, record: &RecordRow) -> Result<(), String> {
+-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+-    conn.execute(
+-        "INSERT INTO records (id, user_id, vault_id, record_type, data, revision, deleted_at, created_at, updated_at)
+-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+-         ON CONFLICT(id) DO UPDATE SET
+-            data=excluded.data, revision=excluded.revision, deleted_at=excluded.deleted_at,
+-            record_type=excluded.record_type, updated_at=excluded.updated_at",
+-        params![
+-            record.id,
+-            record.user_id,
+-            record.vault_id,
+-            record.record_type,
+-            record.data,
+-            record.revision,
+-            record.deleted_at,
+-            record.created_at,
+-            record.updated_at,
+-        ],
+-    )
+-    .map_err(|e| format!("upsert_record: {e}"))?;
+-    Ok(())
+-}
+-
+-/// Query records in a vault. If `include_deleted` is false, soft-deleted records are excluded.
+-pub fn query_records(
+-    db: &LocalDb,
+-    vault_id: &str,
+-    include_deleted: bool,
+-) -> Result<Vec<RecordRow>, String> {
+-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+-    let sql = if include_deleted {
+-        "SELECT id, user_id, vault_id, record_type, data, revision, deleted_at, created_at, updated_at
+-         FROM records WHERE vault_id = ?1 ORDER BY revision DESC"
+-    } else {
+-        "SELECT id, user_id, vault_id, record_type, data, revision, deleted_at, created_at, updated_at
+-         FROM records WHERE vault_id = ?1 AND deleted_at IS NULL ORDER BY revision DESC"
+-    };
+-
+-    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+-    let rows = stmt
+-        .query_map(params![vault_id], |row| {
+-            Ok(RecordRow {
+-                id: row.get(0)?,
+-                user_id: row.get(1)?,
+-                vault_id: row.get(2)?,
+-                record_type: row.get(3)?,
+-                data: row.get(4)?,
+-                revision: row.get(5)?,
+-                deleted_at: row.get(6)?,
+-                created_at: row.get(7)?,
+-                updated_at: row.get(8)?,
+-            })
+-        })
+-        .map_err(|e| e.to_string())?
+-        .filter_map(|r| r.ok())
+-        .collect();
+-
+-    Ok(rows)
+-}
+-
+-/// Soft-delete a record by setting deleted_at.
+-pub fn delete_record(db: &LocalDb, record_id: &str) -> Result<(), String> {
+-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+-    let now = chrono_utc_now();
+-    conn.execute(
+-        "UPDATE records SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+-        params![now, record_id],
+-    )
+-    .map_err(|e| format!("delete_record: {e}"))?;
+-    Ok(())
+-}
+-
+-/// Hard-delete a record (for cleanup/testing).
+-pub fn hard_delete_record(db: &LocalDb, record_id: &str) -> Result<(), String> {
+-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+-    conn.execute("DELETE FROM records WHERE id = ?1", params![record_id])
+-        .map_err(|e| format!("hard_delete_record: {e}"))?;
+-    Ok(())
+-}
+-
+ fn chrono_utc_now() -> String {
+     // Avoid chrono dependency ΓÇö use a simple ISO-8601 timestamp
+     let now = std::time::SystemTime::now()
+         .duration_since(std::time::UNIX_EPOCH)
+         .unwrap_or_default()
+         .as_secs();
+     format!("{now}")
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
+     fn test_db() -> LocalDb {
+         open(":memory:").unwrap()
+     }
+ 
+     #[test]
+-    fn test_wipe_database_removes_db_and_sidecars() {
+-        let dir = std::env::temp_dir().join(format!("termvault-wipe-test-{}", std::process::id()));
+-        std::fs::create_dir_all(&dir).unwrap();
+-        let db_path = dir.join(DB_FILE_NAME);
+-        std::fs::write(&db_path, b"db").unwrap();
+-        std::fs::write(PathBuf::from(format!("{}-wal", db_path.display())), b"wal").unwrap();
+-        std::fs::write(PathBuf::from(format!("{}-shm", db_path.display())), b"shm").unwrap();
+-
+-        wipe_database(&db_path).unwrap();
+-
+-        assert!(!db_path.exists());
+-        assert!(!PathBuf::from(format!("{}-wal", db_path.display())).exists());
+-        assert!(!PathBuf::from(format!("{}-shm", db_path.display())).exists());
+-        let _ = std::fs::remove_dir_all(&dir);
+-    }
+-
+-    #[test]
+-    fn test_wipe_database_is_noop_when_missing() {
+-        let dir = std::env::temp_dir().join(format!("termvault-wipe-noop-{}", std::process::id()));
+-        let db_path = dir.join(DB_FILE_NAME);
+-        assert!(wipe_database(&db_path).is_ok());
+-        let _ = std::fs::remove_dir_all(&dir);
+-    }
+-
+-    #[test]
+-    fn test_open_creates_tables() {
++    fn test_open_creates_synced_tables() {
+         let db = test_db();
+         let conn = db.conn.lock().unwrap();
+-        // Check all expected tables exist
+         let tables: Vec<String> = conn
+             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+             .unwrap()
+             .query_map([], |row| row.get(0))
+             .unwrap()
+             .filter_map(|r| r.ok())
+             .collect();
+-        assert!(tables.contains(&"user_profiles".to_string()));
+-        assert!(tables.contains(&"user_keys".to_string()));
+-        assert!(tables.contains(&"vaults".to_string()));
+-        assert!(tables.contains(&"records".to_string()));
++        for t in ["user_profiles", "user_keys", "vaults", "groups", "hosts", "keys",
++                  "snippets", "workspaces", "presets", "outbox", "sync_conflicts", "__sync_meta"] {
++            assert!(tables.contains(&t.to_string()), "missing table {t}");
++        }
++        assert!(!tables.contains(&"records".to_string()));
++    }
++
++    #[test]
++    fn test_wipe_all_clears_every_row() {
++        let db = test_db();
++        let conn = db.conn.lock().unwrap();
++        conn.execute(
++            "INSERT INTO hosts (id, revision, vault_id, created_at, updated_at, name, sort_order, data)
++             VALUES ('h1', 1, 'v1', 1, 1, 'box', 0, '{}')", [],
++        ).unwrap();
++        conn.execute(
++            "INSERT INTO outbox (table_name, record_id, queued_at) VALUES ('hosts', 'h1', 1)", [],
++        ).unwrap();
++        drop(conn);
++        wipe_all(&db).unwrap();
++        let conn = db.conn.lock().unwrap();
++        assert_eq!(conn.query_row("SELECT COUNT(*) FROM hosts", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
++        assert_eq!(conn.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+     }
+ 
+     #[test]
+     fn test_upsert_user_profile_roundtrip() {
+         let db = test_db();
+         let profile = UserProfile {
+             id: "u1".to_string(),
+             email: "test@example.com".to_string(),
+             name: "Test User".to_string(),
+             auth_provider: "password".to_string(),
+@@ -508,90 +502,11 @@ mod tests {
+             updated_at: "1700000000".to_string(),
+         };
+         upsert_vault(&db, &vault).unwrap();
+ 
+         let conn = db.conn.lock().unwrap();
+         let name: String = conn
+             .query_row("SELECT name FROM vaults WHERE id = 'v1'", [], |row| row.get(0))
+             .unwrap();
+         assert_eq!(name, "Personal");
+     }
+-
+-    #[test]
+-    fn test_upsert_record_and_query_roundtrip() {
+-        let db = test_db();
+-        let record = RecordRow {
+-            id: "r1".to_string(),
+-            user_id: "u1".to_string(),
+-            vault_id: "v1".to_string(),
+-            record_type: "host".to_string(),
+-            data: "encrypted_host_data".to_string(),
+-            revision: 1,
+-            deleted_at: None,
+-            created_at: "1700000000".to_string(),
+-            updated_at: "1700000000".to_string(),
+-        };
+-        upsert_record(&db, &record).unwrap();
+-
+-        let records = query_records(&db, "v1", false).unwrap();
+-        assert_eq!(records.len(), 1);
+-        assert_eq!(records[0].id, "r1");
+-        assert_eq!(records[0].record_type, "host");
+-        assert_eq!(records[0].data, "encrypted_host_data");
+-    }
+-
+-    #[test]
+-    fn test_delete_record_marks_deleted() {
+-        let db = test_db();
+-        let record = RecordRow {
+-            id: "r1".to_string(),
+-            user_id: "u1".to_string(),
+-            vault_id: "v1".to_string(),
+-            record_type: "host".to_string(),
+-            data: "data".to_string(),
+-            revision: 1,
+-            deleted_at: None,
+-            created_at: "1700000000".to_string(),
+-            updated_at: "1700000000".to_string(),
+-        };
+-        upsert_record(&db, &record).unwrap();
+-
+-        delete_record(&db, "r1").unwrap();
+-
+-        // Should not appear when excluding deleted
+-        let visible = query_records(&db, "v1", false).unwrap();
+-        assert!(visible.is_empty());
+-
+-        // Should appear when including deleted
+-        let all = query_records(&db, "v1", true).unwrap();
+-        assert_eq!(all.len(), 1);
+-        assert!(all[0].deleted_at.is_some());
+-    }
+-
+-    #[test]
+-    fn test_query_records_excludes_deleted_by_default() {
+-        let db = test_db();
+-        for i in 0..5 {
+-            let record = RecordRow {
+-                id: format!("r{i}"),
+-                user_id: "u1".to_string(),
+-                vault_id: "v1".to_string(),
+-                record_type: "host".to_string(),
+-                data: format!("data_{i}"),
+-                revision: i + 1,
+-                deleted_at: None,
+-                created_at: "1700000000".to_string(),
+-                updated_at: "1700000000".to_string(),
+-            };
+-            upsert_record(&db, &record).unwrap();
+-        }
+-        delete_record(&db, "r2").unwrap();
+-        delete_record(&db, "r4").unwrap();
+-
+-        let visible = query_records(&db, "v1", false).unwrap();
+-        assert_eq!(visible.len(), 3);
+-        let ids: Vec<&str> = visible.iter().map(|r| r.id.as_str()).collect();
+-        assert!(ids.contains(&"r0"));
+-        assert!(ids.contains(&"r1"));
+-        assert!(ids.contains(&"r3"));
+-    }
+ }
+diff --git a/client/src-tauri/src/lib.rs b/client/src-tauri/src/lib.rs
+index caa865f..b87620b 100644
+--- a/client/src-tauri/src/lib.rs
++++ b/client/src-tauri/src/lib.rs
+@@ -42,21 +42,22 @@ fn set_api_url(url: String, state: tauri::State<'_, AppState>) -> Result<(), Str
+ fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
+ 	let guard = state.api_url.lock().map_err(|e| e.to_string())?;
+ 	Ok(guard
+         .clone()
+         .unwrap_or_else(|| "http://localhost:8080".to_string()))
+ }
+ 
+ #[tauri::command]
+ fn wipe_local_data(app: tauri::AppHandle) -> Result<(), String> {
+ 	let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+-	db::wipe_database(&dir.join(db::DB_FILE_NAME))
++	let local_db = db::open(&dir.join(db::DB_FILE_NAME).to_string_lossy())?;
++	db::wipe_all(&local_db)
+ }
+ 
+ #[tauri::command]
+ fn write_file(path: String, contents: String) -> Result<(), String> {
+     let p = std::path::Path::new(&path);
+     if let Some(parent) = p.parent() {
+         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+     }
+     std::fs::write(p, contents).map_err(|e| e.to_string())
+ }

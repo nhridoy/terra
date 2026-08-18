@@ -1,0 +1,2 @@
+5bece7f feat: tombstone deletes and outbox pending/remove with tests
+9910db1 docs: offline-first plan #2 - local typed tables + outbox (incl. outbox atomicity amendment)

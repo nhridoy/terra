@@ -1,0 +1,5 @@
+ client/src/stores/snippets/snippetStore.test.ts    | 210 +++++++++++++++++++++
+ client/src/stores/snippets/snippetStore.ts         | 139 +++++++++++++-
+ .../src/stores/workspaces/workspaceStore.test.ts   | 210 +++++++++++++++++++++
+ client/src/stores/workspaces/workspaceStore.ts     | 133 ++++++++++++-
+ 4 files changed, 682 insertions(+), 10 deletions(-)

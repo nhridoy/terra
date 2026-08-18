@@ -1,0 +1,1 @@
+df31c00 feat: Table enum, SyncRow, generic upsert/get/list with revision clock and outbox

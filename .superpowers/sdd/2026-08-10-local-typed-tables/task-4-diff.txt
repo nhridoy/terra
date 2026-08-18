@@ -1,0 +1,112 @@
+diff --git a/client/src-tauri/src/lib.rs b/client/src-tauri/src/lib.rs
+index b87620b..bef5706 100644
+--- a/client/src-tauri/src/lib.rs
++++ b/client/src-tauri/src/lib.rs
+@@ -40,24 +40,52 @@ fn set_api_url(url: String, state: tauri::State<'_, AppState>) -> Result<(), Str
+ 
+ #[tauri::command]
+ fn get_api_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
+ 	let guard = state.api_url.lock().map_err(|e| e.to_string())?;
+ 	Ok(guard
+         .clone()
+         .unwrap_or_else(|| "http://localhost:8080".to_string()))
+ }
+ 
+ #[tauri::command]
+-fn wipe_local_data(app: tauri::AppHandle) -> Result<(), String> {
+-	let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+-	let local_db = db::open(&dir.join(db::DB_FILE_NAME).to_string_lossy())?;
+-	db::wipe_all(&local_db)
++fn wipe_local_data(db: tauri::State<'_, db::LocalDb>) -> Result<(), String> {
++    db::wipe_all(&db)
++}
++
++#[tauri::command]
++fn db_upsert(db: tauri::State<'_, db::LocalDb>, table: String, row: serde_json::Value) -> Result<db::SyncRow, String> {
++    let table = db::Table::parse(&table)?;
++    let row: db::SyncRow = serde_json::from_value(row).map_err(|e| format!("db_upsert: bad row: {e}"))?;
++    db::upsert_sync_row(&db, table, &row)
++}
++
++#[tauri::command]
++fn db_get(db: tauri::State<'_, db::LocalDb>, table: String, id: String) -> Result<Option<db::SyncRow>, String> {
++    let table = db::Table::parse(&table)?;
++    db::get_sync_row(&db, table, &id)
++}
++
++#[tauri::command]
++fn db_list(db: tauri::State<'_, db::LocalDb>, table: String, vault_id: String, include_deleted: Option<bool>) -> Result<Vec<db::SyncRow>, String> {
++    let table = db::Table::parse(&table)?;
++    db::list_sync_rows(&db, table, &vault_id, include_deleted.unwrap_or(false))
++}
++
++#[tauri::command]
++fn db_delete(db: tauri::State<'_, db::LocalDb>, table: String, id: String) -> Result<(), String> {
++    let table = db::Table::parse(&table)?;
++    db::tombstone_sync_row(&db, table, &id)
++}
++
++#[tauri::command]
++fn db_outbox(db: tauri::State<'_, db::LocalDb>) -> Result<Vec<db::OutboxEntry>, String> {
++    db::outbox_pending(&db)
+ }
+ 
+ #[tauri::command]
+ fn write_file(path: String, contents: String) -> Result<(), String> {
+     let p = std::path::Path::new(&path);
+     if let Some(parent) = p.parent() {
+         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+     }
+     std::fs::write(p, contents).map_err(|e| e.to_string())
+ }
+@@ -884,20 +912,24 @@ pub fn run() {
+             tauri_plugin_prevent_default::Builder::new()
+                 .platform(PlatformOptions::new().browser_accelerator_keys(false))
+                 .build(),
+         )
+         .setup(|app| {
+             let window = app
+                 .get_webview_window("main")
+                 .ok_or("main window not found")?;
+             window.set_title("TermVault")?;
+ 
++            let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
++            let db_path = data_dir.join(db::DB_FILE_NAME);
++            app.manage(db::open(&db_path.display().to_string())?);
++
+             let handle = app.handle().clone();
+             app.listen("main-ready", move |_| {
+                 let splash = handle.get_webview_window("splashscreen");
+                 let main = handle.get_webview_window("main");
+                 if let Some(s) = splash {
+                     let _ = s.close();
+                 }
+                 if let Some(m) = main {
+                     let _ = m.show();
+                 }
+@@ -923,20 +955,25 @@ pub fn run() {
+             readers: Mutex::new(HashMap::new()),
+             killers: Mutex::new(HashMap::new()),
+             children: Mutex::new(HashMap::new()),
+         })
+         .manage(oauth::OAuthListener::default())
+         .invoke_handler(tauri::generate_handler![
+             get_device_id,
+             set_api_url,
+             get_api_url,
+             wipe_local_data,
++            db_upsert,
++            db_get,
++            db_list,
++            db_delete,
++            db_outbox,
+             write_file,
+             detect_shells,
+             is_same_volume,
+             get_file_size,
+             copy_files_with_progress,
+             cancel_copy,
+             connect_local,
+             send_input_local,
+             resize_local,
+             disconnect_local,

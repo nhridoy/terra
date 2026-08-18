@@ -1,0 +1,3 @@
+ client/src-tauri/src/db.rs                         |  114 +-
+ .../plans/2026-08-10-local-typed-tables.md         | 1319 ++++++++++++++++++++
+ 2 files changed, 1430 insertions(+), 3 deletions(-)

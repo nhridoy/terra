@@ -1,0 +1,78 @@
+# Review package: a363294..e0bb241
+
+## Commits
+e0bb241 feat: client api for verify-email and resend
+
+## Files changed
+ client/src/lib/api/auth.ts | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/client/src/lib/api/auth.ts b/client/src/lib/api/auth.ts
+index a2d53e9..00f04b1 100644
+--- a/client/src/lib/api/auth.ts
++++ b/client/src/lib/api/auth.ts
+@@ -177,42 +177,62 @@ export interface RegisterRequest {
+   password_hash: string;
+   recovery_code?: string;
+   public_key?: string;
+   keyring?: KeyringRows;
+   nonce: string;
+   kdf: { m: number; t: number; p: number };
+   server_salt: string;
+   salt_cl: string;
+ }
+ 
+-export interface RegisterResponse extends TokenPair {
++export interface RegisterResponse extends Partial<TokenPair> {
+   user: User;
++  verification_required?: boolean;
++}
++
++export interface VerifyEmailResponse extends TokenPair {
++  user: User;
++  keyring?: KeyringRows;
+ }
+ 
+ export interface RecoveryPrefetchResponse {
+   nonce: string;
+   email: string;
+   kdf: { m: number; t: number; p: number };
+   server_salt: string;
+   salt_cl: string;
+   dek_wrapped_by_recovery: string;
+ }
+ 
+ export const authApi = {
+   async prelogin(email: string): Promise<PreloginResponse> {
+     return apiFetch("POST", "/api/v1/auth/prelogin", { email });
+   },
+ 
+   async register(req: RegisterRequest): Promise<RegisterResponse> {
+     return apiFetch("POST", "/api/v1/auth/register", req);
+   },
+ 
++  async verifyEmail(params: {
++    email: string;
++    otp: string;
++    device_id: string;
++  }): Promise<VerifyEmailResponse> {
++    return apiFetch("POST", "/api/v1/auth/verify-email", params);
++  },
++
++  async resendVerification(email: string): Promise<{
++    verification_required: boolean;
++  }> {
++    return apiFetch("POST", "/api/v1/auth/resend-verification", { email });
++  },
++
+   async login(params: {
+     email: string;
+     proof: string;
+     nonce: string;
+     device_id: string;
+     client_pubkey: string;
+   }): Promise<LoginResponse> {
+     return apiFetch("POST", "/api/v1/auth/login", params);
+   },
+ 

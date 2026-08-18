@@ -1,0 +1,332 @@
+# Review package: e9aff1b..6f71bcb
+
+## Commits
+6f71bcb feat: oauth users auto-verified
+
+## Files changed
+ server/internal/auth/oauth.go      | 104 ++++++++++++++++++++++++-------------
+ server/internal/auth/oauth_test.go |  70 ++++++++++++++++++++++---
+ 2 files changed, 129 insertions(+), 45 deletions(-)
+
+## Diff
+diff --git a/server/internal/auth/oauth.go b/server/internal/auth/oauth.go
+index 78aa7ea..52b32d4 100644
+--- a/server/internal/auth/oauth.go
++++ b/server/internal/auth/oauth.go
+@@ -1,17 +1,18 @@
+ package auth
+ 
+ import (
+ 	"crypto/rand"
+ 	"crypto/sha256"
+ 	"encoding/base64"
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"net/url"
+ 	"time"
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+ 	"github.com/termvault/termvault/internal/config"
+ 	"github.com/termvault/termvault/internal/models"
+@@ -216,20 +217,70 @@ func fetchGitHubUserInfo(token *oauth2.Token, apiBase string) (*userInfo, error)
+ 	}
+ 
+ 	return &userInfo{
+ 		Email:       email,
+ 		Name:        raw.Name,
+ 		AvatarURL:   raw.AvatarURL,
+ 		ProviderSub: fmt.Sprintf("%d", raw.ID),
+ 	}, nil
+ }
+ 
++var (
++	errOAuthLinkFailed       = errors.New("oauth link failed")
++	errOAuthUserCreateFailed = errors.New("oauth user create failed")
++	errOAuthVaultSeedFailed  = errors.New("oauth vault seed failed")
++)
++
++// linkOrCreateOAuthUser links an existing account to an OAuth provider or
++// creates a new user when no matching account exists, and returns it. OAuth
++// users are exempt from email verification: the provider has already
++// confirmed the address, so EmailVerifiedAt is set on both paths. The
++// returned error distinguishes the failure stage so the handler can pick the
++// right redirect reason.
++func linkOrCreateOAuthUser(db *gorm.DB, provider string, ui *userInfo) (models.User, error) {
++	providerSub := ui.ProviderSub
++	var user models.User
++	found := db.Where("auth_provider = ? AND provider_sub = ?", provider, providerSub).First(&user).Error == nil
++
++	if !found {
++		if db.Where("email = ?", ui.Email).First(&user).Error == nil {
++			user.AuthProvider = provider
++			user.ProviderSub = &providerSub
++			now := time.Now()
++			user.EmailVerifiedAt = &now
++			if err := db.Save(&user).Error; err != nil {
++				return user, errOAuthLinkFailed
++			}
++		} else {
++			now := time.Now()
++			user = models.User{
++				ID:              uuid.New(),
++				Email:           ui.Email,
++				FullName:        ui.Name,
++				AuthProvider:    provider,
++				ProviderSub:     &providerSub,
++				EmailVerifiedAt: &now,
++				Initialized:     false,
++				CreatedAt:       now,
++				UpdatedAt:       now,
++			}
++			if err := db.Create(&user).Error; err != nil {
++				return user, errOAuthUserCreateFailed
++			}
++			if err := models.SeedPersonalVault(db, user.ID); err != nil {
++				return user, errOAuthVaultSeedFailed
++			}
++		}
++	}
++	return user, nil
++}
++
+ func HandleOAuthStart(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+ 		provider := c.Param("provider")
+ 		oauthCfg, err := getOAuthConfig(provider, cfg)
+ 		if err != nil {
+ 			Error(c, http.StatusBadRequest, "INVALID_PROVIDER", "unsupported OAuth provider")
+ 			return
+ 		}
+ 
+ 		appCallback := c.Query("app_callback")
+@@ -329,52 +380,31 @@ func HandleOAuthCallback(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 			ui, err = fetchGitHubUserInfo(token, "https://api.github.com")
+ 		default:
+ 			c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"unsupported_provider"}}))
+ 			return
+ 		}
+ 		if err != nil {
+ 			c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"userinfo_failed"}}))
+ 			return
+ 		}
+ 
+-		var user models.User
+-		providerSub := ui.ProviderSub
+-		found := db.Where("auth_provider = ? AND provider_sub = ?", provider, providerSub).First(&user).Error == nil
+-
+-		if !found {
+-			if db.Where("email = ?", ui.Email).First(&user).Error == nil {
+-				user.AuthProvider = provider
+-				user.ProviderSub = &providerSub
+-				if err := db.Save(&user).Error; err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"link_failed"}}))
+-					return
+-				}
+-			} else {
+-				user = models.User{
+-					ID:           uuid.New(),
+-					Email:        ui.Email,
+-					FullName:     ui.Name,
+-					AuthProvider: provider,
+-					ProviderSub:  &providerSub,
+-					Initialized:  false,
+-					CreatedAt:    time.Now(),
+-					UpdatedAt:    time.Now(),
+-				}
+-				if err := db.Create(&user).Error; err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"create_user_failed"}}))
+-					return
+-				}
+-				if err := models.SeedPersonalVault(db, user.ID); err != nil {
+-					c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{"vault_seed_failed"}}))
+-					return
+-				}
++		user, err := linkOrCreateOAuthUser(db, provider, ui)
++		if err != nil {
++			message := "link_failed"
++			switch {
++			case errors.Is(err, errOAuthUserCreateFailed):
++				message = "create_user_failed"
++			case errors.Is(err, errOAuthVaultSeedFailed):
++				message = "vault_seed_failed"
+ 			}
++			c.Redirect(http.StatusFound, oauthTargetURL(&oauthState, cfg, "error", url.Values{"message": []string{message}}))
++			return
+ 		}
+ 
+ 		if !user.Initialized {
+ 			setupCode := randBytes(32)
+ 			setupCodeHash := hashToken(setupCode)
+ 			ac := models.AuthCode{
+ 				CodeHash:  setupCodeHash,
+ 				Purpose:   "oauth_setup",
+ 				UserID:    user.ID,
+ 				DeviceID:  oauthState.DeviceID,
+@@ -477,24 +507,24 @@ func HandleOAuthExchange(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 		Success(c, http.StatusOK, gin.H{
+ 			"access_token":  at,
+ 			"refresh_token": rt,
+ 			"user":          user,
+ 			"initialized":   user.Initialized,
+ 		})
+ 	}
+ }
+ 
+ type oauthSetupRequest struct {
+-	SetupToken  string         `json:"setup_token" binding:"required"`
+-	AuthVerifier string        `json:"auth_verifier" binding:"required"`
+-	RecoveryCode string        `json:"recovery_code"`
+-	PublicKey    string        `json:"public_key"`
++	SetupToken   string         `json:"setup_token" binding:"required"`
++	AuthVerifier string         `json:"auth_verifier" binding:"required"`
++	RecoveryCode string         `json:"recovery_code"`
++	PublicKey    string         `json:"public_key"`
+ 	Keyring      keyringPayload `json:"keyring"`
+ 	KDF          kdfParams      `json:"kdf"`
+ 	ServerSalt   string         `json:"server_salt" binding:"required"`
+ 	SaltCL       string         `json:"salt_cl" binding:"required"`
+ }
+ 
+ func HandleOAuthSetup(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+ 		var req oauthSetupRequest
+ 		if err := c.ShouldBindJSON(&req); err != nil {
+@@ -603,14 +633,14 @@ func HandleKeyring(db *gorm.DB) gin.HandlerFunc {
+ 
+ 		var user models.User
+ 		if db.Where("id = ?", userID).First(&user).Error != nil {
+ 			Error(c, http.StatusNotFound, "NOT_FOUND", "user not found")
+ 			return
+ 		}
+ 
+ 		keyring := fetchKeyring(db, user.ID)
+ 		Success(c, http.StatusOK, gin.H{
+ 			"keyring": keyring,
+-			"salt_cl":  deref(user.SaltCL),
++			"salt_cl": deref(user.SaltCL),
+ 		})
+ 	}
+-}
+\ No newline at end of file
++}
+diff --git a/server/internal/auth/oauth_test.go b/server/internal/auth/oauth_test.go
+index bb4166f..71a743f 100644
+--- a/server/internal/auth/oauth_test.go
++++ b/server/internal/auth/oauth_test.go
+@@ -12,29 +12,29 @@ import (
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+ 	"github.com/termvault/termvault/internal/config"
+ 	"github.com/termvault/termvault/internal/models"
+ 	"gorm.io/gorm"
+ )
+ 
+ func oauthTestConfig() *config.Config {
+ 	return &config.Config{
+-		JWTSecret:         "test-secret-key",
+-		JWTExpiry:         15 * 60e9,
++		JWTSecret:          "test-secret-key",
++		JWTExpiry:          15 * 60e9,
+ 		RefreshTokenExpiry: 30 * 24 * 60e9,
+-		OAuthGoogleID:     "google-client-id",
+-		OAuthGoogleSecret: "google-client-secret",
+-		OAuthGitHubID:     "github-client-id",
+-		OAuthGitHubSecret: "github-client-secret",
+-		OAuthRedirectBase: "http://localhost:8080",
+-		AppScheme:         "termvault",
++		OAuthGoogleID:      "google-client-id",
++		OAuthGoogleSecret:  "google-client-secret",
++		OAuthGitHubID:      "github-client-id",
++		OAuthGitHubSecret:  "github-client-secret",
++		OAuthRedirectBase:  "http://localhost:8080",
++		AppScheme:          "termvault",
+ 		OAuthRedirectURIs: []string{
+ 			"http://127.0.0.1:1421/oauth/callback",
+ 			"http://127.0.0.1:1422/oauth/callback",
+ 			"http://127.0.0.1:1423/oauth/callback",
+ 		},
+ 	}
+ }
+ 
+ func oauthRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
+ 	gin.SetMode(gin.TestMode)
+@@ -358,20 +358,74 @@ func TestOAuthCallback_MissingState(t *testing.T) {
+ 	if w.Code != http.StatusFound {
+ 		t.Fatalf("expected 302, got %d", w.Code)
+ 	}
+ 
+ 	location := w.Header().Get("Location")
+ 	if !contains(location, "missing_code_or_state") {
+ 		t.Errorf("expected missing_code_or_state, got: %s", location)
+ 	}
+ }
+ 
++func TestOAuthCallback_CreatesVerifiedUser(t *testing.T) {
++	db := setupTestDB(t)
++
++	ui := &userInfo{Email: "new-oauth@example.com", Name: "New OAuth User", ProviderSub: "new-sub-1"}
++	user, err := linkOrCreateOAuthUser(db, "google", ui)
++	if err != nil {
++		t.Fatalf("linkOrCreateOAuthUser: %v", err)
++	}
++	if user.EmailVerifiedAt == nil {
++		t.Error("new OAuth user should be email-verified at creation")
++	}
++
++	var persisted models.User
++	if err := db.Where("id = ?", user.ID).First(&persisted).Error; err != nil {
++		t.Fatalf("reload user: %v", err)
++	}
++	if persisted.EmailVerifiedAt == nil {
++		t.Error("created user row should have email_verified_at set")
++	}
++}
++
++func TestOAuthCallback_LinksExistingEmailVerified(t *testing.T) {
++	db := setupTestDB(t)
++
++	existing := models.User{
++		ID:       uuid.New(),
++		Email:    "existing-oauth@example.com",
++		FullName: "Existing User",
++	}
++	if err := db.Create(&existing).Error; err != nil {
++		t.Fatalf("seed user: %v", err)
++	}
++
++	ui := &userInfo{Email: "existing-oauth@example.com", Name: "Existing User", ProviderSub: "link-sub-1"}
++	user, err := linkOrCreateOAuthUser(db, "google", ui)
++	if err != nil {
++		t.Fatalf("linkOrCreateOAuthUser: %v", err)
++	}
++	if user.ID != existing.ID {
++		t.Errorf("expected linked user id %s, got %s", existing.ID, user.ID)
++	}
++	if user.EmailVerifiedAt == nil {
++		t.Error("email-linked OAuth user should be email-verified at link time")
++	}
++
++	var persisted models.User
++	if err := db.Where("id = ?", user.ID).First(&persisted).Error; err != nil {
++		t.Fatalf("reload user: %v", err)
++	}
++	if persisted.EmailVerifiedAt == nil {
++		t.Error("linked user row should have email_verified_at set")
++	}
++}
++
+ func TestOAuthExchange_ValidCode(t *testing.T) {
+ 	db := setupTestDB(t)
+ 	cfg := oauthTestConfig()
+ 	r := oauthRouter(db, cfg)
+ 
+ 	uid := seedOAuthUser(t, db, "google", "12345", "exchange@example.com", false)
+ 	seedAuthCode(t, db, "valid-exchange-code", "oauth_setup", uid, "dev1", time.Now().Add(15*time.Minute), nil)
+ 
+ 	body, _ := json.Marshal(gin.H{
+ 		"setup_code": "valid-exchange-code",

@@ -1,0 +1,139 @@
+# Review package: 7723e1b..4974c1d
+
+## Commits
+4974c1d docs: document email verification configuration
+
+## Files changed
+ AGENTS.md           |  6 ++++
+ server/.env.example | 90 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 96 insertions(+)
+
+## Diff
+diff --git a/AGENTS.md b/AGENTS.md
+index 47f9f1d..0844d93 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -83,20 +83,26 @@ cd server && go test ./...
+ | `REDIS_URL` | Optional Redis for multi-instance | empty (in-memory) |
+ | `RATE_LIMIT_AUTH` | Requests/min for register/login | `10` |
+ | `RATE_LIMIT_API` | Requests/min for sync/refresh | `30` |
+ | `TRUSTED_PROXIES` | Comma-separated CIDRs of reverse proxies | empty (no proxy) |
+ | `OAUTH_REDIRECT_BASE` | Public base URL for provider callbacks | `BASE_URL` |
+ | `OAUTH_GOOGLE_CLIENT_ID` | Google OAuth client ID | empty (Google login disabled) |
+ | `OAUTH_GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
+ | `OAUTH_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty (GitHub login disabled) |
+ | `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
+ | `TERMVAULT_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
++| `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
++| `SMTP_HOST` | SMTP server hostname for verification emails (empty = OTP logged to console) | empty |
++| `SMTP_PORT` | SMTP server port | `587` |
++| `SMTP_USERNAME` | SMTP auth username | empty |
++| `SMTP_PASSWORD` | SMTP auth password | empty |
++| `SMTP_FROM` | From address for verification emails | empty |
+ 
+ ### Client
+ 
+ | Variable | Description | Default |
+ |----------|-------------|---------|
+ | `VITE_API_URL` | Default server URL | `http://localhost:8080` |
+ | `VITE_KEYCHAIN_INACTIVE_DAYS` | Keychain purge after N days unused | `14` |
+ | `VITE_KEYCHAIN_MAX_AGE_DAYS` | Keychain purge after N days since save | `90` |
+ 
+ Client keychain policy (auto-unlock renewal): 14-day inactivity / 90-day absolute cap, constants in `src/lib/keychain/keychain.ts`. Debug overrides: `inactive_days` / `max_age_days` keys in the `keychain-meta.json` store file (app data dir; `0` = always prompt, no rebuild needed). `alwaysAsk` toggle persisted in the `auth.json` store file (`alwaysAsk`, `apiUrl`, `deviceId`); turning it ON purges the saved keychain entry (toggle-off then requires a manual unlock before auto-unlock resumes). API URL override is also in `auth.json` (`apiUrl`, memory-cached for sync reads). Refresh-token rotation: the client persists rotated refresh tokens to the OS keychain immediately (auto-refresh setter), otherwise the server's reuse detection would revoke the stored copy and log the user out on next launch.
+diff --git a/server/.env.example b/server/.env.example
+new file mode 100644
+index 0000000..680c200
+--- /dev/null
++++ b/server/.env.example
+@@ -0,0 +1,90 @@
++# ΓöÇΓöÇ TermVault Server ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++# Copy/rename this file to `.env` and adjust values. Loaded via godotenv by
++# `internal/config/config.go`. This file contains secrets ΓÇö do NOT commit.
++
++# ΓöÇΓöÇ Server ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Port the HTTP server binds to.
++TERMVAULT_PORT=8080
++
++# Bind address. Use 127.0.0.1 for local-only, 0.0.0.0 to expose on the network.
++TERMVAULT_HOST=0.0.0.0
++
++# Database connection string. SQLite is used by default for dev.
++#   SQLite:  sqlite://termvault.db   (or sqlite://teams.db?cache=shared&_fk=1)
++#   Postgres: postgres://user:pass@localhost:5432/termvault
++#   MySQL:    mysql://user:pass@localhost:3306/termvault?charset=utf8mb4&parseTime=True&loc=Local
++# GORM AutoMigrate runs on startup ΓÇö no manual migrations needed.
++DATABASE_URL=sqlite://termvault.db
++
++# ΓöÇΓöÇ Auth / JWT ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# REQUIRED. Secret used to sign JWT access tokens. Generate one with:
++#   openssl rand -base64 48
++JWT_SECRET=
++
++# Lifetime of access tokens. Go duration format (s/m/h).
++JWT_EXPIRY=15m
++
++# Lifetime of refresh tokens. Default is 720h = 30 days.
++REFRESH_TOKEN_EXPIRY=720h
++
++# Public URL the app is reachable at ΓÇö used for OAuth callback URLs.
++BASE_URL=http://localhost:8080
++
++# ΓöÇΓöÇ Rate limiting ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Requests per minute allowed to register/login endpoints.
++RATE_LIMIT_AUTH=10
++
++# Requests per minute allowed to general API (sync/refresh) endpoints.
++RATE_LIMIT_API=30
++
++# ΓöÇΓöÇ Reverse proxy ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Comma-separated list of CIDRs trusted to send X-Forwarded-For headers.
++# Leave empty if the server is exposed directly (no proxy).
++TRUSTED_PROXIES=
++
++# ΓöÇΓöÇ OAuth (optional) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Google OAuth client credentials (empty = Google login disabled).
++OAUTH_GOOGLE_CLIENT_ID=
++OAUTH_GOOGLE_CLIENT_SECRET=
++
++# GitHub OAuth client credentials (empty = GitHub login disabled).
++OAUTH_GITHUB_CLIENT_ID=
++OAUTH_GITHUB_CLIENT_SECRET=
++
++# Base URL used to build OAuth redirect callbacks. Defaults to BASE_URL.
++OAUTH_REDIRECT_BASE=
++
++# Custom URL scheme used for deep links from OAuth flows back into the desktop app.
++APP_SCHEME=termvault
++
++# Allowlist of desktop app loopback callback URIs (comma-separated). During
++# OAuth the client binds 127.0.0.1 on one of these ports and the server only
++# redirects to URIs listed here (mismatch = 400 INVALID_CALLBACK).
++# If you change ports here, the client's Rust listener ports
++# (client/src-tauri/src/oauth.rs) must match.
++TERMVAULT_OAUTH_REDIRECT_URIS=http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback
++
++# ΓöÇΓöÇ Email verification (optional) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Require new email/password signups to verify their email with a 6-digit OTP.
++# Accepted values: true / 1 / yes. Off by default.
++REQUIRE_EMAIL_VERIFICATION=false
++
++# SMTP server for sending verification emails. If SMTP_HOST is empty, the OTP
++# is logged to the server console instead (dev mode).
++SMTP_HOST=
++SMTP_PORT=587
++SMTP_USERNAME=
++SMTP_PASSWORD=
++SMTP_FROM=
++
++# ΓöÇΓöÇ Redis (optional, multi-instance) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++# Redis URL for token/session storage when running multiple server instances.
++# Leave empty to use in-memory storage (single instance).
++REDIS_URL=
+\ No newline at end of file

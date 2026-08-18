@@ -1,0 +1,121 @@
+# Review package: b80ca9c..7723e1b
+
+## Commits
+7723e1b test: assert keychain save on verified login and pending-state clear on logout
+
+## Files changed
+ client/src/stores/auth/authStore.test.ts | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+## Diff
+diff --git a/client/src/stores/auth/authStore.test.ts b/client/src/stores/auth/authStore.test.ts
+index 28e9f9b..66d0015 100644
+--- a/client/src/stores/auth/authStore.test.ts
++++ b/client/src/stores/auth/authStore.test.ts
+@@ -13,20 +13,21 @@ vi.mock("@tauri-apps/plugin-store", () => ({
+   })),
+ }));
+ 
+ vi.mock("../../lib/api/auth", () => ({
+   authApi: {
+     register: vi.fn(),
+     login: vi.fn(),
+     prelogin: vi.fn(),
+     verifyEmail: vi.fn(),
+     resendVerification: vi.fn(),
++    logout: vi.fn(),
+   },
+   loadApiUrl: vi.fn(async () => {}),
+   setRefreshTokenGetter: vi.fn(),
+   setRefreshTokenSetter: vi.fn(),
+   AuthApiError: class AuthApiError extends Error {
+     constructor(
+       public status: number,
+       public apiError: { code: string; message: string; email?: string },
+     ) {
+       super(apiError.message);
+@@ -68,20 +69,21 @@ vi.mock("../../lib/keychain/keychain", () => ({
+   deletePassword: vi.fn(async () => {}),
+   loadPassword: vi.fn(async () => null),
+   savePassword: vi.fn(async () => {}),
+ }));
+ 
+ vi.mock("../../lib/common/device", () => ({
+   getDeviceId: vi.fn(async () => "dev-1"),
+ }));
+ 
+ import { AuthApiError, authApi } from "../../lib/api/auth";
++import { savePassword } from "../../lib/keychain/keychain";
+ import { useAuthStore } from "./authStore";
+ 
+ const preloginResponse = {
+   nonce: "n",
+   kdf: { m: 32768, t: 2, p: 1 },
+   server_salt: "ss",
+   salt_cl: "sc",
+ };
+ 
+ const user = {
+@@ -169,20 +171,21 @@ describe("authStore email verification", () => {
+         dek_wrapped_by_kek: "kek",
+         dek_wrapped_by_recovery: "rec",
+         private_key_wrapped_by_dek: "pk",
+       },
+     });
+ 
+     await useAuthStore
+       .getState()
+       .verifyEmail("new@example.com", "123456", "pw");
+ 
++    expect(savePassword).toHaveBeenCalledWith("pw");
+     const s = useAuthStore.getState();
+     expect(s.isAuthenticated).toBe(true);
+     expect(s.isUnlocked).toBe(true);
+     expect(s.pendingVerificationEmail).toBeNull();
+     expect(s.tokens).toEqual({
+       access_token: "at",
+       refresh_token: "rt",
+     });
+   });
+ 
+@@ -197,20 +200,40 @@ describe("authStore email verification", () => {
+     await expect(
+       useAuthStore.getState().verifyEmail("new@example.com", "000000", "pw"),
+     ).rejects.toThrow("bad otp");
+ 
+     const s = useAuthStore.getState();
+     expect(s.error).toBe("bad otp");
+     expect(s.isLoading).toBe(false);
+     expect(s.pendingVerificationEmail).toBeNull();
+   });
+ 
++  it("logout clears a pending verification session", async () => {
++    useAuthStore.setState({
++      user,
++      tokens: { access_token: "at", refresh_token: "rt" },
++      isAuthenticated: true,
++      isUnlocked: true,
++      pendingVerificationEmail: "new@example.com",
++    });
++
++    await useAuthStore.getState().logout();
++
++    expect(authApi.logout).toHaveBeenCalledWith("rt");
++    const s = useAuthStore.getState();
++    expect(s.pendingVerificationEmail).toBeNull();
++    expect(s.isAuthenticated).toBe(false);
++    expect(s.isUnlocked).toBe(false);
++    expect(s.user).toBeNull();
++    expect(s.tokens).toBeNull();
++  });
++
+   it("resendVerification calls the API and keeps the pending email", async () => {
+     useAuthStore.setState({ pendingVerificationEmail: "new@example.com" });
+     vi.mocked(authApi.resendVerification).mockResolvedValue({
+       verification_required: true,
+     });
+ 
+     await useAuthStore.getState().resendVerification("new@example.com");
+ 
+     expect(authApi.resendVerification).toHaveBeenCalledWith("new@example.com");
+     const s = useAuthStore.getState();

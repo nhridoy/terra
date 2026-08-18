@@ -1,0 +1,158 @@
+# Review package: 0d4261d..9881b8a
+
+## Commits
+9881b8a feat: otp issue and lookup helpers
+
+## Files changed
+ server/internal/auth/email_verify.go      | 60 +++++++++++++++++++++++++
+ server/internal/auth/email_verify_test.go | 75 +++++++++++++++++++++++++++++++
+ 2 files changed, 135 insertions(+)
+
+## Diff
+diff --git a/server/internal/auth/email_verify.go b/server/internal/auth/email_verify.go
+new file mode 100644
+index 0000000..3067426
+--- /dev/null
++++ b/server/internal/auth/email_verify.go
+@@ -0,0 +1,60 @@
++package auth
++
++import (
++	"crypto/rand"
++	"crypto/sha256"
++	"encoding/base64"
++	"fmt"
++	"math/big"
++	"time"
++
++	"github.com/google/uuid"
++	"github.com/termvault/termvault/internal/models"
++	"gorm.io/gorm"
++)
++
++const emailVerifyPurpose = "email_verify"
++const otpTTL = 15 * time.Minute
++const maxOtpAttempts = 5
++
++func generateOtp() (string, error) {
++	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
++	if err != nil {
++		return "", fmt.Errorf("generate otp: %w", err)
++	}
++	return fmt.Sprintf("%06d", n.Int64()), nil
++}
++
++func issueEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (string, error) {
++	if err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Delete(&models.AuthCode{}).Error; err != nil {
++		return "", fmt.Errorf("clear old verification codes: %w", err)
++	}
++
++	otp, err := generateOtp()
++	if err != nil {
++		return "", err
++	}
++	hash := sha256.Sum256([]byte(otp))
++	code := models.AuthCode{
++		CodeHash:  base64.RawStdEncoding.EncodeToString(hash[:]),
++		Purpose:   emailVerifyPurpose,
++		UserID:    userID,
++		DeviceID:  "",
++		ExpiresAt: time.Now().Add(otpTTL),
++	}
++	if err := db.Create(&code).Error; err != nil {
++		return "", fmt.Errorf("store verification code: %w", err)
++	}
++	return otp, nil
++}
++
++func findEmailVerifyCode(db *gorm.DB, userID uuid.UUID) (*models.AuthCode, error) {
++	var code models.AuthCode
++	err := db.Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).
++		Order("created_at DESC").First(&code).Error
++	if err != nil {
++		return nil, err
++	}
++	return &code, nil
++}
+diff --git a/server/internal/auth/email_verify_test.go b/server/internal/auth/email_verify_test.go
+new file mode 100644
+index 0000000..b9027ce
+--- /dev/null
++++ b/server/internal/auth/email_verify_test.go
+@@ -0,0 +1,75 @@
++package auth
++
++import (
++	"testing"
++
++	gormsqlite "github.com/glebarez/sqlite"
++	"github.com/google/uuid"
++	"github.com/termvault/termvault/internal/models"
++	"gorm.io/gorm"
++)
++
++func setupVerifyDB(t *testing.T) *gorm.DB {
++	t.Helper()
++	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
++	if err != nil {
++		t.Fatalf("open test db: %v", err)
++	}
++	if err := models.AutoMigrate(db); err != nil {
++		t.Fatalf("migrate: %v", err)
++	}
++	return db
++}
++
++func TestGenerateOtp_IsSixDigits(t *testing.T) {
++	for i := 0; i < 50; i++ {
++		otp, err := generateOtp()
++		if err != nil {
++			t.Fatal(err)
++		}
++		if len(otp) != 6 {
++			t.Fatalf("expected 6 digits, got %q", otp)
++		}
++		for _, ch := range otp {
++			if ch < '0' || ch > '9' {
++				t.Fatalf("non-digit in otp %q", otp)
++			}
++		}
++	}
++}
++
++func TestIssueEmailVerifyCode_ReplacesOldRow(t *testing.T) {
++	db := setupVerifyDB(t)
++	userID := uuid.New()
++	first, err := issueEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	second, err := issueEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if first == second {
++		t.Fatal("expected different otps")
++	}
++	var count int64
++	db.Model(&models.AuthCode{}).Where("user_id = ? AND purpose = ?", userID, emailVerifyPurpose).Count(&count)
++	if count != 1 {
++		t.Fatalf("expected exactly 1 row after re-issue, got %d", count)
++	}
++	code, err := findEmailVerifyCode(db, userID)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if code.CodeHash == second {
++		t.Fatal("expected hashed code, got plaintext")
++	}
++}
++
++func TestFindEmailVerifyCode_None(t *testing.T) {
++	db := setupVerifyDB(t)
++	_, err := findEmailVerifyCode(db, uuid.New())
++	if err != gorm.ErrRecordNotFound {
++		t.Fatalf("expected ErrRecordNotFound, got %v", err)
++	}
++}
