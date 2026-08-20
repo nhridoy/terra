@@ -2,7 +2,7 @@
 
 Date: 2026-08-20
 Spec: `docs/superpowers/specs/2026-08-20-open-in-editor-design.md`
-Status: Ready for implementation
+Status: Implemented (client `09a09cf`, superproject `7969933`)
 
 ## Scope
 
@@ -137,3 +137,24 @@ Status: Ready for implementation
 ## Open questions for the user
 
 - None blocking. (Note: `onFileSelect` on SFTP double-click stays a no-op per spec — "Open in Editor" is context-menu only.)
+
+## Implementation log
+
+| Phase | Client commit | Superproject commit |
+|-------|---------------|---------------------|
+| Plan | — | `5404708` |
+| A — store foundation + ConfirmDialog | `f9c6cd3` | `afdfef9` |
+| B — EditorView provider I/O + Reconnect toast | `2fc1148` | `eb8a01c` |
+| C — EditorExplorer provider I/O + menu builder extraction | `1c233c1` | `9031f36` |
+| D — provider-aware QuickOpen + Search | `f9c590a` | `9c234be` |
+| E — EditorPane real remote sidebar, removed Connect Host | `9983232` | `3a491eb` |
+| F — SFTP context menu "Open in Editor" + navigation | `8b5791f` | `6570046` |
+| G — dirty confirm gates (tab close, disconnect, switch) | `09a09cf` | `7969933` |
+
+### Deliberate deviations
+
+- **`connectHost` removed in Phase E** (not A3 as written) so every commit stays green; only `EditorPane` used it.
+- **`connectLocal` extended with optional `fileToOpen`** instead of a new `connectLocalFromPath` (G/F).
+- **No component tests** — repo has zero component tests (node env, no jsdom); tests are pure logic only (`editorStore`, `editorProvider`, `explorerMenu`, `workspaceFiles`, `workspaceSearch`, `buildContextMenuItems`, `parentPath`).
+- **Discovered pre-existing bug (not fixed, out of scope):** `globToRegex` in `workspaceSearch.ts` escapes `**` before replacing it, so `**` globs never expand (e.g. `node_modules/**` exclude silently no-ops). Flagged for a follow-up.
+- Tests: 197 passing (was 173 at start), biome + tsc clean.
