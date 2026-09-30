@@ -19,8 +19,8 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | ID | Priority | Status | Gap | Main evidence |
 | --- | --- | --- | --- | --- |
 | G01 | P0 | Implemented; live device verification pending | Cross-device data sync | Client coordinator and `/sync/push`/`/sync/pull` routes; see `docs/SYNC_MANUAL_VERIFICATION.md` |
-| G02 | P0 | Confirmed broken control | Delete All Data | `client/src/components/settings/tabs/AdvancedTab.tsx` |
-| G03 | P1 | Confirmed incomplete | SSH key generation | `client/src/components/keys/modals/GenerateKeyModal.tsx` |
+| G02 | P1 | Misleading control removed; deletion feature pending | Delete All Data | `client/src/components/settings/tabs/AdvancedTab.tsx` |
+| G03 | P1 | Implemented; live SSH verification pending | SSH key generation | `client/src/components/keys/modals/GenerateKeyModal.tsx` |
 | G04 | P1 | Confirmed incomplete | Teams and shared vaults | Team/shared-vault stores and server routes |
 | G05 | P1 | Confirmed incomplete | Session history and logs | `client/src/stores/sessions/sessionStore.ts` |
 | G06 | P1 | Confirmed incomplete | In-app updates | `client/src/stores/update/updateStore.ts` |
@@ -28,8 +28,8 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | G08 | P2 | Feature gap | Telnet, Mosh, and serial | Connection UI and backend modules |
 | G09 | P2 | Partial feature | Context-aware terminal autocomplete | `client/src/components/terminal/views/CommandAutocomplete.tsx` |
 | G10 | P2 | Confirmed incomplete | Tab-group operations | `client/src/stores/sessions/tabGroupStore.ts` |
-| G11 | P1 | Confirmed faulty metadata | Imported key type | `client/src/components/keys/lists/KeyList.tsx` |
-| G12 | P1 | Improvement / verification | Key-import format and passphrase coverage | Import modal, `keys.rs`, SSH authentication |
+| G11 | P1 | Fixed for new imports; legacy repair pending | Imported key type | `client/src/components/keys/lists/KeyList.tsx` |
+| G12 | P1 | Encrypted-key import implemented; live format verification pending | Key-import format and passphrase coverage | Import modal, `keys.rs`, SSH authentication |
 | G13 | P1 | Documentation gap | Product claims and setup instructions | Root `README.md` versus repository layout |
 | Q01 | P1 | Verification | SFTP/editor and platform regression matrix | Existing implementations; limited live coverage |
 
@@ -54,7 +54,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G02 — “Delete All Data” is a nonfunctional destructive control
 
-**Current behavior.** The button and confirmation dialog are visible in `client/src/components/settings/tabs/AdvancedTab.tsx`. Confirming only hides the dialog; the handler contains `// TODO: Implement data deletion`. This is a confirmed user-facing bug: the UI says data was selected for deletion but performs none.
+**Current behavior.** The misleading button and confirmation dialog have been removed from `client/src/components/settings/tabs/AdvancedTab.tsx`. The page now says account-wide deletion is unavailable. The deletion capability itself remains unimplemented and needs an explicit scope before it returns.
 
 **Target behavior.** Decide and label the exact operation before implementing it: (a) clear this device's local cache, (b) delete all account data on the server and synced devices, or (c) delete the account itself. These are different actions and must not share ambiguous wording. A local wipe needs to stop active SSH/SFTP/forwarding work, clear local SQLite, credentials/tokens in the OS keychain, and relevant app settings in an intentional order. A server/account deletion requires authenticated endpoints, authorization, and an explicit irreversible-data confirmation. On failure, show what was or was not deleted; never close with a success impression.
 
@@ -69,7 +69,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G03 — SSH key generation
 
-**Current behavior.** The form offers Ed25519, RSA 4096, and ECDSA P-256, but `client/src/components/keys/modals/GenerateKeyModal.tsx` always displays “Key generation is not available in sync-only mode. Use import instead.” Its generated-key state is never populated. `generateKey()` in `client/src/stores/keys/keyStore.ts` currently persists empty key material, so wiring the form directly to that method would create a misleading unusable record.
+**Current behavior.** The form now generates Ed25519, RSA 4096, and ECDSA P-256 keys through Rust, shows the public/private key after creation, and stores the private key in the encrypted local row. Automated pair and failure tests pass. Authentication against a live SSH server and at-rest inspection remain to be verified.
 
 **Target behavior.** Generate the selected key type with a cryptographic RNG in Rust, derive the OpenSSH public key and fingerprint, and store the private key through the existing encrypted local-row path. Let the user copy/export the public key and securely export the private key if that is a product requirement. Define passphrase support and whether generation is allowed while the vault is locked. Never persist an empty key under a “generated” status or log private material.
 
@@ -157,7 +157,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G11 — Imported SSH keys are mislabeled as Ed25519
 
-**Current behavior.** `client/src/components/keys/lists/KeyList.tsx` passes `keyType: "ed25519"` for every import, even though the import modal recognizes RSA and ECDSA PEM/OpenSSH input. The Rust helper `client/src-tauri/src/keys.rs` derives a missing public key, but it returns only its OpenSSH string. The key may still authenticate because `ssh.rs` decodes the private key directly, while its saved type metadata is incorrect. This is a confirmed metadata defect, not proof that RSA/ECDSA authentication fails.
+**Current behavior.** New imports are inspected in Rust; the parsed algorithm, public key, and SHA-256 fingerprint are saved, and a supplied public key is checked against the derived key. Already imported records with wrong metadata are not repaired automatically. Live RSA/ECDSA authentication remains unverified.
 
 **Target behavior.** Parse the private key once in Rust and return algorithm, derived public key, and fingerprint. Reconcile or reject a manually supplied public key that does not match the private key. Populate `key_type` from the parsed result; do not accept a misleading hard-coded type. Consider a migration/repair path for already imported records.
 
@@ -165,7 +165,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G12 — Key import format and passphrase coverage
 
-**Current behavior.** `client/src/components/keys/modals/ImportKeyModal.tsx` supports pasted and uploaded PEM/OpenSSH private keys and explicitly rejects `.ppk`. The UI has no passphrase field. `client/src-tauri/src/keys.rs` calls `decode_secret_key(..., None)` when deriving a missing public key, so an encrypted private key without a manually provided public key cannot be derived. The SSH connection code can accept a passphrase in its configuration, but the current key-import path does not capture one. File-import success was not live-tested in this audit.
+**Current behavior.** Pasted and uploaded PEM/OpenSSH private keys can include a passphrase. Rust validates the passphrase and derives metadata before saving; the passphrase is stored inside the encrypted key payload used by native SSH/SFTP. `.ppk` remains unsupported with conversion guidance. File import and live authentication still need manual verification.
 
 **Target behavior.** Decide supported formats and document them accurately. For encrypted keys, request a passphrase only when required and choose whether to store it in encrypted vault data, request it per connection, or disallow persistence. Validate imported private/public pairs and key algorithm before saving. If `.ppk` remains unsupported, preserve the explicit conversion guidance. Ensure errors are actionable without exposing key contents.
 
