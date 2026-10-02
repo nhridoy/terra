@@ -24,7 +24,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | G04 | P1 | Implemented; two-device verification pending | Teams and shared vaults | Team APIs, E2EE vault keys, rotation/revocation; see `docs/TEAMS_MANUAL_VERIFICATION.md` |
 | G05 | P1 | Confirmed incomplete | Session history and logs | `client/src/stores/sessions/sessionStore.ts` |
 | G06 | P1 | Confirmed incomplete | In-app updates | `client/src/stores/update/updateStore.ts` |
-| G07 | P1 | Feature gap | Advanced SSH connection/authentication options | `client/src-tauri/src/ssh.rs`; host form/model |
+| G07 | P1 | Single-bastion route implemented; live verification pending | Advanced SSH connection/authentication options | `client/src-tauri/src/ssh_route.rs`; see `docs/JUMP_HOST_MANUAL_VERIFICATION.md` |
 | G08 | P2 | Feature gap | Telnet, Mosh, and serial | Connection UI and backend modules |
 | G09 | P2 | Partial feature | Context-aware terminal autocomplete | `client/src/components/terminal/views/CommandAutocomplete.tsx` |
 | G10 | P2 | Confirmed incomplete | Tab-group operations | `client/src/stores/sessions/tabGroupStore.ts` |
@@ -122,9 +122,9 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G07 — Advanced SSH connection/authentication options
 
-**Current behavior.** The current host/SSH implementation supports direct SSH connections, saved credentials, known-host verification, and the new local/remote/dynamic port forwards. This audit found no corresponding implementation for jump-host/host-chain routing, SSH agent forwarding, SSH certificates, or FIDO2 hardware-backed SSH credentials in `client/src-tauri/src/ssh.rs` and the host configuration UI. Termius lists these features in its [feature comparison](https://www.termius.com/pricing). “No implementation found” should be rechecked if the connection architecture changes.
+**Current behavior.** A destination can select one saved same-vault bastion. Its route ID is stored in encrypted host data; Rust validates both hosts and routes saved terminal, SFTP, host checks, and local/remote/dynamic forwards through the bastion. Automated tests cover route validation and a disposable `direct-tcpip` bastion transport; live two-server and cross-platform checks remain in `docs/JUMP_HOST_MANUAL_VERIFICATION.md`. Multi-hop chains, SSH agent forwarding, SSH certificates, and FIDO2 hardware-backed credentials remain unimplemented. Termius lists these in its [feature comparison](https://www.termius.com/pricing).
 
-**Recommended sequence.** Start with jump hosts because private infrastructure often requires a bastion. Model a chain of saved hosts, establish each hop with host-key validation, and route terminal/SFTP/forwarding consistently through the chain. Then add agent forwarding as an explicit per-host permission with clear lifetime and trust implications. Certificates and FIDO2 require separate credential storage, enrollment, and platform support decisions. Also assess proxy support, group-level SSH defaults, and global SSH options; `client/src/components/settings/tabs/SshTab.tsx` says global options are future work.
+**Recommended sequence.** Validate the single-bastion route on each desktop platform, then extend to multiple hops if users need it. Agent forwarding should be an explicit per-host permission with clear lifetime and trust implications. Certificates and FIDO2 require separate credential storage, enrollment, and platform support decisions. Also assess proxy support, group-level SSH defaults, and global SSH options; `client/src/components/settings/tabs/SshTab.tsx` says global options are future work.
 
 **Acceptance checks.**
 
