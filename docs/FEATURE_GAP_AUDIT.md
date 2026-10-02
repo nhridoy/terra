@@ -21,7 +21,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | G01 | P0 | Implemented; live device verification pending | Cross-device data sync | Client coordinator and `/sync/push`/`/sync/pull` routes; see `docs/SYNC_MANUAL_VERIFICATION.md` |
 | G02 | P1 | Misleading control removed; deletion feature pending | Delete All Data | `client/src/components/settings/tabs/AdvancedTab.tsx` |
 | G03 | P1 | Implemented; live SSH verification pending | SSH key generation | `client/src/components/keys/modals/GenerateKeyModal.tsx` |
-| G04 | P1 | Confirmed incomplete | Teams and shared vaults | Team/shared-vault stores and server routes |
+| G04 | P1 | Implemented; two-device verification pending | Teams and shared vaults | Team APIs, E2EE vault keys, rotation/revocation; see `docs/TEAMS_MANUAL_VERIFICATION.md` |
 | G05 | P1 | Confirmed incomplete | Session history and logs | `client/src/stores/sessions/sessionStore.ts` |
 | G06 | P1 | Confirmed incomplete | In-app updates | `client/src/stores/update/updateStore.ts` |
 | G07 | P1 | Feature gap | Advanced SSH connection/authentication options | `client/src-tauri/src/ssh.rs`; host form/model |
@@ -82,7 +82,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G04 — Teams, invitations, roles, and shared vaults
 
-**Current behavior.** The Teams UI is present, but all fetch/create/update/delete/member methods in `client/src/stores/teams/teamStore.ts` are empty. The corresponding methods in `client/src/stores/teams/sharedVaultStore.ts` are also empty; `client/src/components/teams/managers/SharedVaultManager.tsx` explicitly says shared vaults are unavailable. `server/cmd/termvault-server/main.go` registers no team/invite/shared-vault routes. An earlier UI design is not an implementation.
+**Current behavior.** The Teams UI now uses authenticated server routes for team creation, rename/deletion, existing-account invitations, roles, member removal, and dedicated shared vault creation/rename/deletion. A team vault has its own client-generated key, sealed separately to each active member's identity key; sensitive rows are encrypted with that key before sync. Accepted members can edit cached data offline. Removal denies server access, pauses writes, and requires an atomic key rotation. A remaining member's queued old-epoch edits are re-encrypted before upload; a removed member's queued edits remain local with explicit plaintext export or queue discard. Previously cached offline data cannot be erased remotely. Automated Go/Rust/frontend tests pass, but a two-device live run and Windows/macOS checks are still outstanding; use `docs/TEAMS_MANUAL_VERIFICATION.md`.
 
 **Target behavior.** Define team ownership, roles, invitations/expiry, removal, and shared-vault lifecycle on the server. Enforce authorization on every data operation and sync action. Specify the cryptographic sharing design: a personal vault's key must not simply be sent to a team member or stored plaintext on the server. Handle member revocation and rekeying, plus offline clients with previously decrypted data. Make visible controls reflect actual capability; avoid treating a no-op promise as success.
 
