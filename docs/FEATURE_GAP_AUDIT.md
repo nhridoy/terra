@@ -22,12 +22,12 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | G02 | P1 | Misleading control removed; deletion feature pending | Delete All Data | `client/src/components/settings/tabs/AdvancedTab.tsx` |
 | G03 | P1 | Implemented; live SSH verification pending | SSH key generation | `client/src/components/keys/modals/GenerateKeyModal.tsx` |
 | G04 | P1 | Implemented; two-device verification pending | Teams and shared vaults | Team APIs, E2EE vault keys, rotation/revocation; see `docs/TEAMS_MANUAL_VERIFICATION.md` |
-| G05 | P1 | Confirmed incomplete | Session history and logs | `client/src/stores/sessions/sessionStore.ts` |
+| G05 | P1 | Implemented; live verification pending | Session history and logs | `client/src/stores/sessions/sessionStore.ts`; `docs/SESSION_HISTORY_MANUAL_VERIFICATION.md` |
 | G06 | P1 | Implemented; signed release verification pending | In-app updates | `client/src/stores/update/updateStore.ts`; `docs/UPDATER_RELEASE_RUNBOOK.md` |
 | G07 | P1 | Single-bastion route implemented; live verification pending | Advanced SSH connection/authentication options | `client/src-tauri/src/ssh_route.rs`; see `docs/JUMP_HOST_MANUAL_VERIFICATION.md` |
 | G08 | P2 | Feature gap | Telnet, Mosh, and serial | Connection UI and backend modules |
 | G09 | P2 | Partial feature | Context-aware terminal autocomplete | `client/src/components/terminal/views/CommandAutocomplete.tsx` |
-| G10 | P2 | Confirmed incomplete | Tab-group operations | `client/src/stores/sessions/tabGroupStore.ts` |
+| G10 | P2 | Implemented; live verification pending | Saved quick presets and workspace restoration | `client/src/stores/sessions/tabGroupStore.ts`; `docs/WORKSPACES_PRESETS_MANUAL_VERIFICATION.md` |
 | G11 | P1 | Fixed for new imports; legacy repair pending | Imported key type | `client/src/components/keys/lists/KeyList.tsx` |
 | G12 | P1 | Encrypted-key import implemented; live format verification pending | Key-import format and passphrase coverage | Import modal, `keys.rs`, SSH authentication |
 | G13 | P1 | Documentation gap | Product claims and setup instructions | Root `README.md` versus repository layout |
@@ -97,7 +97,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G05 — Session history and logs
 
-**Current behavior.** `client/src/stores/sessions/sessionStore.ts` initializes empty sessions/logs and implements fetch/delete methods as empty async functions. The history and log views exist, but this store cannot load actual recorded sessions. This is distinct from a live terminal pane or terminal reconnect behavior, which do have implementations.
+**Current behavior.** SSH/local session metadata and opt-in encrypted terminal-output recordings are persisted and synced through the personal vault. History can be listed, viewed, deleted, and retained for a configurable period. Automated tests pass; live cross-device verification remains in `docs/SESSION_HISTORY_MANUAL_VERIFICATION.md`.
 
 **Target behavior.** Define whether this feature stores connection metadata only, commands, terminal output, or full replay. Recording commands/output has significant privacy implications, so make it opt-in or clearly configurable, encrypt sensitive logs, set a retention policy, and ensure users can delete them. Record start/end/disconnect/error transitions reliably, including crashes. Avoid attributing a shell's typed input to a successful command unless the protocol provides that evidence.
 
@@ -149,7 +149,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G10 — Tab groups
 
-**Current behavior.** `client/src/stores/sessions/tabGroupStore.ts` returns an empty list, `null` from creation, and no-ops for fetch/rename/delete. This is separate from `client/src/stores/workspaces/workspaceStore.ts` and terminal layout serialization, which have implementations. Before building tab groups, decide whether they are a distinct feature or an obsolete second model for saved workspaces.
+**Current behavior.** Quick presets now use the existing encrypted, synced `presets` rows for create, load, update, rename, and delete. Workspaces use the existing `workspaces` rows for create and save changes. Restoring either rebuilds the pane tree with fresh IDs, clears live connection state, and shows a missing-host pane when a referenced saved host no longer exists. Automated tests pass; restart and two-device checks remain in `docs/WORKSPACES_PRESETS_MANUAL_VERIFICATION.md`.
 
 **Target behavior.** Either implement persisted named tab/pane collections with a clear relationship to workspaces, or remove the dead store/UI and use one model. Define whether restoring a group also reconnects hosts; respect the user's explicit choice that **saved port forwards do not reconnect automatically**.
 
