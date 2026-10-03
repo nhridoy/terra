@@ -23,7 +23,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 | G03 | P1 | Implemented; live SSH verification pending | SSH key generation | `client/src/components/keys/modals/GenerateKeyModal.tsx` |
 | G04 | P1 | Implemented; two-device verification pending | Teams and shared vaults | Team APIs, E2EE vault keys, rotation/revocation; see `docs/TEAMS_MANUAL_VERIFICATION.md` |
 | G05 | P1 | Confirmed incomplete | Session history and logs | `client/src/stores/sessions/sessionStore.ts` |
-| G06 | P1 | Confirmed incomplete | In-app updates | `client/src/stores/update/updateStore.ts` |
+| G06 | P1 | Implemented; signed release verification pending | In-app updates | `client/src/stores/update/updateStore.ts`; `docs/UPDATER_RELEASE_RUNBOOK.md` |
 | G07 | P1 | Single-bastion route implemented; live verification pending | Advanced SSH connection/authentication options | `client/src-tauri/src/ssh_route.rs`; see `docs/JUMP_HOST_MANUAL_VERIFICATION.md` |
 | G08 | P2 | Feature gap | Telnet, Mosh, and serial | Connection UI and backend modules |
 | G09 | P2 | Partial feature | Context-aware terminal autocomplete | `client/src/components/terminal/views/CommandAutocomplete.tsx` |
@@ -110,7 +110,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 ## G06 — In-app updates
 
-**Current behavior.** `client/src/stores/update/updateStore.ts` makes `checkForUpdates()` set `updateAvailable` to false; download and install methods are empty. `client/src/components/update/UpdateNotification.tsx` has a modal for progress and installation, but the store cannot drive it.
+**Current behavior.** The client now uses the Tauri updater plugin to check GitHub Releases, download a signed update, show progress, and install it with a separate action. Windows, macOS, and Linux AppImage builds use native installation; `.deb` builds open the release page. A release workflow builds and validates the signed artifacts. The first live signed release and platform installation matrix remain to be verified; see `docs/UPDATER_RELEASE_RUNBOOK.md`.
 
 **Target behavior.** Choose a real signed-update channel and platform packaging strategy for Windows, macOS, and Linux. Expose version/release notes, download progress, signature verification, install/restart behavior, and actionable errors. Treat development builds and unsupported installation formats explicitly. If updates are not in product scope, remove or disable the unfinished UI instead of implying that checks work.
 
