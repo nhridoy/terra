@@ -1,4 +1,4 @@
-# TermVault Teams and encrypted shared vaults: manual verification
+# Terra Teams and encrypted shared vaults: manual verification
 
 This suite checks the actual two-account, two-device behavior. Automated unit and API tests cannot prove that two installed clients hydrate the right key, survive offline use, and recover cleanly from interruption. Run the existing [sync suite](SYNC_MANUAL_VERIFICATION.md) first for personal-vault sync.
 
@@ -101,7 +101,7 @@ Use disposable accounts, keys, and host credentials. Record Pass, Fail, or Block
 
 ## T10 — Ciphertext and failure inspection
 
-1. Using **disposable** secrets, inspect the server database rows for `hosts`, `keys`, `snippets`, `port_forwards`, and `vault_key_envelopes`. Inspect local `termvault.db` for the same records and `team_vault_keys`. Search for the test password/private-key text; do not record the text in logs.
+1. Using **disposable** secrets, inspect the server database rows for `hosts`, `keys`, `snippets`, `port_forwards`, and `vault_key_envelopes`. Inspect local `terra.db` for the same records and `team_vault_keys`. Search for the test password/private-key text; do not record the text in logs.
 2. Confirm sensitive row `data` is a version-2 AEAD envelope with the correct vault ID and epoch; local team keys are account-DEK-wrapped. Team names, member IDs, roles, email addresses, and UTC ISO-8601 timestamps may remain plaintext.
 3. Inspect server/client logs and failed API responses for accidental plaintext secrets or raw keys. Inspect the exported T06 file separately; it is intentionally plaintext only after the user chose export.
 

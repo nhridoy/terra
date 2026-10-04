@@ -1,4 +1,4 @@
-# TermVault
+# Terra
 
 Open-source, self-hosted SSH client with 1-to-1 Termius encryption compatibility.
 
@@ -9,12 +9,12 @@ Open-source, self-hosted SSH client with 1-to-1 Termius encryption compatibility
 - **Vault**: Encrypted credential storage (hosts, keys, snippets)
 - **Port Forwarding**: Local, remote, and dynamic tunneling
 - **Team Collaboration**: Shared vaults, team management, session logging
-- **Cross-Platform**: Windows, macOS, Linux, iOS, Android
+- **Desktop**: Windows, macOS, and Linux; the separate mobile app keeps its current identity
 - **Self-Hosted**: Full control over your data
 
 ## Encryption
 
-TermVault uses the same encryption as Termius:
+Terra uses the same encryption as Termius:
 
 - **Authentication**: SRP6a (2048-bit prime)
 - **Key Exchange**: X25519
@@ -27,14 +27,14 @@ TermVault uses the same encryption as Termius:
 
 ```bash
 # Clone
-git clone https://github.com/your-org/termvault.git
-cd termvault
+git clone https://github.com/nhridoy/terra.git
+cd terra
 
 # Install dependencies
-cd client && npm install
+cd client && pnpm install
 
 # Start development
-npm run dev
+pnpm tauri dev
 ```
 
 ### Server
@@ -46,10 +46,16 @@ cd server
 go mod download
 
 # Run server
-go run cmd/termvault-server/main.go
+go run ./cmd/terra-server
 ```
 
 ### Docker
+
+The published server container is `ghcr.io/nhridoy/terra-server`:
+
+```bash
+docker pull ghcr.io/nhridoy/terra-server:latest
+```
 
 ```bash
 # Development
@@ -80,12 +86,16 @@ npx expo run:android
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TERMVAULT_PORT` | Server port | `8080` |
-| `TERMVAULT_HOST` | Server host | `0.0.0.0` |
+| `TERRA_PORT` (`TERMVAULT_PORT` fallback) | Server port | `8080` |
+| `TERRA_HOST` (`TERMVAULT_HOST` fallback) | Server host | `0.0.0.0` |
+| `TERRA_APP_SCHEME` (`APP_SCHEME` fallback) | Desktop OAuth app-scheme fallback | `terra` |
+| `TERRA_OAUTH_REDIRECT_URIS` (`TERMVAULT_OAUTH_REDIRECT_URIS` fallback) | Allowed desktop OAuth loopback callbacks | `http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback` |
 | `DATABASE_URL` | Database connection | `sqlite:///data/termvault.db` |
 | `JWT_SECRET` | JWT signing secret | Required |
 | `JWT_EXPIRY` | JWT token expiry | `24h` |
 | `BASE_URL` | Public URL | `http://localhost:8080` |
+
+`TERRA_*` settings take precedence when set; the legacy variable shown in parentheses remains a fallback for the first Terra server release. Existing server installations keep using their configured database, and the default filename remains `termvault.db` to avoid silently opening a new empty database.
 
 ### OAuth Providers
 
@@ -128,7 +138,7 @@ curl -X POST http://localhost:8080/api/hosts \
 ## Architecture
 
 ```
-termvault/
+terra/
 ├── server/           # Go API server + SSH proxy
 │   ├── cmd/         # Entry point
 │   ├── internal/    # Core logic
@@ -163,5 +173,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- GitHub Issues: https://github.com/your-org/termvault/issues
+- GitHub Issues: https://github.com/nhridoy/terra/issues
 - Discord: https://discord.gg/termvault

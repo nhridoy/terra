@@ -1,6 +1,6 @@
-# Contributing to TermVault
+# Contributing to Terra
 
-Thank you for your interest in contributing to TermVault! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to Terra! This document provides guidelines and information for contributors.
 
 ## Development Setup
 
@@ -15,8 +15,8 @@ Thank you for your interest in contributing to TermVault! This document provides
 
 ```bash
 cd client
-npm install
-npm run dev
+pnpm install
+pnpm tauri dev
 ```
 
 ### Backend (Server)
@@ -24,7 +24,7 @@ npm run dev
 ```bash
 cd server
 go mod download
-go run cmd/termvault-server/main.go
+go run ./cmd/terra-server
 ```
 
 ### Mobile
@@ -61,7 +61,7 @@ npx expo start
 
 ```bash
 # Client tests
-cd client && npm test
+cd client && pnpm vitest run
 
 # Server tests
 cd server && go test ./...

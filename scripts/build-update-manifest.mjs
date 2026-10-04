@@ -50,7 +50,7 @@ function decodeSignature(signature) {
 }
 
 async function verifyWithMinisign(bundle, signatureBytes, publicKey) {
-  const temporary = await mkdtemp(join(tmpdir(), 'termvault-update-verify-'));
+  const temporary = await mkdtemp(join(tmpdir(), 'terra-update-verify-'));
   try {
     const keyPath = join(temporary, 'updater.pub');
     const signaturePath = join(temporary, 'artifact.minisig');
@@ -113,9 +113,9 @@ export async function buildUpdateManifest({ version, tag, assetsDir, outputDir, 
     pub_date: new Date().toISOString(),
     platforms,
   };
-  const temporary = join(outputDir, '.latest.json.tmp');
+  const temporary = join(outputDir, '.terra-latest.json.tmp');
   await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`);
-  await rename(temporary, join(outputDir, 'latest.json'));
+  await rename(temporary, join(outputDir, 'terra-latest.json'));
   return manifest;
 }
 

@@ -1,15 +1,15 @@
 # Single-bastion routing: manual verification
 
-Use disposable SSH servers: a bastion reachable from the client, and a destination reachable from the bastion but blocked from direct client access. The bastion must permit `direct-tcpip` forwarding (`AllowTcpForwarding yes` in OpenSSH). Create both saved hosts in one TermVault vault, with separate credentials. Set the destination's **Connect through** field to the bastion. Keep a direct saved host as a regression check.
+Use disposable SSH servers: a bastion reachable from the client, and a destination reachable from the bastion but blocked from direct client access. The bastion must permit `direct-tcpip` forwarding (`AllowTcpForwarding yes` in OpenSSH). Create both saved hosts in one Terra vault, with separate credentials. Set the destination's **Connect through** field to the bastion. Keep a direct saved host as a regression check.
 
 ## Saved route and connection
 
 1. Save and reopen the destination form. Its bastion selection should persist; choosing **Direct connection** should clear it. The picker should not offer the destination itself or a host already routed through another bastion.
 2. Open a terminal to the destination. It must reach the destination through the bastion. Confirm the destination is not directly reachable by temporarily blocking the bastion: the connection must fail, not bypass it.
-3. On first use, confirm each hop is stored separately in TermVault's known-host file (the current policy accepts a previously unknown key on first use). Change the bastion key, then the destination key. The terminal should show the changed-key prompt for the correct hop; rejecting it must stop the connection. Background host checks should fail promptly on a changed key. SFTP should retain its existing changed-key confirmation behavior.
+3. On first use, confirm each hop is stored separately in Terra's known-host file (the current policy accepts a previously unknown key on first use). Change the bastion key, then the destination key. The terminal should show the changed-key prompt for the correct hop; rejecting it must stop the connection. Background host checks should fail promptly on a changed key. SFTP should retain its existing changed-key confirmation behavior.
 4. Try wrong bastion credentials and correct destination credentials, then the reverse. The error should identify the failing hop. Restore both credentials.
 5. Close the pane and confirm both SSH connections close. Disconnect the bastion unexpectedly during an active destination shell; the pane should leave its connected state and display an error/disconnect.
-6. Reopen while the TermVault API is offline but the SSH network is reachable. The saved route should still connect from local encrypted data. It must not auto-connect on app launch.
+6. Reopen while the Terra API is offline but the SSH network is reachable. The saved route should still connect from local encrypted data. It must not auto-connect on app launch.
 
 ## SFTP, host checks, and forwarding
 

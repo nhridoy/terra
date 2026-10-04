@@ -1,4 +1,4 @@
-# TermVault local-first sync: manual test suite
+# Terra local-first sync: manual test suite
 
 **Purpose:** Verify that two independently installed clients converge through the server while remaining usable offline, that sensitive data stays encrypted in both databases, and that saved port forwards do not start on another device.
 
@@ -20,7 +20,7 @@ Record a failed step with its case ID, exact action, expected and actual result,
 
 ## Preparation
 
-1. Use **two separate app-data directories**: ideally two computers, A and B. Two windows sharing one OS profile and `termvault.db` are **not** two devices. Both clients must reach the same server URL. If the server runs on A, configure B with A's reachable LAN address, not `localhost`. The sign-in screen's **Server URL** control can set the endpoint.
+1. Use **two separate app-data directories**: ideally two computers, A and B. Two windows sharing one OS profile and `terra.db` are **not** two devices. Both clients must reach the same server URL. If the server runs on A, configure B with A's reachable LAN address, not `localhost`. The sign-in screen's **Server URL** control can set the endpoint.
 2. Use a **disposable test account** and a server database that you can reset. Save its recovery kit securely. Use a test SSH host that you own if you want to verify connecting or starting a forward. The sync tests need only saved host definitions; they do not require an SSH connection.
 3. Start the server with a persistent database. Sign up/sign in online on A, then sign in with the **same account** on B. Confirm both show the server-created **Personal** vault. If B cannot sign in or shows a different account/vault, stop and fix setup first.
 4. Open **Settings → Security** on each client. Leave **Ask for password every time** off for the first pass. Keep both apps open and online. The header's sync label is a button: click it to request a sync. Automatic sync is debounced and also runs periodically; for deterministic checks, click the label on each device and wait for it to stop saying **Syncing…**. A count such as **Pending (1)** means work remains.
@@ -147,7 +147,7 @@ Use disposable accounts and preserve the recovery kit. Password change/reset is 
 
 ### S14 — At-rest encryption inspection
 
-This check is useful if you can safely inspect a **copy** of each database. Tauri stores `termvault.db` under its app-data directory on each device; the server uses `DATABASE_URL`. Do not edit a live database. With `sqlite3`, query only the **shape** of the sensitive column, not the whole blob:
+This check is useful if you can safely inspect a **copy** of each database. Tauri stores `terra.db` under its app-data directory on each device; the server uses `DATABASE_URL`. Do not edit a live database. With `sqlite3`, query only the **shape** of the sensitive column, not the whole blob:
 
 ```sql
 SELECT id, json_valid(data) AS json_ok,
