@@ -6,7 +6,7 @@ TermVault's main Tauri window uses native decorations today. Replace them with a
 
 ## Layout
 
-A 36–40px title row sits at the top of the main window. It shows a restrained TermVault mark/name, leaves a generous uninterrupted drag region, and places window controls at the platform-appropriate edge. The current navigation header remains below this row with its tabs and actions unchanged; all fixed offsets and content heights account for the new title row. The title bar matches the app's existing dark colors and border language in every theme rather than inventing a new visual system.
+On signed-in routes, the 40px navigation header is also the title bar: navigation tabs, a compact selected-vault control, a flexible drag region, status/settings, and window controls share one row. There is no separate TermVault brand section in this header. Tabs scroll horizontally when crowded; the vault menu, status, and window controls remain reachable. Public auth routes use a separate compact 36px title bar because they have no navigation header. The title bar matches the app's existing dark colors and border language in every theme rather than inventing a new visual system.
 
 On macOS, position controls in the familiar left-side arrangement; on Windows and Linux, place them on the right. Each control has a clear hover/focus state, tooltip or accessible label, and at least a 36px pointer target. Close gets a danger hover treatment. The maximize button reflects maximized state and restores on the next click. Noninteractive blank space is draggable; buttons and other interactive elements are not. Double-clicking blank title space toggles maximization. The application remains resizable using native window edges.
 

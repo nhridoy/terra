@@ -4,7 +4,7 @@
 
 **Goal:** Replace native chrome on TermVault's main window with an accessible, draggable custom title bar across Windows, Linux, and macOS.
 
-**Architecture:** A top-level React title bar renders outside the authenticated layout so every route gets the same controls. Tauri retains native window management via its window API and narrowly granted capabilities. The existing navigation header moves below the new title row, with all dependent fixed offsets adjusted.
+**Architecture:** The authenticated navigation header doubles as the title bar, while public auth routes use a compact standalone title bar. Both reuse the same window-control and drag components. Tauri retains native window management via its window API and narrowly granted capabilities.
 
 **Tech Stack:** React, TypeScript, Tailwind CSS, Tauri v2, Vitest.
 
@@ -42,20 +42,20 @@
 
 **Files:** `client/src/components/layout/shell/TitleBar.tsx`, `client/src/components/layout/shell/TitleBar.test.tsx`, `client/src/App.tsx`, `client/src/index.css` (only if needed).
 
-**Interfaces:** `<TitleBar />` appears once above the router's pages. It uses the Task 1 adapter, exposes focusable controls with labels, and observes maximized state.
+**Interfaces:** `<TitleBar />` appears on public auth routes. The signed-in `<Header />` reuses its window-control and drag components. Both use the Task 1 adapter, expose focusable controls with labels, and observe maximized state.
 
 - [ ] Write component tests for accessible controls, action dispatch, double-click maximize, and state change; verify failure.
 - [ ] Implement a compact bar matching the existing palette, with macOS-left and Windows/Linux-right control placement, a safe blank drag area, and error toast.
-- [ ] Mount it across all main-window routes and run component tests to green.
+- [ ] Mount standalone chrome on public routes and merge controls into the signed-in header; run component tests to green.
 
 ### Task 3: Shell spacing and visual verification
 
 **Files:** `client/src/components/layout/shell/Header.tsx`, `client/src/components/layout/shell/Layout.tsx`, auth page wrappers or shared shell styles that assume `top: 0`.
 
-**Interfaces:** A single shared title-bar-height value positions the signed-in header, sidebar overlay, and content while auth pages retain full usable height.
+**Interfaces:** The signed-in sidebar, overlay, and content begin below one 40px header; public auth pages reserve the compact 36px title bar.
 
 - [ ] Add or update a layout test for top offsets on signed-in and auth routes; verify failure.
-- [ ] Adjust fixed offsets and content heights without changing tab behavior.
+- [ ] Adjust fixed offsets and content heights without changing tab behavior; ensure crowded tabs scroll without hiding controls.
 - [ ] Run `pnpm vitest`, `pnpm biome check .`, and `pnpm build` in `client/`; inspect the resulting app window once if a GUI session is available.
 - [ ] Run the Impeccable detector on changed UI files and address actionable findings in one pass.
 
