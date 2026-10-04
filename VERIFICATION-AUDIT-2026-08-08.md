@@ -1,4 +1,4 @@
-# TermVault Verification & Security Audit — 2026-08-08
+# Terra Verification & Security Audit — 2026-08-08
 
 ## Scope
 - 8 auth happy paths (email/social × signup/signin × gated/ungated)
@@ -45,7 +45,7 @@
 Gin v1.9.1 trusts all proxies by default → `X-Forwarded-For` spoofing resets every limiter key. **Fix:** `r.SetTrustedProxies(cfg.TrustedProxies)` (or `SetTrustedProxies(nil)`).
 
 ### [F4] MEDIUM — CORS reflects any origin: `middleware.go:134-154`
-Any web origin can call the API. Not cookies/bearer so no token theft, but browser-downloaded scripts, CSRF-style abuse (if the OS/keychain is compromised) are enabled; it's against the principle of least surprise for a local desktop client. **Fix:** restrict to `http://localhost:1420` and the `termvault://` scheme or configurable allowlist.
+Any web origin can call the API. Not cookies/bearer so no token theft, but browser-downloaded scripts, CSRF-style abuse (if the OS/keychain is compromised) are enabled; it's against the principle of least surprise for a local desktop client. **Fix:** restrict to `http://localhost:1420` and the `terra://` scheme or configurable allowlist.
 
 ### [F5] MEDIUM — Login proof replay: `handlers.go:86` nonce generated but never stored/bound; login never checks freshness
 Captured (email, nonce, proof) pair is replayable indefinitely until password change. **Fix:** server stores nonce from prelogin, single-use, expires, cleared on change.

@@ -145,3 +145,34 @@
 - [ ] **Step 4: Verify the compatibility boundary statically.** Confirm `/api/v1`, default server DB filename, DB schema/table names, sync event strings, crypto/AAD labels, and server encrypted payload fields are unchanged. Record remaining identifier matches by category.
 - [ ] **Step 5: Produce a manual coexistence checklist.** Include: install/run TermVault and Terra side by side; confirm separate app-data/database/keychain identities; verify old local TermVault data is unchanged; sign into an existing account on Terra and verify vault decrypt/sync/team access; exercise loopback OAuth; confirm updater clients request only their own manifest and validate signatures; verify existing server DB opens with no migration.
 - [ ] **Step 6: Leave all work uncommitted and unpushed pending the user's separate instruction.** Report changed files/submodules and checks; do not create commits or publish releases.
+
+### Follow-up tasks: complete active Terra identifier rename
+
+The user requested this expansion after the original identity rename was committed and pushed. A later request supersedes the original instruction to preserve active event/CSS/export identifiers, old server environment aliases, and the prior server DB default. Use only Terra server environment names and open the configured database URL directly; the default is `terra.db`.
+
+#### Task 7: Use the Terra server SQLite filename directly
+
+- [x] Change the default to `sqlite://terra.db` and open configured `DATABASE_URL` directly.
+- [x] Remove old server environment aliases and SQLite filename migration logic.
+- [x] Run `go test ./...`, `go vet ./...`, and `go build ./cmd/terra-server`.
+
+#### Task 8: Rename active desktop internal identifiers with compatibility readers
+
+- [x] Rename in-process `termvault:` events and `.termvault-diff-view` to Terra names across producers, listeners, tests, and styles.
+- [x] Write the Terra revoked-edit export format.
+- [x] Seal new team key grants with a Terra HKDF/AAD domain and preserve a legacy-domain decrypt fallback.
+- [x] Write session preference IDs under the Terra domain and read old preference IDs as fallback.
+- [ ] Run focused Rust tests for new/legacy team envelopes and preference IDs; run `cargo check --tests`.
+- [ ] Run frontend Vitest, Biome, and production build.
+
+#### Task 9: Align current product guidance
+
+- [x] Update the root README, agent instructions, first-release guide, updater runbook, feature-gap audit, and top-level implementation plan for Terra.
+- [x] Document Terra environment names and direct server database selection behavior.
+- [ ] Keep dated execution records and the separate mobile store ID unchanged; mobile source/store identifiers are not available in this checkout.
+
+#### Task 10: Final review and integration
+
+- [ ] Search active app/server/release/config docs for remaining branded identifiers; classify only necessary database/config/crypto compatibility values.
+- [ ] Run all available client, server, and release checks and record manual cross-platform/server migration checks.
+- [ ] Wait for a separate explicit instruction before committing or pushing this follow-up.

@@ -1,4 +1,4 @@
-# TermVault — Blackbox Authentication Test Plan
+# Terra — Blackbox Authentication Test Plan
 
 **Date:** 2026-08-09
 **Perspective:** Blackbox tester. Only two observation channels are used — **what the app shows you** (UI/UX) and **what the HTTP API answers** (status + body, via browser dev tools or curl). You never look inside the server, the database, or the code.

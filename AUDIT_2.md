@@ -1,4 +1,4 @@
-# TermVault — 2nd Comprehensive Audit
+# Terra — 2nd Comprehensive Audit
 
 ## Verdict
 

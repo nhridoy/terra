@@ -78,9 +78,9 @@ cd server && go test ./...
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TERRA_PORT` (`TERMVAULT_PORT` fallback) | Server port | `8080` |
-| `TERRA_HOST` (`TERMVAULT_HOST` fallback) | Bind address | `0.0.0.0` |
-| `DATABASE_URL` | DB connection string | `sqlite://termvault.db` |
+| `TERRA_PORT` | Server port | `8080` |
+| `TERRA_HOST` | Bind address | `0.0.0.0` |
+| `DATABASE_URL` | DB connection string | `sqlite://terra.db` |
 | `JWT_SECRET` | JWT signing secret | Required |
 | `JWT_EXPIRY` | Access token lifetime | `15m` |
 | `REFRESH_TOKEN_EXPIRY` | Refresh token lifetime | `720h` (30d) |
@@ -90,13 +90,14 @@ cd server && go test ./...
 | `RATE_LIMIT_API` | Requests/min for sync/refresh | `30` |
 | `TRUSTED_PROXIES` | Comma-separated CIDRs of reverse proxies | empty (no proxy) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed browser origins (Tauri webview + dev) | `http://localhost:1420, http://127.0.0.1:1420, http://tauri.localhost, tauri://localhost` |
-| `TERRA_APP_SCHEME` (`APP_SCHEME` fallback) | OAuth app-scheme fallback | `terra` |
+| `TERRA_APP_SCHEME` | OAuth app-scheme fallback | `terra` |
 | `OAUTH_REDIRECT_BASE` | Public base URL for provider callbacks | `BASE_URL` |
 | `OAUTH_GOOGLE_CLIENT_ID` | Google OAuth client ID | empty (Google login disabled) |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | Google OAuth client secret | empty |
 | `OAUTH_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty (GitHub login disabled) |
 | `OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
-| `TERRA_OAUTH_REDIRECT_URIS` (`TERMVAULT_OAUTH_REDIRECT_URIS` fallback) | Comma-separated allowlist of desktop app loopback callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
+| `TERRA_OAUTH_REDIRECT_URIS` | Comma-separated allowlist of desktop app loopback callback URIs | `http://127.0.0.1:142{1,2,3}/oauth/callback` |
+
 | `REQUIRE_EMAIL_VERIFICATION` | Require OTP email verification for password signups (`true`/`1`/`yes`) | `false` (off) |
 | `LOG_OTP_FALLBACK` | DEV ONLY: log OTPs to console when SMTP unset (server refuses to start with verification on + no SMTP unless set) | `false` |
 | `SMTP_HOST` | SMTP server hostname for verification emails (empty = server refuses to issue OTPs unless `LOG_OTP_FALLBACK`) | empty |
@@ -104,6 +105,8 @@ cd server && go test ./...
 | `SMTP_USERNAME` | SMTP auth username | empty |
 | `SMTP_PASSWORD` | SMTP auth password | empty |
 | `SMTP_FROM` | From address for verification emails | empty |
+
+Terra uses `terra.db` when `DATABASE_URL` is unset. When set, `DATABASE_URL` is used directly without filename discovery or migration.
 
 ### Client
 

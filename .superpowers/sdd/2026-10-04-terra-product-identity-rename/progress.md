@@ -8,9 +8,9 @@ User-owned updater public key in `client/src-tauri/tauri.conf.json` was preserve
 ## Implementation status
 
 - Desktop: Terra product/binary/package names, bundle ID `com.nhridoy.terra`, separate `terra.db` and local data namespace, Terra UI/export branding, and `terra-latest.json` updater feed are in place. Legacy server/wire/crypto identifiers are preserved where the approved design requires compatibility.
-- Server: Go module/import paths and executable entry point are `github.com/nhridoy/terra-server` and `cmd/terra-server`; Terra env vars take precedence with existing aliases retained. The server continues using the existing `termvault.db` default and compatible API/data formats.
+- Server: Go module/import paths and executable entry point are `github.com/nhridoy/terra-server` and `cmd/terra-server`; Terra env vars take precedence with existing aliases retained. The default database is `terra.db`; SQLite data at the previous filename is migrated before opening.
 - Release: CI and release workflows build/publish Terra desktop/server names and `ghcr.io/<owner>/terra-server`. The manifest builder emits `terra-latest.json`.
-- Documentation: active setup, release, and manual verification docs describe Terra and the separate desktop identity. Historical audit/spec/plan docs, mobile identity, crypto domains, events, CSS selectors, serialized wire IDs, and the server DB name remain unchanged by design.
+- Documentation: active setup, release, and manual verification docs describe Terra and the separate desktop identity. Historical audit/spec/plan docs and the separate mobile store identity remain unchanged.
 
 ## Verification
 
@@ -23,4 +23,12 @@ User-owned updater public key in `client/src-tauri/tauri.conf.json` was preserve
 
 ## Manual verification remaining
 
-Install and run TermVault and Terra side by side; verify local DB/keychain separation and preserved old data; sign in to an existing account, sync/decrypt data, test OAuth, confirm existing server DB opens unchanged, and verify each app requests only its own signed updater feed. Cross-platform installer/signing checks require builds on their target environments.
+Install and run the previous app and Terra side by side; verify local DB/keychain separation and preserved old data; sign in to an existing account, sync/decrypt data, test OAuth, confirm server DB migration preserves records, and verify Terra uses only its signed updater feed. Cross-platform installer/signing checks require builds on their target environments.
+
+## Follow-up: complete active identifier rename
+
+The user asked to rename remaining active identifiers after the original rename was pushed. Active desktop events, CSS selectors, export format labels, team-key write domains, session preference IDs, server environment variables, and the default database filename now use Terra identifiers. The server opens the configured database URL directly, defaults to `terra.db`, and does not migrate or discover another filename. Old encryption and preference identifiers remain read-only compatibility formats. Historical execution records remain historical.
+
+- `GOCACHE=/tmp/terra-go-cache go test ./internal/config ./cmd/terra-server -count=1`: passed after DB migration implementation.
+- `cargo check --tests --manifest-path client/src-tauri/Cargo.toml`: passed after adding legacy envelope coverage.
+- `cargo test --manifest-path client/src-tauri/Cargo.toml --lib`: 118 passed.

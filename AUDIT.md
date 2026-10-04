@@ -1,4 +1,4 @@
-# TermVault — Codebase Audit Report
+# Terra — Codebase Audit Report
 
 ## Overall Status
 
@@ -27,9 +27,9 @@
 | # | Issue | Location | Severity |
 |---|-------|----------|----------|
 | 1 | No access token revocation — logout only deletes refresh tokens; access token stays valid until expiry | `server/internal/api/auth.go:294-303` | HIGH |
-| 2 | No rate limiting on `/api/auth/refresh`, `/api/sync/push` | `server/cmd/termvault-server/main.go` | HIGH |
+| 2 | No rate limiting on `/api/auth/refresh`, `/api/sync/push` | `server/cmd/terra-server/main.go` | HIGH |
 | 3 | Rate limiter memory leak — unbounded map growth, no cleanup | `server/internal/auth/ratelimit.go:33-40` | MEDIUM |
-| 4 | No CSRF protection | `server/cmd/termvault-server/main.go` | MEDIUM |
+| 4 | No CSRF protection | `server/cmd/terra-server/main.go` | MEDIUM |
 | 5 | SyncPush errors silently ignored — no error checking on individual `Save()` calls | `server/internal/api/sync.go:93-123` | HIGH |
 | 6 | No request body size limits — SyncPush can accept arbitrarily large payloads | `server/internal/api/sync.go` | MEDIUM |
 | 7 | No input validation on password/privatekey/passphrase fields | `server/internal/api/data.go:14-25` | MEDIUM |

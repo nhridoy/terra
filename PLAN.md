@@ -1,8 +1,8 @@
-# TermVault — Complete Implementation Plan
+# Terra — Complete Implementation Plan
 
 ## 1. Project Overview
 
-**TermVault** is an open-source, self-hosted SSH client and infrastructure management platform — a 1-to-1 replica of Termius with identical encryption, but self-hosted and open-source.
+**Terra** is an open-source, self-hosted SSH client and infrastructure management platform — a 1-to-1 replica of Termius with identical encryption, but self-hosted and open-source.
 
 ### Architecture
 
@@ -39,10 +39,10 @@
 ## 3. Project Structure
 
 ```
-termvault/
+terra/
 ├── server/                          # Go backend
 │   ├── cmd/
-│   │   └── termvault-server/        # Entry point
+│   │   └── terra-server/        # Entry point
 │   │       └── main.go
 │   ├── internal/
 │   │   ├── api/                     # HTTP handlers
@@ -367,7 +367,7 @@ CREATE TABLE settings (
 //   MEMLIMIT_INTERACTIVE = 67108864 (64 MiB)
 //   ALG = ARGON2ID13
 
-// TermVault identical config:
+// Terra identical config:
 import { argon2id } from 'libsodium-wrappers';
 
 const deriveKey = async (password, salt) => {
@@ -693,7 +693,7 @@ export const themes = {
 
 ## 8. Performance Targets
 
-| Metric | Termius | TermVault Target |
+| Metric | Termius | Terra Target |
 |--------|---------|------------------|
 | Bundle Size | ~120 MB | **< 20 MB** |
 | Idle RAM | ~200 MB | **< 60 MB** |
@@ -719,23 +719,23 @@ export const themes = {
 ```yaml
 version: '3.8'
 services:
-  termvault:
-    image: ghcr.io/nhridoy/termvault-server:latest
+  terra:
+    image: ghcr.io/nhridoy/terra-server:latest
     ports:
       - "8080:8080"
     environment:
-      - DATABASE_URL=sqlite:///data/termvault.db
+      - DATABASE_URL=sqlite:///data/terra.db
       - JWT_SECRET=${JWT_SECRET}
       - OAUTH_GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - OAUTH_GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - OAUTH_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - OAUTH_GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     volumes:
-      - termvault-data:/data
+      - terra-data:/data
     restart: unless-stopped
 
 volumes:
-  termvault-data:
+  terra-data:
 ```
 
 ### Desktop Client Distribution
@@ -804,7 +804,7 @@ volumes:
 
 ## 11. Competitive Advantages over Termius
 
-| Feature | Termius | TermVault |
+| Feature | Termius | Terra |
 |---------|---------|-----------|
 | Self-hosted | ❌ Cloud only | ✅ Full control |
 | Open source | ❌ Proprietary | ✅ MIT license |
@@ -823,13 +823,13 @@ volumes:
 
 ```bash
 # Server Configuration
-TERMVAULT_PORT=8080
-TERMVAULT_HOST=0.0.0.0
+TERRA_PORT=8080
+TERRA_HOST=0.0.0.0
 
 # Database
-DATABASE_URL=sqlite:///data/termvault.db
-# DATABASE_URL=postgres://user:pass@localhost:5432/termvault
-# DATABASE_URL=mysql://user:pass@localhost:3306/termvault
+DATABASE_URL=sqlite:///data/terra.db
+# DATABASE_URL=postgres://user:pass@localhost:5432/terra
+# DATABASE_URL=mysql://user:pass@localhost:3306/terra
 
 # JWT
 JWT_SECRET=your-secret-key-here

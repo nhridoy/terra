@@ -1,4 +1,4 @@
-# TermVault feature-gap and reliability audit
+# Terra feature-gap and reliability audit
 
 **Audited:** 2026-09-27
 **Repository baseline:** monorepo `b17b6a1`, client `7edda97`, server `88f5f5e`
@@ -7,12 +7,12 @@
 ## How to read this document
 
 - **Confirmed incomplete** means the current source has an empty implementation, an explicit unavailable message, or a control that cannot do what its label promises.
-- **Feature gap** means the capability is advertised by Termius but no equivalent implementation was found in the audited TermVault desktop client/server. Absence from a code search is weaker evidence than a failing live test, so verify scope before starting work.
+- **Feature gap** means the capability is advertised by Termius but no equivalent implementation was found in the audited Terra desktop client/server. Absence from a code search is weaker evidence than a failing live test, so verify scope before starting work.
 - **Improvement / verification** means code exists but its quality or platform coverage has not been established by this audit.
 - **P0** blocks a core product promise or misleads users; **P1** is a major workflow gap; **P2** is a competitive or quality improvement. Priority is a proposed order, not a release commitment.
 - Paths below are relative to the monorepo root. This is a source audit, not a claim that every screen was manually tested. The user manually tested local, remote, and dynamic port forwarding successfully before this audit; those modes are **not** listed as missing.
 
-The comparison baseline is the [Termius feature matrix](https://www.termius.com/pricing), which currently lists SSH/SFTP/Telnet/Mosh/local terminal, forwarding, agent forwarding, jump-host chains, proxies, serial, certificates, FIDO2, group configurations, autocomplete, workspaces, snippets, synchronization, collaboration, and session logs. Specific claims can change; recheck that page when planning parity work. TermVault does not need every Termius feature to be useful. Decide product scope before treating this list as a promise.
+The comparison baseline is the [Termius feature matrix](https://www.termius.com/pricing), which currently lists SSH/SFTP/Telnet/Mosh/local terminal, forwarding, agent forwarding, jump-host chains, proxies, serial, certificates, FIDO2, group configurations, autocomplete, workspaces, snippets, synchronization, collaboration, and session logs. Specific claims can change; recheck that page when planning parity work. Terra does not need every Termius feature to be useful. Decide product scope before treating this list as a promise.
 
 ## At a glance
 
@@ -137,7 +137,7 @@ The comparison baseline is the [Termius feature matrix](https://www.termius.com/
 
 **Current behavior.** The audited connection backend contains SSH, SFTP, and local-terminal implementations, but no Telnet, Mosh, or serial connection module or matching host workflow was found. Termius lists them as supported protocols in its [feature matrix](https://www.termius.com/pricing). These are optional parity targets, not evidence that existing SSH is broken.
 
-**Decisions and acceptance checks.** Choose which protocols matter to TermVault users before building them. Telnet is plaintext and should be visibly labeled as such. Mosh needs different transport/network behavior and a server-side installation requirement. Serial needs device enumeration, port permissions, baud/parity/flow-control settings, and per-OS testing. Each selected protocol should support connect/disconnect, error reporting, tab lifecycle, and saved connection settings; do not present SSH-only controls where they do not apply.
+**Decisions and acceptance checks.** Choose which protocols matter to Terra users before building them. Telnet is plaintext and should be visibly labeled as such. Mosh needs different transport/network behavior and a server-side installation requirement. Serial needs device enumeration, port permissions, baud/parity/flow-control settings, and per-OS testing. Each selected protocol should support connect/disconnect, error reporting, tab lifecycle, and saved connection settings; do not present SSH-only controls where they do not apply.
 
 ## G09 — Context-aware terminal autocomplete
 

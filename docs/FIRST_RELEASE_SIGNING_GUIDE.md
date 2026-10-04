@@ -59,9 +59,9 @@ To check configured **names** without exposing values, use `gh secret list --rep
 
 ### Tauri updater key
 
-Terra uses the updater public key in `client/src-tauri/tauri.conf.json`; the release manifest builder uses it to validate generated updater signatures. The matching Terra private key is required for every release. Confirm that the key backup exists and that a maintainer knows its password before tagging. A TermVault updater key is valid only if it matches Terra's configured public key exactly.
+Terra uses the updater public key in `client/src-tauri/tauri.conf.json`; the release manifest builder uses it to validate generated updater signatures. The matching Terra private key is required for every release. Confirm that the key backup exists and that a maintainer knows its password before tagging. A previously used updater key is valid only if it matches Terra's configured public key exactly.
 
-Terra has a new desktop bundle identifier and separate local database/keychain namespace. It installs as a separate application and does not migrate or modify TermVault's local data. Both applications can sign in to the same server account because the server API and encrypted data formats remain compatible. The server keeps its existing database location and `termvault.db` default.
+Terra has a new desktop bundle identifier and separate local database/keychain namespace. It installs as a separate application and leaves existing local app data untouched. Terra's server defaults to a separate `terra.db` SQLite file; deployments can choose another file with `DATABASE_URL`. The server API and encrypted data formats remain compatible.
 
 If the matching private key is lost and **no public release has been made**, create a replacement pair using the Tauri v2 signer instructions, update the public key in `tauri.conf.json`, and provision the new private key/password before the first public tag. After users install a release trusting a public key, losing its private key prevents normal future updates. A key rotation after publication needs a bridge release or a separate manual migration plan.
 

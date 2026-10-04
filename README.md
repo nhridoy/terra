@@ -86,16 +86,16 @@ npx expo run:android
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TERRA_PORT` (`TERMVAULT_PORT` fallback) | Server port | `8080` |
-| `TERRA_HOST` (`TERMVAULT_HOST` fallback) | Server host | `0.0.0.0` |
-| `TERRA_APP_SCHEME` (`APP_SCHEME` fallback) | Desktop OAuth app-scheme fallback | `terra` |
-| `TERRA_OAUTH_REDIRECT_URIS` (`TERMVAULT_OAUTH_REDIRECT_URIS` fallback) | Allowed desktop OAuth loopback callbacks | `http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback` |
-| `DATABASE_URL` | Database connection | `sqlite:///data/termvault.db` |
+| `TERRA_PORT` | Server port | `8080` |
+| `TERRA_HOST` | Server host | `0.0.0.0` |
+| `TERRA_APP_SCHEME` | Desktop OAuth app-scheme fallback | `terra` |
+| `TERRA_OAUTH_REDIRECT_URIS` | Allowed desktop OAuth loopback callbacks | `http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback` |
+| `DATABASE_URL` | Database connection | `sqlite:///data/terra.db` |
 | `JWT_SECRET` | JWT signing secret | Required |
 | `JWT_EXPIRY` | JWT token expiry | `24h` |
 | `BASE_URL` | Public URL | `http://localhost:8080` |
 
-`TERRA_*` settings take precedence when set; the legacy variable shown in parentheses remains a fallback for the first Terra server release. Existing server installations keep using their configured database, and the default filename remains `termvault.db` to avoid silently opening a new empty database.
+The server accepts the Terra environment variable names above. The default SQLite database is `terra.db`; an explicit `DATABASE_URL` selects any other configured database directly.
 
 ### OAuth Providers
 
@@ -174,4 +174,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Support
 
 - GitHub Issues: https://github.com/nhridoy/terra/issues
-- Discord: https://discord.gg/termvault

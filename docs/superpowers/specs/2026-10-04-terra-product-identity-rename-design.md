@@ -74,3 +74,13 @@ Treat this as one identity migration with coordinated client and server reposito
 1. Confirm `com.nhridoy.terra` as the desktop bundle identifier, `github.com/nhridoy/terra-server` as the Go module path, and `ghcr.io/nhridoy/terra-server` as the public server image.
 2. Confirm legacy server environment aliases remain for at least the first Terra server release.
 3. Decide whether current mobile/App Store identifiers are in scope. This spec assumes the requested Windows/Linux/macOS desktop product plus server/release identity; mobile store identity is excluded because changing a store app ID creates a separate installed application.
+
+## Follow-up: complete active identifier rename
+
+After the initial rename was committed, the user requested that remaining active Terra-owned identifiers also be renamed. The current desktop emits `terra:` window event names, uses `.terra-diff-view`, writes the `terra-revoked-team-edits-v1` export format, uses a Terra namespace for session-retention row IDs, and seals new team-key envelopes with a Terra cryptographic domain. Readers retain the prior key-envelope and preference-ID domains so encrypted team access and saved retention settings remain usable.
+
+The server default SQLite filename is `terra.db`. It opens the configured `DATABASE_URL` directly; it does not inspect, rename, or migrate another filename. Terra-specific environment variables are the only accepted names.
+
+The rename applies to active app/server/release identifiers and product branding. Stable encryption/AAD domains and stored preference IDs retain dual-read support where needed so Terra can still read already-synced encrypted data; these are data-format identifiers, not product names. Dated audit/specification documents remain historical records. The separate mobile store ID remains out of scope because the mobile source and matching store identity are not present in this checkout.
+
+Current product guides and the top-level project plan use Terra. Dated audits and implementation records remain historical. The mobile store package ID remains excluded because this checkout does not include the mobile source or matching store identity configuration; changing only its workflow destination would make mobile publishing fail.

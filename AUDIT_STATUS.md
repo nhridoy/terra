@@ -1,4 +1,4 @@
-# TermVault — Audit Status Tracker
+# Terra — Audit Status Tracker
 
 > Consolidated from AUDIT.md + AUDIT_2.md. Generated 2026-07-20.
 
@@ -58,7 +58,7 @@
 
 | # | Status | Item | Description | Solution |
 |---|--------|------|-------------|----------|
-| 24 | ✅ | SSH host key verification | SHA-256 fingerprint is emitted to frontend via event. But there's no `known_hosts` file, no trust-on-first-use persistence, and no rejection of changed keys. Information-only, not verification. | Implemented TOFU: first connection trusts and saves fingerprint to `~/.termvault/known_hosts`. Subsequent connections verify against saved fingerprint. If key changed, shows warning dialog with old/new fingerprints. User can accept (update known_hosts) or reject (abort connection). |
+| 24 | ✅ | SSH host key verification | SHA-256 fingerprint is emitted to frontend via event. But there's no `known_hosts` file, no trust-on-first-use persistence, and no rejection of changed keys. Information-only, not verification. | Implemented TOFU: first connection trusts and saves fingerprint to `~/.terra/known_hosts`. Subsequent connections verify against saved fingerprint. If key changed, shows warning dialog with old/new fingerprints. User can accept (update known_hosts) or reject (abort connection). |
 | 25 | 🔶 | Docker Go version | Updated from `golang:1.21-alpine` to `golang:1.23-alpine`. Still mismatched with `go 1.25` in go.mod. | Either update Dockerfile to `golang:1.25-alpine` or downgrade go.mod to `go 1.23`. |
 | 26 | 🔶 | REST update endpoints | All 8 update endpoints in `data.go` parse the request but never copy fields to the model. `Save()` re-saves the unchanged DB record. No-ops by design comment. | Either implement proper field copying (each endpoint copies `req` fields to model) or remove the endpoints entirely since the client uses sync. Document decision. |
 

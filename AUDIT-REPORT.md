@@ -24,7 +24,7 @@ Notes: the app is early-stage. A large block of the client is scaffolded-but-abs
 - **Suggestion:** Make register strictly create-only (409 on existing id) and route retries through `/login`, or require the login-style proof on the replay path.
 
 ### 3. Login/recovery are unthrottled — rate limiter is dead code
-- **File:** `server/cmd/termvault-server/main.go:47-64` (limiter never wired), `server/internal/auth/middleware.go:97-131` (defined, only used in tests)
+- **File:** `server/cmd/terra-server/main.go:47-64` (limiter never wired), `server/internal/auth/middleware.go:97-131` (defined, only used in tests)
 - **Problem:** `RateLimit`, `cfg.RateLimitAuth`, `cfg.RateLimitAPI` are parsed but no route uses them.
 - **Impact:** Unlimited online brute-force of the password verifier (`/login`) and unlimited recovery-code guessing (`/recovery`).
 - **Suggestion:** Apply `RateLimit(RateLimitAuth)` to prelogin/login/register/recovery and `RateLimit(RateLimitAPI)` to the protected group in `main.go`.
@@ -36,7 +36,7 @@ Notes: the app is early-stage. A large block of the client is scaffolded-but-abs
 - **Suggestion:** Fail startup when `JWT_SECRET` is missing or `< 32` bytes; add `jwt.WithValidMethods([]string{"HS256"})`.
 
 ### 5. TRUSTED_PROXIES parsed but never applied; Gin trusts every proxy
-- **File:** `server/internal/config/config.go:67-74` (parsed), `server/cmd/termvault-server/main.go:39`
+- **File:** `server/internal/config/config.go:67-74` (parsed), `server/cmd/terra-server/main.go:39`
 - **Problem:** `gin.Default()` trusts all proxies; `cfg.TrustedProxies` is never passed to `r.SetTrustedProxies` — `c.ClientIP()` honors attacker-supplied `X-Forwarded-For`.
 - **Impact:** When rate limiting (#3) ships it's trivially bypassable by header spoofing; any IP-based logic is spoofable.
 - **Suggestion:** `r.SetTrustedProxies(cfg.TrustedProxies)` in `main.go` (empty = trust none).
@@ -56,7 +56,7 @@ Notes: the app is early-stage. A large block of the client is scaffolded-but-abs
 ### 8. Tauri updater ships the well-known placeholder public key
 - **File:** `client/src-tauri/tauri.conf.json:76`
 - **Problem:** The updater `pubkey` is Tauri's public dev key (private key shipped in the docs).
-- **Impact:** Anyone who controls `releases.termvault.app` (domain takeover, DNS, malicious self-host mirror) can ship a signed malicious update → remote code execution.
+- **Impact:** Anyone who controls `releases.terra.app` (domain takeover, DNS, malicious self-host mirror) can ship a signed malicious update → remote code execution.
 - **Suggestion:** Disable the updater until a real key pair is generated and the production pubkey is set.
 
 ### 9. Capabilities grant full-filesystem read/write/delete from the WebView
@@ -179,7 +179,7 @@ Notes: the app is early-stage. A large block of the client is scaffolded-but-abs
 ## Phase 4: Low (hygiene, polish, docs)
 
 ### 28. Request ID middleware never wired
-- **File:** `server/cmd/termvault-server/main.go:39`, `server/internal/auth/middleware.go:14-21`
+- **File:** `server/cmd/terra-server/main.go:39`, `server/internal/auth/middleware.go:14-21`
 - **Problem:** Every success/error payload returns `request_id: ""`.
 - **Fix:** `r.Use(auth.RequestID())`.
 
@@ -193,7 +193,7 @@ Notes: the app is early-stage. A large block of the client is scaffolded-but-abs
 - **Fix:** Delete the JWT refresh return; wire real at-rest encryption (SQLCipher) or correct the claim.
 
 ### 31. DATABASE_URL scheme ignored
-- **File:** `server/cmd/termvault-server/main.go:23-27`
+- **File:** `server/cmd/terra-server/main.go:23-27`
 - **Problem:** Always uses the sqlite GORM driver regardless of DSN scheme, contradicting the documented Postgres/MySQL support.
 - **Fix:** Switch on the DSN scheme and use the matching GORM driver.
 
