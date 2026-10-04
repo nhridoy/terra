@@ -720,7 +720,7 @@ export const themes = {
 version: '3.8'
 services:
   termvault:
-    image: termvault/server:latest
+    image: ghcr.io/nhridoy/termvault-server:latest
     ports:
       - "8080:8080"
     environment:
