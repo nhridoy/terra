@@ -42,28 +42,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: client/package-lock.json
-          
+      - name: Fetch private client submodule
+        env:
+          SUBMODULE_READ_TOKEN: ${{ secrets.SUBMODULE_READ_TOKEN }}
+        run: |
+          git -c "url.https://x-access-token:${SUBMODULE_READ_TOKEN}@github.com/.insteadOf=git@personal:" submodule update --init client
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
         working-directory: ./client
-        
       - name: Run linter
-        run: npm run lint
+        run: bun run biome lint .
         working-directory: ./client
-        
       - name: Run type check
-        run: npm run typecheck
+        run: bun run tsc
         working-directory: ./client
-        
       - name: Run tests
-        run: npm test
+        run: bun run vitest run
         working-directory: ./client
 
   build-desktop:
@@ -75,27 +70,34 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          
+      - name: Fetch private client submodule
+        env:
+          SUBMODULE_READ_TOKEN: ${{ secrets.SUBMODULE_READ_TOKEN }}
+        run: |
+          git -c "url.https://x-access-token:${SUBMODULE_READ_TOKEN}@github.com/.insteadOf=git@personal:" submodule update --init client
+      - uses: oven-sh/setup-bun@v2
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
-        
-      - name: Install dependencies
-        run: npm ci
-        working-directory: ./client
-        
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Check build API URL
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: test -n "$VITE_API_URL" || { echo 'Repository variable VITE_API_URL is required'; exit 1; }
+        shell: bash
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2 libssl-dev
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: ./client
+      - name: Build Tauri app
+        run: bun tauri build --ci
+        working-directory: ./client
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        with:
-          projectPath: ./client
-          tauriScript: npm run tauri
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   build-server-docker:
     name: Build Server Docker
