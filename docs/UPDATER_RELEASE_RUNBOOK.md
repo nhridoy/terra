@@ -5,8 +5,8 @@ Terra checks the monorepo's latest GitHub Release for `terra-latest.json`. Windo
 ## One-time setup
 
 1. Keep the Terra Tauri updater **private** signing key outside Git. Its matching **public** key is embedded in `client/src-tauri/tauri.conf.json`. If reusing a previously generated updater key, first verify that its public key exactly matches Terra's configured key. Otherwise create and securely back up a Terra keypair, then configure its public key before release. After Terra has a signed release, treat key rotation as a migration rather than silently replacing the key.
-2. Add repository Actions secret `TAURI_SIGNING_PRIVATE_KEY` containing the private key file contents. Add `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has a password. Never paste the key into a workflow, issue, log, or commit.
-3. Add `SUBMODULE_READ_TOKEN`: a narrowly scoped read token with access to the `terra-client` and `terra-server` repositories. The workflow uses it only to fetch the exact gitlink revisions from the monorepo. The existing `git@personal:` URLs are a local SSH alias and are rewritten only inside each CI command.
+2. In the `Release` environment (Settings → Environments → Release), add secret `TAURI_SIGNING_PRIVATE_KEY` containing the private key file contents. Add `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` there if the key has a password. Never paste the key into a workflow, issue, log, or commit.
+3. No submodule token is needed: `terra-client` and `terra-server` are public, so CI rewrites the local `git@personal:` SSH alias to anonymous `https://github.com/` inside each fetch command.
 4. Set up Windows installer signing and macOS signing/notarization credentials before distributing those builds as production releases. Tauri updater signatures verify the downloaded update but do not replace operating-system trust checks. Add the platform-specific signing environment variables/secrets to the desktop build job when those identities are available.
 5. Keep the monorepo GitHub Release public if it is the public desktop update channel. For a private repository, unauthenticated desktop clients cannot fetch `terra-latest.json` from the Releases URL.
 
@@ -16,18 +16,18 @@ The monorepo's `Release` workflow runs when a `v*` tag is pushed. It reads the e
 
 ### Alpha release
 
-1. Choose the next prerelease version, such as `1.0.0-alpha.1` (then `alpha.2`, `alpha.3`, etc.). Update the version in `client/src-tauri/tauri.conf.json`, `client/package.json`, and `client/src-tauri/Cargo.toml`; update the `terra` package entry in `client/src-tauri/Cargo.lock` to match.
+1. Choose the next prerelease version, such as `0.0.1-alpha.1` (then `alpha.2`, `alpha.3`, etc.). Update the version in `client/src-tauri/tauri.conf.json`, `client/package.json`, and `client/src-tauri/Cargo.toml`; update the `terra` package entry in `client/src-tauri/Cargo.lock` to match.
 2. Commit and push the client version change to `main` in the private client repository.
 3. In the monorepo, update the client submodule pointer and commit/push the release workflow or README changes needed for the release. Check that `git submodule status` shows the intended client revision.
 4. Create and push the matching tag from the monorepo commit, for example:
 
    ```bash
-   git tag -a v1.0.0-alpha.1 -m "Terra 1.0.0-alpha.1"
-   git push origin v1.0.0-alpha.1
+   git tag -a v0.0.1-alpha.1 -m "Terra 0.0.1-alpha.1"
+   git push origin v0.0.1-alpha.1
    ```
 
-5. Monitor **Actions → Release**. The workflow checks the required `SUBMODULE_READ_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY`, and repository variable `VITE_API_URL`, then builds Windows, Linux, macOS Intel, macOS Apple Silicon, the server archive, and the versioned GHCR image. It publishes a GitHub prerelease; alpha Docker images are version-tagged and do not overwrite `latest`.
-6. Confirm the GitHub release is marked **Pre-release** and contains `terra-latest.json`, Windows NSIS `.exe`, macOS `.app.tar.gz` for both architectures, Linux `.AppImage`, installer bundles, signatures, and `terra-server-linux-amd64.tar.gz`. Confirm the versioned image exists at `ghcr.io/nhridoy/terra-server:1.0.0-alpha.1`.
+5. Monitor **Actions → Release**. The workflow checks the `Release` environment secret `TAURI_SIGNING_PRIVATE_KEY` and variable `VITE_API_URL`, then builds Windows, Linux, macOS Intel, macOS Apple Silicon, the server archive, and the versioned GHCR image. It publishes a GitHub prerelease; alpha Docker images are version-tagged and do not overwrite `latest`.
+6. Confirm the GitHub release is marked **Pre-release** and contains `terra-latest.json`, Windows NSIS `.exe`, macOS `.app.tar.gz` for both architectures, Linux `.AppImage`, installer bundles, signatures, and `terra-server-linux-amd64.tar.gz`. Confirm the versioned image exists at `ghcr.io/nhridoy/terra-server:0.0.1-alpha.1`.
 7. Download and manually install the alpha builds for testing. The app's configured updater endpoint follows GitHub's stable `/releases/latest` feed, so it does not offer prereleases as in-app updates.
 
 ### Stable release

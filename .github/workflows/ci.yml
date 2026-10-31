@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI
 
 on:
   push:
@@ -6,132 +6,38 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  server-tests:
-    name: Server Tests
+  client:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          
-      - name: Download dependencies
-        run: go mod download
-        working-directory: ./server
-        
-      - name: Run tests
-        run: go test -v ./...
-        working-directory: ./server
-        
-      - name: Run linter
-        uses: golangci/golangci-lint-action@v4
-        with:
-          working-directory: ./server
-
-  client-tests:
-    name: Client Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch private client submodule
-        env:
-          SUBMODULE_READ_TOKEN: ${{ secrets.SUBMODULE_READ_TOKEN }}
+      - name: Fetch client submodule
         run: |
-          git -c "url.https://x-access-token:${SUBMODULE_READ_TOKEN}@github.com/.insteadOf=git@personal:" submodule update --init client
+          git -c "url.https://github.com/.insteadOf=git@personal:" submodule update --init client
       - uses: oven-sh/setup-bun@v2
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ./client
-      - name: Run linter
-        run: bun run biome lint .
-        working-directory: ./client
-      - name: Run type check
-        run: bun run tsc
-        working-directory: ./client
-      - name: Run tests
-        run: bun run vitest run
-        working-directory: ./client
+      - run: bun install --frozen-lockfile
+        working-directory: client
+      - run: bun run biome lint .
+        working-directory: client
+      - run: bun run tsc
+        working-directory: client
+      - run: bun run vitest run
+        working-directory: client
 
-  build-desktop:
-    name: Build Desktop (${{ matrix.os }})
-    needs: [server-tests, client-tests]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch private client submodule
-        env:
-          SUBMODULE_READ_TOKEN: ${{ secrets.SUBMODULE_READ_TOKEN }}
-        run: |
-          git -c "url.https://x-access-token:${SUBMODULE_READ_TOKEN}@github.com/.insteadOf=git@personal:" submodule update --init client
-      - uses: oven-sh/setup-bun@v2
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Check build API URL
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-        run: test -n "$VITE_API_URL" || { echo 'Repository variable VITE_API_URL is required'; exit 1; }
-        shell: bash
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2 libssl-dev
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ./client
-      - name: Build Tauri app
-        run: bun tauri build --ci
-        working-directory: ./client
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-  build-server-docker:
-    name: Build Server Docker
-    needs: [server-tests]
+  server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Fetch server submodule
+        run: |
+          git -c "url.https://github.com/.insteadOf=git@personal:" submodule update --init server
+      - uses: actions/setup-go@v5
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/terra-server
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha
-            
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          go-version-file: server/go.mod
+      - run: go vet ./...
+        working-directory: server
+      - run: go test ./...
+        working-directory: server

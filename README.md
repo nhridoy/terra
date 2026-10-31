@@ -89,7 +89,46 @@ npx expo run:android
 
 ## Desktop Releases
 
-Desktop releases are built from version tags by GitHub Actions. For the first alpha and future stable releases, follow the [desktop release runbook](docs/UPDATER_RELEASE_RUNBOOK.md). It covers required repository secrets and variables, version updates, tagging, artifact checks, and updater signing. Alpha releases are GitHub prereleases and do not replace the stable `latest` server image.
+Pushing a `v*` tag runs the `Release` workflow. It builds the signed desktop apps, the server archive, and the GHCR image, then publishes a GitHub Release. Tags with a `-` (such as `v0.0.1-alpha.1`) become prereleases and do not replace the `latest` server image. See the [desktop release runbook](docs/UPDATER_RELEASE_RUNBOOK.md) for one-time setup, artifact checks, and updater signing.
+
+The tag must equal `v` + the version in `client/src-tauri/tauri.conf.json`, or the workflow stops before building. The `Release` environment must contain the secret `TAURI_SIGNING_PRIVATE_KEY` (plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has one) and the variable `VITE_API_URL`.
+
+Run from the monorepo root, in this order (the tag builds whichever client commit the monorepo points to):
+
+```bash
+VERSION=0.0.1-alpha.1
+
+# 1. Bump the version in the client repo and push it
+#    (client/package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml,
+#     and the `terra` entry in src-tauri/Cargo.lock)
+cd client
+git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+git commit -m "chore(release): set version $VERSION"
+git push origin main
+cd ..
+
+# 2. Commit the new client pointer in the monorepo and push it
+git add client
+git commit -m "chore(release): Terra $VERSION"
+git push origin main
+git submodule status   # the client line must show the commit pushed in step 1
+
+# 3. Tag and push. This starts the Release workflow
+git tag -a "v$VERSION" -m "Terra $VERSION"
+git push origin "v$VERSION"
+
+# 4. Watch the run
+gh run watch
+```
+
+If the run fails before a release is published, delete the tag, push the fix, and tag again:
+
+```bash
+git tag -d "v$VERSION"
+git push origin ":refs/tags/v$VERSION"
+```
+
+After a release has been published, never reuse its version. Ship the fix as the next version (for example `0.0.1-alpha.2`).
 
 ## Configuration
 
