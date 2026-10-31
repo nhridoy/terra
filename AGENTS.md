@@ -53,7 +53,7 @@ cd server && go test ./...
 
 ## Database
 
-- Server: GORM with `DATABASE_URL` env — supports SQLite (dev), PostgreSQL, MySQL
+- Server: GORM with `DATABASE_URL` env — supports SQLite (dev) and PostgreSQL (production)
 - Client: SQLite via rusqlite (encrypted at rest)
 - Schema is identical on both sides — mirror models
 

@@ -51,19 +51,26 @@ go run ./cmd/terra-server
 
 ### Docker
 
-The published server container is `ghcr.io/nhridoy/terra-server`:
+The server image is published as `ghcr.io/nhridoy/terra-server`.
 
 ```bash
-docker pull ghcr.io/nhridoy/terra-server:latest
+cd server
+cp .env.example .env
+# Set JWT_SECRET, BASE_URL, and a production DATABASE_URL in .env
+docker compose up -d --build
+
+# Or run the published image instead of building locally
+docker compose pull
+docker compose up -d
 ```
 
-```bash
-# Development
-docker-compose up -d
+SQLite is supported for local development. Production deployments must use PostgreSQL, for example:
 
-# Production
-docker-compose -f docker-compose.production.yml up -d
+```dotenv
+DATABASE_URL=postgres://terra:change-me@db.example.com:5432/terra?sslmode=require
 ```
+
+Compose publishes port `8080` by default (`TERRA_HTTP_PORT`). Put the server behind a TLS-terminating reverse proxy, then set `BASE_URL`, `TRUSTED_PROXIES`, and `TERRA_BIND_IP=127.0.0.1` as needed. The `terra-data` volume is only used by SQLite.
 
 ### Mobile
 
@@ -90,12 +97,12 @@ npx expo run:android
 | `TERRA_HOST` | Server host | `0.0.0.0` |
 | `TERRA_APP_SCHEME` | Desktop OAuth app-scheme fallback | `terra` |
 | `TERRA_OAUTH_REDIRECT_URIS` | Allowed desktop OAuth loopback callbacks | `http://127.0.0.1:1421/oauth/callback,http://127.0.0.1:1422/oauth/callback,http://127.0.0.1:1423/oauth/callback` |
-| `DATABASE_URL` | Database connection | `sqlite:///data/terra.db` |
+| `DATABASE_URL` | Database connection (SQLite for dev, PostgreSQL for production) | `sqlite://terra.db` |
 | `JWT_SECRET` | JWT signing secret | Required |
-| `JWT_EXPIRY` | JWT token expiry | `24h` |
+| `JWT_EXPIRY` | JWT token expiry | `15m` |
 | `BASE_URL` | Public URL | `http://localhost:8080` |
 
-The server accepts the Terra environment variable names above. The default SQLite database is `terra.db`; an explicit `DATABASE_URL` selects any other configured database directly.
+The server accepts the Terra environment variable names above. The default SQLite database is `terra.db` for local development; production deployments should set `DATABASE_URL` to a `postgres://` connection string.
 
 ### OAuth Providers
 
