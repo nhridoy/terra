@@ -87,6 +87,10 @@ npx expo run:ios
 npx expo run:android
 ```
 
+## Desktop Releases
+
+Desktop releases are built from version tags by GitHub Actions. For the first alpha and future stable releases, follow the [desktop release runbook](docs/UPDATER_RELEASE_RUNBOOK.md). It covers required repository secrets and variables, version updates, tagging, artifact checks, and updater signing. Alpha releases are GitHub prereleases and do not replace the stable `latest` server image.
+
 ## Configuration
 
 ### Environment Variables
